@@ -86,18 +86,25 @@ struct RuntimeSpec {
 
 impl RuntimeSpec {
     fn resolve(resource_dir: &Path) -> Result<Self, String> {
-        let bundled_root = resource_dir.join("sidecar");
-        let bundled_node = bundled_root.join(if cfg!(windows) { "node.exe" } else { "node" });
-        let bundled_service = bundled_root.join("dist/sidecar/index.js");
-        let bundled_browsers = bundled_root.join("ms-playwright");
-        if bundled_node.is_file() && bundled_service.is_file() {
-            return Ok(Self {
-                node: bundled_node,
-                service_entrypoint: bundled_service,
-                login_browser: find_chromium_executable(&bundled_browsers)?,
-                working_dir: bundled_root.clone(),
-                browsers_path: Some(bundled_browsers),
-            });
+        let bundled_candidate = resource_dir.join("sidecar");
+        let bundled_root = if bundled_candidate.is_dir() {
+            Some(validated_bundled_root(resource_dir, &bundled_candidate)?)
+        } else {
+            None
+        };
+        if let Some(bundled_root) = bundled_root {
+            let bundled_node = bundled_root.join(if cfg!(windows) { "node.exe" } else { "node" });
+            let bundled_service = bundled_root.join("dist/sidecar/index.js");
+            let bundled_browsers = bundled_root.join("ms-playwright");
+            if bundled_node.is_file() && bundled_service.is_file() {
+                return Ok(Self {
+                    node: normalize_child_path(&bundled_node)?,
+                    service_entrypoint: normalize_child_path(&bundled_service)?,
+                    login_browser: find_chromium_executable(&bundled_browsers)?,
+                    working_dir: normalize_child_path(&bundled_root)?,
+                    browsers_path: Some(normalize_child_path(&bundled_browsers)?),
+                });
+            }
         }
 
         let project_root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -184,6 +191,46 @@ impl RuntimeSpec {
             protocol,
         })
     }
+}
+
+fn validated_bundled_root(resource_dir: &Path, bundled_root: &Path) -> Result<PathBuf, String> {
+    let canonical_resource = resource_dir
+        .canonicalize()
+        .map_err(|_| "could not validate desktop resource directory".to_string())?;
+    let canonical_bundle = bundled_root
+        .canonicalize()
+        .map_err(|_| "could not validate bundled sidecar directory".to_string())?;
+    if !canonical_bundle.starts_with(&canonical_resource) || canonical_bundle == canonical_resource
+    {
+        return Err(
+            "bundled sidecar must be strictly inside the desktop resource directory".into(),
+        );
+    }
+    normalize_child_path(&canonical_bundle)
+}
+
+fn normalize_child_path(path: &Path) -> Result<PathBuf, String> {
+    let Some(text) = path.to_str() else {
+        return Err("desktop resource path is not valid Unicode".into());
+    };
+    let Some(remainder) = text.strip_prefix(r"\\?\") else {
+        return Ok(path.to_path_buf());
+    };
+    let bytes = remainder.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+    {
+        return Ok(PathBuf::from(remainder));
+    }
+    if remainder
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("UNC\\"))
+    {
+        return Err("desktop resources must be on a local drive, not a verbatim UNC path".into());
+    }
+    Err("unsupported Windows verbatim desktop resource path".into())
 }
 
 fn write_protocol_handshake(output: &mut impl Write) -> std::io::Result<()> {
@@ -305,7 +352,7 @@ fn find_chromium_executable(browsers_root: &Path) -> Result<PathBuf, String> {
                     .canonicalize()
                     .map_err(|_| "could not validate bundled Chromium".to_string())?;
                 if executable.starts_with(root) {
-                    return Ok(executable);
+                    return normalize_child_path(&executable);
                 }
             }
         }
@@ -706,5 +753,26 @@ mod tests {
         write_protocol_handshake(&mut output).unwrap();
         assert_eq!(output, b"{\"command\":\"status\"}\n");
         assert!(output.len() < 4096);
+    }
+
+    #[test]
+    fn windows_local_verbatim_path_is_normalized_for_child_processes() {
+        let normalized = normalize_child_path(Path::new(
+            r"\\?\C:\Program Files\tab2api\sidecar\dist\sidecar\index.js",
+        ))
+        .unwrap();
+        assert_eq!(
+            normalized,
+            PathBuf::from(r"C:\Program Files\tab2api\sidecar\dist\sidecar\index.js")
+        );
+        assert!(!normalized.to_string_lossy().starts_with(r"\\?\"));
+    }
+
+    #[test]
+    fn unsafe_verbatim_resource_paths_are_rejected() {
+        assert!(normalize_child_path(Path::new(r"\\?\UNC\server\share\sidecar")).is_err());
+        assert!(normalize_child_path(Path::new(r"\\?\relative\sidecar")).is_err());
+        let ordinary = Path::new(r"C:\tab2api\sidecar");
+        assert_eq!(normalize_child_path(ordinary).unwrap(), ordinary);
     }
 }
