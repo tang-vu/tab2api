@@ -1,0 +1,67 @@
+name: Desktop app bug
+description: Report a reproducible Tauri shell, lifecycle, or packaging defect
+title: '[Desktop]: '
+labels: [bug, desktop]
+body:
+  - type: markdown
+    attributes:
+      value: 'Never attach browser profiles, credentials, cookies, tokens, prompts, responses, or unsanitized screenshots/logs. Desktop CI does not contact ChatGPT.com.'
+  - type: input
+    id: version
+    attributes:
+      label: Version/commit
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: architecture
+    attributes:
+      label: CPU architecture
+      placeholder: x86_64, arm64, or another architecture
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Installation or launch
+        - Sidecar lifecycle
+        - Browser login window
+        - System tray or autostart
+        - API key or usage UI
+        - Update or uninstall
+        - Other desktop behavior
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Sanitized reproduction
+      description: Include expected and actual behavior. Replace paths, labels, hostnames, and content with safe placeholders.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Include only version and machine-readable error codes. Do not paste a raw environment, profile, log, trace, or screenshot.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I did not include credentials, API keys, tunnel secrets, cookies, browser storage/profile data, prompts, responses, or sensitive artifacts.
+          required: true
+        - label: This report concerns my own manually authenticated profile and not a hosted, shared, or multi-account deployment.
+          required: true
