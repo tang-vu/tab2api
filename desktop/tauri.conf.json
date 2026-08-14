@@ -12,10 +12,10 @@
       {
         "label": "main",
         "title": "tab2api",
-        "width": 720,
-        "height": 560,
-        "minWidth": 560,
-        "minHeight": 460,
+        "width": 1220,
+        "height": 780,
+        "minWidth": 900,
+        "minHeight": 620,
         "resizable": true
       }
     ],

@@ -11,6 +11,10 @@ const elements = {
   stop: document.querySelector('#stop'),
   login: document.querySelector('#login'),
   refresh: document.querySelector('#refresh'),
+  undock: document.querySelector('#undock'),
+  redock: document.querySelector('#redock'),
+  browserHost: document.querySelector('#browser-host'),
+  browserMode: document.querySelector('#browser-mode'),
 };
 
 const labels = {
@@ -26,11 +30,36 @@ function render(status) {
   elements.label.textContent = labels[status.phase] ?? status.phase;
   elements.detail.textContent = status.detail;
   elements.endpoint.textContent = status.endpoint;
+  const modeLabels = { none: 'Not running', external: 'External window', docked: 'Docked' };
+  elements.browserMode.textContent = modeLabels[status.browser_mode] ?? 'Unavailable';
+  elements.browserHost.classList.toggle('active', status.browser_mode === 'docked');
   const busy = status.phase === 'starting' || status.phase === 'login_open';
   elements.start.disabled = status.phase !== 'stopped';
   elements.stop.disabled = status.phase === 'stopped';
   elements.login.disabled = status.phase !== 'stopped';
   elements.refresh.disabled = busy;
+  elements.undock.disabled = status.browser_mode !== 'docked';
+  elements.redock.disabled = status.browser_mode !== 'external';
+  if (status.browser_mode === 'docked') queueBrowserBounds();
+}
+
+let boundsQueued = false;
+function queueBrowserBounds() {
+  if (boundsQueued || typeof invoke !== 'function') return;
+  boundsQueued = true;
+  window.requestAnimationFrame(async () => {
+    boundsQueued = false;
+    const rect = elements.browserHost.getBoundingClientRect();
+    if (rect.width < 160 || rect.height < 120) return;
+    try {
+      await invoke('set_browser_bounds', {
+        bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      });
+    } catch (error) {
+      elements.error.textContent = String(error);
+      elements.error.hidden = false;
+    }
+  });
 }
 
 async function perform(command) {
@@ -66,6 +95,12 @@ if (typeof invoke !== 'function') {
   elements.stop.addEventListener('click', () => perform('stop_sidecar'));
   elements.login.addEventListener('click', () => perform('open_login'));
   elements.refresh.addEventListener('click', refresh);
+  elements.undock.addEventListener('click', () => perform('undock_browser'));
+  elements.redock.addEventListener('click', async () => {
+    await perform('redock_browser');
+    queueBrowserBounds();
+  });
+  new ResizeObserver(queueBrowserBounds).observe(elements.browserHost);
 
   await refresh();
   window.setInterval(refresh, 3000);

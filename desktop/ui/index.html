@@ -8,40 +8,57 @@
     <script type="module" src="app.js"></script>
   </head>
   <body>
-    <main>
-      <header>
-        <div class="mark">T2</div>
-        <div>
-          <h1>tab2api</h1>
-          <p>Local browser bridge controller</p>
+    <main class="shell">
+      <div class="control-column">
+        <header>
+          <div class="mark">T2</div>
+          <div>
+            <h1>tab2api</h1>
+            <p>Local browser bridge controller</p>
+          </div>
+        </header>
+
+        <section class="status-card" aria-live="polite">
+          <div class="status-heading">
+            <span id="status-dot" class="dot stopped"></span>
+            <strong id="status-label">Checking…</strong>
+          </div>
+          <p id="status-detail">Inspecting the local sidecar.</p>
+          <code id="endpoint">http://127.0.0.1:3210</code>
+        </section>
+
+        <section class="actions" aria-label="Service controls">
+          <button id="start" class="primary">Start service</button>
+          <button id="stop">Stop service</button>
+          <button id="login">Open login browser</button>
+          <button id="refresh">Refresh status</button>
+          <button id="undock">Open externally</button>
+          <button id="redock">Dock browser</button>
+        </section>
+
+        <aside>
+          <strong>Private by design</strong>
+          <p>
+            The API and browser control stay on loopback. Login happens manually in a dedicated
+            Chromium window. On Windows, its owned app window can be docked into the native pane;
+            the system WebView never loads ChatGPT.
+          </p>
+        </aside>
+
+        <p id="error" role="alert" hidden></p>
+      </div>
+      <section class="browser-column" aria-label="Dedicated ChatGPT browser">
+        <div class="browser-toolbar">
+          <div><strong>Dedicated browser</strong><span id="browser-mode">Not running</span></div>
+          <p>Manual profile · loopback control · external fallback</p>
         </div>
-      </header>
-
-      <section class="status-card" aria-live="polite">
-        <div class="status-heading">
-          <span id="status-dot" class="dot stopped"></span>
-          <strong id="status-label">Checking…</strong>
+        <div id="browser-host" aria-label="Native Chromium host">
+          <div class="browser-placeholder">
+            <strong>Browser pane</strong
+            ><span>Start the service to launch the dedicated ChatGPT window.</span>
+          </div>
         </div>
-        <p id="status-detail">Inspecting the local sidecar.</p>
-        <code id="endpoint">http://127.0.0.1:3210</code>
       </section>
-
-      <section class="actions" aria-label="Service controls">
-        <button id="start" class="primary">Start service</button>
-        <button id="stop">Stop service</button>
-        <button id="login">Open login browser</button>
-        <button id="refresh">Refresh status</button>
-      </section>
-
-      <aside>
-        <strong>Private by design</strong>
-        <p>
-          The API and browser control stay on loopback. Login happens manually in a dedicated
-          Chromium window; ChatGPT is not embedded in this app.
-        </p>
-      </aside>
-
-      <p id="error" role="alert" hidden></p>
     </main>
   </body>
 </html>

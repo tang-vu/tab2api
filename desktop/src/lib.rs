@@ -1,5 +1,8 @@
+mod browser_host;
 mod lifecycle;
 
+#[cfg(not(test))]
+use browser_host::BrowserBounds;
 #[cfg(not(test))]
 use lifecycle::{ServiceStatus, SidecarLifecycle};
 #[cfg(not(test))]
@@ -53,12 +56,57 @@ async fn open_login(state: State<'_, DesktopState>) -> Result<ServiceStatus, Str
 }
 
 #[cfg(not(test))]
+#[tauri::command]
+async fn set_browser_bounds(
+    window: tauri::WebviewWindow,
+    state: State<'_, DesktopState>,
+    bounds: BrowserBounds,
+) -> Result<ServiceStatus, String> {
+    let scale = window
+        .scale_factor()
+        .map_err(|e| format!("could not inspect window scale: {e}"))?;
+    let size = window
+        .inner_size()
+        .map_err(|e| format!("could not inspect window size: {e}"))?;
+    let physical = bounds.physical(scale, size.width, size.height)?;
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.resize_browser(physical))
+        .await
+        .map_err(|e| format!("resize task failed: {e}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn undock_browser(state: State<'_, DesktopState>) -> Result<ServiceStatus, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.undock_browser())
+        .await
+        .map_err(|e| format!("undock task failed: {e}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn redock_browser(state: State<'_, DesktopState>) -> Result<ServiceStatus, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.redock_browser())
+        .await
+        .map_err(|e| format!("dock task failed: {e}"))?
+}
+
+#[cfg(not(test))]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let resource_dir = app.path().resource_dir()?;
             let app_local_data_dir = app.path().app_local_data_dir()?;
-            let lifecycle = SidecarLifecycle::new(resource_dir, app_local_data_dir)
+            #[cfg(windows)]
+            let parent_window = app
+                .get_webview_window("main")
+                .and_then(|window| window.hwnd().ok())
+                .map(|hwnd| hwnd.0 as isize);
+            #[cfg(not(windows))]
+            let parent_window = None;
+            let lifecycle = SidecarLifecycle::new(resource_dir, app_local_data_dir, parent_window)
                 .map_err(std::io::Error::other)?;
             app.manage(DesktopState {
                 lifecycle: Arc::new(lifecycle),
@@ -109,7 +157,10 @@ pub fn run() {
             sidecar_status,
             start_sidecar,
             stop_sidecar,
-            open_login
+            open_login,
+            set_browser_bounds,
+            undock_browser,
+            redock_browser
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tab2api desktop");

@@ -5,7 +5,8 @@ tray integration while the existing Node.js/Playwright implementation remains th
 ChatGPT is deliberately opened in a dedicated Chromium window, never inside the system WebView.
 The manual-login button launches that browser directly with only its dedicated profile path and the
 ChatGPT URL. It does not attach Playwright/CDP, enable remote debugging, or automate credentials;
-after the user closes this manual window, the service can reuse the same profile through Playwright.
+after the user closes this manual window, the Windows service relaunches the same profile in
+Chromium app mode and Playwright connects through a verified loopback-only CDP listener.
 
 ## Development
 
@@ -27,16 +28,22 @@ npm run desktop:smoke:windows
 The packaged shell resolves only its bundled `sidecar/node(.exe)`, `sidecar/dist`,
 `sidecar/node_modules`, and `sidecar/ms-playwright` resources. The shell always overrides
 `TAB2API_HOST=127.0.0.1`, `TAB2API_BROWSER_BACKEND=playwright`, and both data paths; none of these
-settings are delegated to the frontend. Runtime data and the dedicated profile live in the OS
+settings are delegated to the frontend. On Windows, the CDP endpoint is selected dynamically and
+passed only between native Rust and the Node child. Runtime data and the dedicated profile live in the OS
 app-local data directory, outside installation resources.
 
-The UI never receives an API token, browser profile contents, cookies, authorization headers, or
-sidecar output. It probes only the public local `/healthz` endpoint. Login can only open while the
+The UI never receives an API token, CDP endpoint, PID/window handle, browser profile contents,
+cookies, authorization headers, or sidecar output. It probes only the public local `/healthz`
+endpoint. Login can only open while the
 service process is stopped, preventing two processes from concurrently using the profile. The shell
 tracks the manual Chromium child until it exits and never falls back to a system browser or personal
-profile. Shutdown
+profile. During service operation, the verified owned Chromium window is best-effort docked into a
+native Windows child pane. DPI, ownership, or Win32 hosting failures fall back to the normal external
+app window; the Tauri system WebView never loads ChatGPT. macOS and Linux keep the prior external,
+Playwright-owned browser path. Shutdown
 uses the sidecar's versioned JSON stdin protocol, waits up to eight seconds for cleanup, and only
-then falls back to terminating an unresponsive child.
+then falls back to terminating an unresponsive child. Windows Chromium cleanup targets the exact
+launched PID and its process tree with a bounded wait so a loopback debugging listener is not left behind.
 
 ## Validation
 

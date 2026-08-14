@@ -14,25 +14,29 @@ flowchart LR
     W -->|allowlisted commands only| R[Rust lifecycle controller]
     R -->|child process| N[Node.js tab2api sidecar]
     N -->|127.0.0.1 only| A[OpenAI-compatible API]
-    N --> P[Playwright]
-    P --> C[Dedicated headed Chromium profile]
+    R -->|app mode + random loopback CDP| C[Dedicated headed Chromium profile]
+    N -->|Playwright connectOverCDP| C
     C --> G[ChatGPT.com public web UI]
     L[Local API client] -->|bearer token| A
 ```
 
-Tauri's operating-system WebView renders only the local control UI. It does not render or automate ChatGPT. ChatGPT remains in a dedicated Playwright Chromium window so browser behavior and selectors stay consistent with the tested adapter. GPM Login is not used by the desktop shell.
+Tauri's operating-system WebView renders only the local control UI. It never navigates to ChatGPT. During normal Windows operation Rust launches the bundled Chromium in application mode with the dedicated profile and an operating-system-selected debugging port. After verifying that the listener belongs to that Chromium process tree and is loopback-only, Rust passes an internal loopback endpoint to the Node sidecar; Playwright then connects over CDP. The endpoint, browser process identifiers, native handles, and profile path are never returned to the frontend.
 
-The Rust layer owns the child-process boundary and forces `TAB2API_HOST=127.0.0.1` and `TAB2API_BROWSER_BACKEND=playwright`. Its frontend receives only a phase, a loopback endpoint, and a content-free status message. It never receives an API key, sidecar output, profile data, cookies, authorization headers, prompts, or responses. The WebView content security policy denies network connections.
+The Windows shell can best-effort dock Chromium's owned top-level window into a native child host positioned over the reserved UI pane. Candidate windows must belong to the launched process tree and resolve to the canonical bundled executable; matching a title alone is never sufficient. Docking also requires compatible DPI-awareness contexts. Any discovery, ownership, DPI, `SetParent`, style, or resize failure restores/keeps Chromium as a normal external app window without disabling the local API. macOS and Linux retain the existing Playwright-owned external browser behavior.
+
+The Rust layer owns both child-process boundaries and forces `TAB2API_HOST=127.0.0.1` and `TAB2API_BROWSER_BACKEND=playwright`. On Windows it supplies `TAB2API_BROWSER_CDP_ENDPOINT` only to the sidecar process. Its frontend receives only a phase, the local API endpoint, a content-free status message, and `none`, `external`, or `docked` browser mode. It never receives an API key, CDP endpoint, sidecar output, profile data, process/window identifiers, cookies, authorization headers, prompts, or responses. The WebView content security policy denies network connections.
 
 Current lifecycle behavior is intentionally small:
 
 - start waits up to 15 seconds for `GET /healthz` on IPv4 loopback;
-- login is allowed only while the service child is stopped, preventing concurrent profile ownership;
+- login is allowed only while the service and automation browser are stopped. It launches Chromium directly with only the dedicated `--user-data-dir` and ChatGPT URL: no CDP, Playwright, automation, proxy, or anti-detection flags are used during login;
+- Windows Start removes only the stale `DevToolsActivePort` file inside the dedicated profile, launches `--app=https://chatgpt.com/ --remote-debugging-port=0`, parses a bounded port file, and rejects an unowned or non-loopback listener before starting Node;
+- a Start failure rolls back the Node child and Chromium. Stop/quit requests graceful Node shutdown and then performs bounded Chromium process-tree cleanup so CDP is not orphaned;
 - status probes only `127.0.0.1` and exposes no authenticated readiness data;
 - stop and application exit request graceful shutdown over a private, bounded JSONL stdin protocol, wait up to eight seconds, then terminate and reap the child only as a fallback;
 - the profile and runtime data stay outside the application installation directory.
 
-The current stop path force-terminates the child. A distributable release should first add a bounded authenticated graceful-shutdown handshake, followed by forced termination only after a deadline.
+Native Win32 reparenting is explicitly experimental because Chromium and Windows do not promise that cross-process child-window hosting will remain stable. "Open externally" is the supported escape hatch; "Dock browser" retries only the already verified owned window. The UI intentionally offers no native reload shortcut because synthesizing input could interfere with an in-progress generation.
 
 ## Development
 

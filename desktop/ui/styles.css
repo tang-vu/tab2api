@@ -20,16 +20,23 @@ body {
   min-height: 100vh;
   background: radial-gradient(circle at top, #182337, #0a0d12 55%);
 }
-main {
-  width: min(620px, calc(100% - 48px));
+main.shell {
+  width: min(1320px, calc(100% - 36px));
   margin: 0 auto;
-  padding: 48px 0;
+  padding: 24px 0;
+  display: grid;
+  grid-template-columns: 340px minmax(480px, 1fr);
+  gap: 22px;
+  min-height: 100vh;
+}
+.control-column {
+  min-width: 0;
 }
 header {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 36px;
+  margin-bottom: 22px;
 }
 .mark {
   display: grid;
@@ -102,6 +109,55 @@ code {
   gap: 12px;
   margin: 18px 0;
 }
+.browser-column {
+  min-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #263246;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #070a0f;
+}
+.browser-toolbar {
+  min-height: 72px;
+  padding: 14px 18px;
+  background: #111722;
+  border-bottom: 1px solid #263246;
+}
+.browser-toolbar div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.browser-toolbar span {
+  color: #87e8ca;
+  font-size: 13px;
+}
+.browser-toolbar p {
+  margin: 7px 0 0;
+  color: #77859b;
+  font-size: 13px;
+}
+#browser-host {
+  flex: 1;
+  position: relative;
+  min-height: 420px;
+}
+.browser-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 8px;
+  color: #768398;
+}
+.browser-placeholder strong {
+  color: #b6c0cf;
+}
+#browser-host.active .browser-placeholder {
+  visibility: hidden;
+}
 button {
   min-height: 46px;
   border: 1px solid #324057;
@@ -139,10 +195,14 @@ aside p {
   border-radius: 10px;
   padding: 12px 14px;
 }
-@media (max-width: 580px) {
-  main {
+@media (max-width: 920px) {
+  main.shell {
     width: min(100% - 28px, 620px);
     padding-top: 28px;
+    grid-template-columns: 1fr;
+  }
+  .browser-column {
+    min-height: 560px;
   }
   .actions {
     grid-template-columns: 1fr;

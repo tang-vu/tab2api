@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(dead_code))]
 
+use crate::browser_host::{BrowserMode, BrowserSession, PhysicalBounds};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::ffi::OsString;
@@ -59,11 +60,12 @@ pub struct ServiceStatus {
     pub phase: ServicePhase,
     pub endpoint: String,
     pub detail: String,
+    pub browser_mode: BrowserMode,
 }
 
-#[derive(Debug)]
 struct Inner {
     process: Option<ManagedChild>,
+    browser: Option<BrowserSession>,
     phase: ServicePhase,
 }
 
@@ -73,6 +75,7 @@ pub struct SidecarLifecycle {
     runtime: RuntimeSpec,
     data_dir: PathBuf,
     profile_dir: PathBuf,
+    parent_window: Option<isize>,
 }
 
 #[derive(Clone, Debug)]
@@ -131,6 +134,7 @@ impl RuntimeSpec {
         port: u16,
         data_dir: &Path,
         profile_dir: &Path,
+        cdp_endpoint: Option<&str>,
     ) -> Result<ManagedChild, String> {
         let mut command = match kind {
             ProcessKind::Service => {
@@ -147,6 +151,9 @@ impl RuntimeSpec {
                     .stdout(Stdio::piped());
                 if let Some(browsers_path) = &self.browsers_path {
                     command.env("PLAYWRIGHT_BROWSERS_PATH", browsers_path);
+                }
+                if let Some(endpoint) = cdp_endpoint {
+                    command.env("TAB2API_BROWSER_CDP_ENDPOINT", endpoint);
                 }
                 command
             }
@@ -386,7 +393,11 @@ fn playwright_browser_from_node(project_root: &Path) -> Result<PathBuf, String> 
 }
 
 impl SidecarLifecycle {
-    pub fn new(resource_dir: PathBuf, app_local_data_dir: PathBuf) -> Result<Self, String> {
+    pub fn new(
+        resource_dir: PathBuf,
+        app_local_data_dir: PathBuf,
+        parent_window: Option<isize>,
+    ) -> Result<Self, String> {
         let port = match env::var("TAB2API_PORT") {
             Ok(value) => value
                 .parse::<u16>()
@@ -404,12 +415,14 @@ impl SidecarLifecycle {
         Ok(Self {
             inner: Mutex::new(Inner {
                 process: None,
+                browser: None,
                 phase: ServicePhase::Stopped,
             }),
             port,
             runtime: RuntimeSpec::resolve(&resource_dir)?,
             data_dir,
             profile_dir,
+            parent_window,
         })
     }
 
@@ -420,12 +433,35 @@ impl SidecarLifecycle {
             if inner.process.is_some() {
                 return Err("tab2api is already running or the login window is open".into());
             }
-            inner.process = Some(self.runtime.spawn(
+            #[cfg(windows)]
+            let endpoint = {
+                let browser = BrowserSession::launch(
+                    &self.runtime.login_browser,
+                    &self.profile_dir,
+                    self.parent_window,
+                )?;
+                let endpoint = browser.endpoint();
+                inner.browser = Some(browser);
+                Some(endpoint)
+            };
+            #[cfg(not(windows))]
+            let endpoint: Option<String> = None;
+            let service = self.runtime.spawn(
                 ProcessKind::Service,
                 self.port,
                 &self.data_dir,
                 &self.profile_dir,
-            )?);
+                endpoint.as_deref(),
+            );
+            match service {
+                Ok(service) => inner.process = Some(service),
+                Err(error) => {
+                    if let Some(mut browser) = inner.browser.take() {
+                        browser.stop();
+                    }
+                    return Err(error);
+                }
+            }
             inner.phase = ServicePhase::Starting;
         }
 
@@ -451,6 +487,9 @@ impl SidecarLifecycle {
                         .take()
                         .ok_or("tab2api process state was lost during startup")?;
                     inner.phase = ServicePhase::Stopped;
+                    if let Some(mut browser) = inner.browser.take() {
+                        browser.stop();
+                    }
                     return Err(sanitized_exit_detail(&managed, exit_status));
                 }
             }
@@ -463,7 +502,13 @@ impl SidecarLifecycle {
         }
 
         let mut inner = self.lock()?;
-        inner.phase = ServicePhase::Unhealthy;
+        if let Some(mut service) = inner.process.take() {
+            let _ = stop_managed(&mut service);
+        }
+        if let Some(mut browser) = inner.browser.take() {
+            browser.stop();
+        }
+        inner.phase = ServicePhase::Stopped;
         Err("tab2api did not become healthy within 15 seconds".into())
     }
 
@@ -471,6 +516,9 @@ impl SidecarLifecycle {
         let mut inner = self.lock()?;
         if let Some(mut managed) = inner.process.take() {
             stop_managed(&mut managed)?;
+        }
+        if let Some(mut browser) = inner.browser.take() {
+            browser.stop();
         }
         inner.phase = ServicePhase::Stopped;
         self.status_locked(&mut inner)
@@ -487,6 +535,7 @@ impl SidecarLifecycle {
             self.port,
             &self.data_dir,
             &self.profile_dir,
+            None,
         )?);
         inner.phase = ServicePhase::LoginOpen;
         self.status_locked(&mut inner)
@@ -515,10 +564,25 @@ impl SidecarLifecycle {
             phase: inner.phase.clone(),
             endpoint: format!("http://127.0.0.1:{}", self.port),
             detail: detail_for(&inner.phase).into(),
+            browser_mode: inner
+                .browser
+                .as_ref()
+                .map_or(BrowserMode::None, BrowserSession::mode),
         })
     }
 
     fn refresh_process(inner: &mut Inner) -> Result<(), String> {
+        if inner
+            .browser
+            .as_mut()
+            .is_some_and(|browser| !browser.is_running())
+        {
+            inner.browser = None;
+            if let Some(mut service) = inner.process.take() {
+                let _ = stop_managed(&mut service);
+            }
+            inner.phase = ServicePhase::Stopped;
+        }
         let Some(managed) = inner.process.as_mut() else {
             inner.phase = ServicePhase::Stopped;
             return Ok(());
@@ -533,6 +597,34 @@ impl SidecarLifecycle {
             inner.phase = ServicePhase::Stopped;
         }
         Ok(())
+    }
+
+    pub fn resize_browser(&self, bounds: PhysicalBounds) -> Result<ServiceStatus, String> {
+        let mut inner = self.lock()?;
+        if let Some(browser) = inner.browser.as_mut() {
+            browser.resize(bounds)?;
+        }
+        self.status_locked(&mut inner)
+    }
+
+    pub fn undock_browser(&self) -> Result<ServiceStatus, String> {
+        let mut inner = self.lock()?;
+        inner
+            .browser
+            .as_mut()
+            .ok_or("browser session is not running")?
+            .undock()?;
+        self.status_locked(&mut inner)
+    }
+
+    pub fn redock_browser(&self) -> Result<ServiceStatus, String> {
+        let mut inner = self.lock()?;
+        inner
+            .browser
+            .as_mut()
+            .ok_or("browser session is not running")?
+            .redock()?;
+        self.status_locked(&mut inner)
     }
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, String> {
@@ -554,6 +646,11 @@ impl Drop for SidecarLifecycle {
             && let Some(mut managed) = inner.process.take()
         {
             let _ = stop_managed(&mut managed);
+        }
+        if let Ok(inner) = self.inner.get_mut()
+            && let Some(mut browser) = inner.browser.take()
+        {
+            browser.stop();
         }
     }
 }
@@ -680,6 +777,7 @@ mod tests {
             phase: ServicePhase::Ready,
             endpoint: "http://127.0.0.1:3210".into(),
             detail: detail_for(&ServicePhase::Ready).into(),
+            browser_mode: BrowserMode::Docked,
         };
         let debug = format!("{status:?}").to_ascii_lowercase();
         assert!(!debug.contains("token"));
