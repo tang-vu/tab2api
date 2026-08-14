@@ -19,6 +19,8 @@ const CHATGPT_URL = 'https://chatgpt.com/';
 const POLL_MS = 300;
 const INITIAL_STATE_ATTEMPTS = 20;
 const INITIAL_STATE_POLL_MS = 250;
+const MAX_CAPTURE_DIMENSION = 4_096;
+const MAX_CAPTURE_PIXELS = 16_777_216;
 
 async function firstVisible(
   page: Page,
@@ -288,10 +290,79 @@ export class ChatGptAdapter implements WebChatProvider {
         stableObservations >= 3 &&
         (!generating || completionActionAvailable)
       ) {
-        return image.screenshot({ type: 'png' });
+        return this.captureIntrinsicImage(page, image);
       }
       await page.waitForTimeout(POLL_MS);
     }
+  }
+
+  private async captureIntrinsicImage(page: Page, image: Locator): Promise<Buffer> {
+    const dimensions = await image.evaluate((element) => {
+      const candidate = element as HTMLImageElement;
+      return { width: candidate.naturalWidth, height: candidate.naturalHeight };
+    });
+    if (
+      dimensions.width < 1 ||
+      dimensions.height < 1 ||
+      dimensions.width > MAX_CAPTURE_DIMENSION ||
+      dimensions.height > MAX_CAPTURE_DIMENSION ||
+      dimensions.width * dimensions.height > MAX_CAPTURE_PIXELS
+    ) {
+      throw new AppError(
+        'ui_changed',
+        'ChatGPT displayed an image with unsupported intrinsic dimensions.',
+      );
+    }
+
+    // Render the already-loaded UI image at its intrinsic pixel dimensions. This avoids
+    // both the downscaled chat preview and reading/fetching the private image URL.
+    await page.setViewportSize({
+      width: dimensions.width + 256,
+      height: dimensions.height + 256,
+    });
+    await image.evaluate((element) => {
+      const candidate = element as HTMLImageElement;
+      const declarations: ReadonlyArray<readonly [string, string]> = [
+        ['position', 'fixed'],
+        ['left', '64px'],
+        ['top', '64px'],
+        ['width', `${candidate.naturalWidth}px`],
+        ['height', `${candidate.naturalHeight}px`],
+        ['max-width', 'none'],
+        ['max-height', 'none'],
+        ['object-fit', 'fill'],
+        ['z-index', '2147483647'],
+      ];
+      for (const [property, value] of declarations)
+        candidate.style.setProperty(property, value, 'important');
+    });
+    const box = await image.boundingBox();
+    if (box === null) throw this.uiChanged();
+    const data = await page.screenshot({
+      type: 'png',
+      animations: 'disabled',
+      scale: 'css',
+      clip: {
+        x: box.x,
+        y: box.y,
+        width: dimensions.width,
+        height: dimensions.height,
+      },
+    });
+    const pngWidth = data.length >= 24 ? data.readUInt32BE(16) : 0;
+    const pngHeight = data.length >= 24 ? data.readUInt32BE(20) : 0;
+    if (
+      !data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) ||
+      pngWidth !== dimensions.width ||
+      pngHeight !== dimensions.height ||
+      data.length > this.config.mediaLimitBytes
+    ) {
+      throw new AppError(
+        'ui_changed',
+        'ChatGPT displayed an image that could not be captured safely at intrinsic resolution.',
+      );
+    }
+    return data;
   }
 
   private async classifyPage(page: Page, duringGeneration = false): Promise<SessionState> {

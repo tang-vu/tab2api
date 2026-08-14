@@ -149,7 +149,7 @@ GPM mode ignores `TAB2API_HEADLESS`; window behavior is controlled by GPM Login.
 - Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs. Remote image URLs are rejected.
 - The truthful model is always `chatgpt-web`. A different incoming model string is client metadata and does not control the ChatGPT UI model picker.
 - Tool calls, image editing, live voice/realtime audio, MP3 TTS, JSON schema output, logprobs, and accurate sampling/model controls are not supported.
-- Image output is a screenshot of the displayed generated-image element. Only `n=1`, `size=auto`, `quality=auto`, and `b64_json` are accepted.
+- Image output is a lossless PNG rendered from the UI element at its intrinsic pixel dimensions, not the smaller chat preview. It preserves UI-exposed pixels but is not the source asset byte-for-byte and may omit metadata. Only `n=1`, `size=auto`, `quality=auto`, and `b64_json` are accepted.
 - TTS uses the local OS voice engine and returns WAV; it is not ChatGPT/OpenAI speech. STT uploads the audio through the UI and therefore cannot assert an exact transcription model.
 - Token counts are not visible in the UI. Chat Completions returns zero counts with `tab2api.usage_available=false`; Responses returns `usage: null`. These values mean “unknown,” not zero actual usage.
 - `stream: true` is a **buffered fallback**: generation finishes in the browser, then one text delta is sent. Chat Completions ends with `[DONE]`; Responses ends with `response.completed`. It is not live token streaming.

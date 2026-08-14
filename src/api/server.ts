@@ -272,7 +272,7 @@ export function buildServer(dependencies: ServerDependencies) {
           }),
         lifecycle.controller.signal,
       );
-      return reply.header('x-tab2api-image-mode', 'ui-element-screenshot').send({
+      return reply.header('x-tab2api-image-mode', 'ui-intrinsic-render').send({
         created: Math.floor(Date.now() / 1000),
         data: [{ b64_json: result.data.toString('base64') }],
       });

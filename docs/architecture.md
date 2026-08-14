@@ -27,7 +27,7 @@ tab2api is a single-user desktop bridge, not an API service for deployment. It a
 4. The bounded FIFO admits or rejects work. Configurable concurrency is constrained to 1–4 browser tabs and defaults to 1; a request timeout/abort signal applies while queued and running.
 5. The adapter opens a new page, navigates to the public ChatGPT root (a new conversation), classifies state, records the assistant-message baseline, fills the visible composer, and submits once.
 6. A state machine waits for a new assistant node and stable visible text. Completion additionally requires either the generation control to disappear or a new completed-turn action to appear; this handles UI variants that leave a stale Stop control visible. No fixed one-shot sleep decides completion.
-7. Text is mapped to `chatgpt-web`; image elements are screenshotted to PNG, while STT uses a bounded audio attachment. The page closes in `finally` for success, error, timeout, and cancellation. TTS is a separate, labelled OS backend but still enters the bounded work queue for flood control.
+7. Text is mapped to `chatgpt-web`; generated image elements are temporarily rendered at their intrinsic dimensions and captured as bounded lossless PNG without reading or fetching their private URL, while STT uses a bounded audio attachment. The page closes in `finally` for success, error, timeout, and cancellation. TTS is a separate, labelled OS backend but still enters the bounded work queue for flood control.
 
 ## Decisions
 

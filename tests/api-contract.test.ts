@@ -136,7 +136,7 @@ describe('Fastify API contract', () => {
       payload: { model: 'chatgpt-web-image', prompt: 'a square' },
     });
     expect(image.statusCode).toBe(200);
-    expect(image.headers['x-tab2api-image-mode']).toBe('ui-element-screenshot');
+    expect(image.headers['x-tab2api-image-mode']).toBe('ui-intrinsic-render');
     const imageBody = z
       .object({ data: z.array(z.object({ b64_json: z.string() })).min(1) })
       .parse(image.json());

@@ -131,7 +131,7 @@ Task chạy nền khi user đăng nhập Windows và dùng watchdog có giới h
 - Hỗ trợ text với role `system`, `developer`, `user`, `assistant`; vision nhận data URL PNG/JPEG/WebP có giới hạn và từ chối URL ảnh từ xa.
 - Model trả về luôn là `chatgpt-web`; tên model client gửi không điều khiển model picker trên UI.
 - Không hỗ trợ tool calling, sửa ảnh, voice realtime, MP3 TTS, structured output hoặc logprobs.
-- Ảnh output là screenshot PNG của phần tử ảnh đã tạo đang hiển thị; chỉ hỗ trợ `n=1`, `size=auto`, `quality=auto`, `b64_json`.
+- Ảnh output là PNG lossless được render từ phần tử UI ở đúng kích thước pixel nội tại, không phải preview nhỏ trong chat. Pixel do UI cung cấp được giữ nguyên, nhưng file không giống byte-for-byte với asset nguồn và có thể thiếu metadata. Chỉ hỗ trợ `n=1`, `size=auto`, `quality=auto`, `b64_json`.
 - TTS dùng engine OS và không giả là giọng OpenAI/ChatGPT. STT upload audio qua UI nên không khẳng định model transcription cụ thể.
 - UI không cho biết token usage: Chat Completions dùng số 0 kèm `usage_available=false`; Responses dùng `usage: null`. Đây là “không biết”, không phải usage thực bằng 0.
 - `stream: true` là buffered fallback: đợi browser hoàn tất rồi mới gửi một delta. Chat Completions kết thúc bằng `[DONE]`, Responses bằng `response.completed`; đây không phải token streaming thời gian thực.

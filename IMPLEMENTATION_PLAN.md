@@ -60,6 +60,6 @@ Completed on Windows/PowerShell with Node v24.14.1 and npm 11.11.0:
 - Production-build loopback HTTP verification against that profile: health/readiness, bearer rejection, models, Chat Completions JSON/SSE, Responses JSON/SSE, FIFO concurrency, and session reset all passed. Response bodies and prompts were not printed.
 - Live two-tab GPM verification with concurrency 2: both simultaneous Responses requests returned HTTP 200 with valid contracts.
 - Windows per-user autostart: installed task reached health/readiness/models HTTP 200; a forced termination of the exact tab2api Node PID recovered to a new PID through the bounded watchdog. GPM Login autostart was detected separately in the user's Startup folder.
-- Live media verification: vision data-URL upload returned text; OS TTS returned a valid RIFF/WAV; that WAV transcribed through multipart/UI; image generation returned a valid PNG `b64_json`. Only status and structural metadata were printed, and runtime media remained ignored.
+- Live media verification: vision data-URL upload returned text; OS TTS returned a valid RIFF/WAV; that WAV transcribed through multipart/UI; image generation returned a valid PNG `b64_json`. After the intrinsic-render fix, a fresh live Images API request returned HTTP 200 with a 1254x1254 PNG instead of the 480x480 chat preview. Only status and structural metadata were printed, and runtime media remained ignored.
 - `npm audit --audit-level=high`: zero vulnerabilities.
 - `git diff --check`, ignored-file review, sensitive-term review, and package dry-run completed.

@@ -32,7 +32,7 @@ Non-stream responses contain one completed assistant `message`/`output_text`; `u
 
 ### `POST /v1/images/generations`
 
-JSON body: `prompt` is required; `model` is metadata; `n` must be `1`, `size` and `quality` must be `auto`, and `response_format` must be `b64_json`. The adapter requests one image through the public UI, waits for the generated image element, then screenshots that element as PNG. The response contains `created` and one `data[].b64_json`; `X-Tab2api-Image-Mode: ui-element-screenshot` discloses the extraction method. The screenshot reflects displayed UI resolution, not the original asset bytes.
+JSON body: `prompt` is required; `model` is metadata; `n` must be `1`, `size` and `quality` must be `auto`, and `response_format` must be `b64_json`. The adapter requests one image through the public UI, waits for the generated image element, renders that already-loaded element at its intrinsic pixel dimensions, and captures it as lossless PNG. The response contains `created` and one `data[].b64_json`; `X-Tab2api-Image-Mode: ui-intrinsic-render` discloses the extraction method. This preserves the pixels exposed by the UI (rather than its smaller chat preview), but it is not the original asset byte-for-byte and may omit source metadata.
 
 ### `POST /v1/audio/speech`
 
