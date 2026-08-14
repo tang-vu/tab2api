@@ -152,8 +152,7 @@ impl SidecarLifecycle {
         if port == 0 {
             return Err("TAB2API_PORT must not be zero".into());
         }
-        let data_dir = app_local_data_dir.join("runtime");
-        let profile_dir = app_local_data_dir.join("browser-profile");
+        let (data_dir, profile_dir) = runtime_paths(&app_local_data_dir);
         std::fs::create_dir_all(&data_dir)
             .map_err(|error| format!("could not create app data directory: {error}"))?;
         std::fs::create_dir_all(&profile_dir)
@@ -281,6 +280,12 @@ impl SidecarLifecycle {
             .lock()
             .map_err(|_| "sidecar lifecycle lock is poisoned".into())
     }
+}
+
+fn runtime_paths(app_local_data_dir: &Path) -> (PathBuf, PathBuf) {
+    let data_dir = app_local_data_dir.join("runtime");
+    let profile_dir = data_dir.join("browser-profile");
+    (data_dir, profile_dir)
 }
 
 impl Drop for SidecarLifecycle {
@@ -420,5 +425,14 @@ mod tests {
         assert!(!debug.contains("token"));
         assert!(!debug.contains("authorization"));
         assert!(!debug.contains("cookie"));
+    }
+
+    #[test]
+    fn browser_profile_is_strictly_inside_runtime_data_directory() {
+        let app_data = Path::new("app-local-data");
+        let (data_dir, profile_dir) = runtime_paths(app_data);
+        assert_ne!(profile_dir, data_dir);
+        assert!(profile_dir.starts_with(&data_dir));
+        assert_eq!(profile_dir, data_dir.join("browser-profile"));
     }
 }
