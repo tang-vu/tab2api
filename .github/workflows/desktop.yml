@@ -75,9 +75,5 @@ jobs:
       - name: Run Rust tests
         run: cargo test --manifest-path desktop/Cargo.toml --locked --all-targets --all-features
 
-      - name: Install the pinned Tauri CLI
-        run: cargo install tauri-cli --version 2.11.4 --locked
-
       - name: Compile the desktop application without packaging
-        working-directory: desktop
-        run: cargo tauri build --no-bundle
+        run: npx tauri build --no-bundle --config desktop/tauri.conf.json
