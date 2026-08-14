@@ -1,5 +1,5 @@
 /* global document, window */
-const invoke = window.__TAURI__.core.invoke;
+const invoke = window.__TAURI__?.core?.invoke;
 
 const elements = {
   dot: document.querySelector('#status-dot'),
@@ -54,10 +54,19 @@ async function refresh() {
   }
 }
 
-elements.start.addEventListener('click', () => perform('start_sidecar'));
-elements.stop.addEventListener('click', () => perform('stop_sidecar'));
-elements.login.addEventListener('click', () => perform('open_login'));
-elements.refresh.addEventListener('click', refresh);
+if (typeof invoke !== 'function') {
+  elements.error.textContent =
+    'Native bridge initialization failed. Restart tab2api; reinstall the desktop app if this persists.';
+  elements.error.hidden = false;
+  elements.label.textContent = 'Desktop bridge unavailable';
+  elements.detail.textContent = 'The native command API was not injected into this window.';
+  for (const button of document.querySelectorAll('button')) button.disabled = true;
+} else {
+  elements.start.addEventListener('click', () => perform('start_sidecar'));
+  elements.stop.addEventListener('click', () => perform('stop_sidecar'));
+  elements.login.addEventListener('click', () => perform('open_login'));
+  elements.refresh.addEventListener('click', refresh);
 
-await refresh();
-window.setInterval(refresh, 3000);
+  await refresh();
+  window.setInterval(refresh, 3000);
+}

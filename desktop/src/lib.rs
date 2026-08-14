@@ -103,3 +103,18 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("failed to run tab2api desktop");
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn frontend_native_bridge_is_enabled() {
+        let config = include_str!("../tauri.conf.json");
+        assert!(
+            config.contains("\"withGlobalTauri\": true"),
+            "ui/app.js requires Tauri's global invoke API"
+        );
+
+        let script = include_str!("../ui/app.js");
+        assert!(script.contains("typeof invoke !== 'function'"));
+    }
+}
