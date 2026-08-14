@@ -1,0 +1,63 @@
+{
+  "name": "tab2api",
+  "version": "0.1.0",
+  "description": "Local-only, unofficial OpenAI-compatible bridge to a user-owned ChatGPT web session",
+  "type": "module",
+  "bin": {
+    "tab2api": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README_VI.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "exports": "./dist/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/cli/index.ts start",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/cli/index.js start",
+    "login": "tsx src/cli/index.ts login",
+    "doctor": "tsx src/cli/index.ts doctor",
+    "smoke": "tsx src/cli/index.ts smoke",
+    "reset-session": "tsx src/cli/index.ts reset-session",
+    "test": "vitest run",
+    "test:manual": "vitest run --config vitest.manual.config.ts",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint && npm run format:check"
+  },
+  "keywords": [
+    "chatgpt",
+    "openai-compatible",
+    "playwright",
+    "local-first"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "fastify": "^5.5.0",
+    "pino": "^9.9.0",
+    "playwright": "^1.55.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.34.0",
+    "@types/node": "^24.3.0",
+    "eslint": "^9.34.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.3.0",
+    "linkedom": "^0.18.12",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.41.0",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+.tab2api/
+runtime/
+browser-profile/
+playwright-report/
+test-results/
+debug-artifacts/
+*.log
+*.png
+*.har
+*.zip
