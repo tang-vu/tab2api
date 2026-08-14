@@ -322,6 +322,15 @@ export class ChatGptAdapter implements WebChatProvider {
     });
     await image.evaluate((element) => {
       const candidate = element as HTMLImageElement;
+      candidate.dataset.tab2apiCapture = 'true';
+      const isolationStyle = document.createElement('style');
+      isolationStyle.textContent = `
+        body *:not([data-tab2api-capture="true"]),
+        body *::before,
+        body *::after { visibility: hidden !important; }
+        [data-tab2api-capture="true"] { visibility: visible !important; }
+      `;
+      document.head.append(isolationStyle);
       const declarations: ReadonlyArray<readonly [string, string]> = [
         ['position', 'fixed'],
         ['left', '64px'],
