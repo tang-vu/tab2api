@@ -107,6 +107,61 @@ describe('configuration security', () => {
     ).rejects.toThrow();
   });
 
+  it.each(['http://127.0.0.1:54321', 'http://[::1]:54321'])(
+    'accepts an explicit loopback-only desktop CDP endpoint %s',
+    async (endpoint) => {
+      await expect(
+        loadConfig(
+          {
+            TAB2API_API_TOKEN: token,
+            TAB2API_DATA_DIR: '.runtime',
+            TAB2API_PROFILE_DIR: '.runtime/profile',
+            TAB2API_BROWSER_CDP_ENDPOINT: endpoint,
+          },
+          'C:\\work\\tab2api',
+        ),
+      ).resolves.toMatchObject({ browserCdpEndpoint: endpoint });
+    },
+  );
+
+  it.each([
+    'http://0.0.0.0:54321',
+    'http://localhost:54321',
+    'http://192.168.1.20:54321',
+    'https://127.0.0.1:54321',
+    'http://127.0.0.1:54321/json/version',
+    'http://user:password@127.0.0.1:54321',
+    'http://127.0.0.1',
+  ])('rejects unsafe or ambiguous desktop CDP endpoint %s', async (endpoint) => {
+    await expect(
+      loadConfig(
+        {
+          TAB2API_API_TOKEN: token,
+          TAB2API_DATA_DIR: '.runtime',
+          TAB2API_PROFILE_DIR: '.runtime/profile',
+          TAB2API_BROWSER_CDP_ENDPOINT: endpoint,
+        },
+        'C:\\work\\tab2api',
+      ),
+    ).rejects.toThrow(/CDP endpoint/);
+  });
+
+  it('rejects combining a desktop CDP endpoint with GPM', async () => {
+    await expect(
+      loadConfig(
+        {
+          TAB2API_API_TOKEN: token,
+          TAB2API_BROWSER_BACKEND: 'gpm',
+          TAB2API_GPM_PROFILE_ID: '37f783ac-2635-4d53-ab8d-a300c790ecdc',
+          TAB2API_BROWSER_CDP_ENDPOINT: 'http://127.0.0.1:54321',
+          TAB2API_DATA_DIR: '.runtime',
+          TAB2API_PROFILE_DIR: '.runtime/profile',
+        },
+        'C:\\work\\tab2api',
+      ),
+    ).rejects.toThrow(/cannot be combined/);
+  });
+
   it('bounds media bytes and permits a longer image timeout', async () => {
     const base = {
       TAB2API_API_TOKEN: token,

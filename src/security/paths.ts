@@ -38,6 +38,35 @@ export function assertLoopbackHttpUrl(value: string): string {
   return parsed.toString().replace(/\/$/, '');
 }
 
+export function assertLoopbackCdpEndpoint(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new AppError('invalid_request', 'Browser CDP endpoint must be a valid HTTP URL.');
+  }
+  const port = Number(parsed.port);
+  if (
+    parsed.protocol !== 'http:' ||
+    (parsed.hostname !== '127.0.0.1' && parsed.hostname !== '[::1]') ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    parsed.port === '' ||
+    !Number.isInteger(port) ||
+    port < 1024 ||
+    port > 65_535 ||
+    parsed.pathname !== '/' ||
+    parsed.search !== '' ||
+    parsed.hash !== ''
+  ) {
+    throw new AppError(
+      'invalid_request',
+      'Browser CDP endpoint must be exactly http://127.0.0.1:<port> or http://[::1]:<port>.',
+    );
+  }
+  return parsed.toString().replace(/\/$/, '');
+}
+
 function isRoot(candidate: string): boolean {
   return path.parse(candidate).root === candidate;
 }

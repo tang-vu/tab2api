@@ -10,6 +10,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     artifactDir: 'C:\\tmp\\tab2api-test\\debug-artifacts',
     headless: true,
     browserBackend: 'playwright',
+    browserCdpEndpoint: undefined,
     gpmProfileId: undefined,
     gpmBaseUrl: 'http://127.0.0.1:9495/api/v1',
     concurrency: 1,

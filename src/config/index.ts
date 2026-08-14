@@ -3,6 +3,7 @@ import { config as loadDotEnv } from 'dotenv';
 import { z } from 'zod';
 import {
   assertLoopbackHost,
+  assertLoopbackCdpEndpoint,
   assertLoopbackHttpUrl,
   resolveSafeDataPaths,
 } from '../security/paths.js';
@@ -23,6 +24,10 @@ const environmentSchema = z.object({
   TAB2API_PROFILE_DIR: z.string().min(1).default(path.join('.tab2api', 'browser-profile')),
   TAB2API_HEADLESS: booleanValue,
   TAB2API_BROWSER_BACKEND: z.enum(['playwright', 'gpm']).default('playwright'),
+  TAB2API_BROWSER_CDP_ENDPOINT: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().optional(),
+  ),
   TAB2API_GPM_PROFILE_ID: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.uuid().optional(),
@@ -49,6 +54,7 @@ export interface AppConfig {
   artifactDir: string;
   headless: boolean;
   browserBackend: 'playwright' | 'gpm';
+  browserCdpEndpoint: string | undefined;
   gpmProfileId: string | undefined;
   gpmBaseUrl: string;
   concurrency: number;
@@ -77,6 +83,12 @@ export async function loadConfig(
   if (parsed.TAB2API_BROWSER_BACKEND === 'gpm' && parsed.TAB2API_GPM_PROFILE_ID === undefined) {
     throw new Error('TAB2API_GPM_PROFILE_ID is required when TAB2API_BROWSER_BACKEND=gpm.');
   }
+  if (
+    parsed.TAB2API_BROWSER_BACKEND === 'gpm' &&
+    parsed.TAB2API_BROWSER_CDP_ENDPOINT !== undefined
+  ) {
+    throw new Error('TAB2API_BROWSER_CDP_ENDPOINT cannot be combined with the GPM backend.');
+  }
   return {
     host,
     port: parsed.TAB2API_PORT,
@@ -86,6 +98,10 @@ export async function loadConfig(
     artifactDir: path.join(dataDir, 'debug-artifacts'),
     headless: parsed.TAB2API_HEADLESS,
     browserBackend: parsed.TAB2API_BROWSER_BACKEND,
+    browserCdpEndpoint:
+      parsed.TAB2API_BROWSER_CDP_ENDPOINT === undefined
+        ? undefined
+        : assertLoopbackCdpEndpoint(parsed.TAB2API_BROWSER_CDP_ENDPOINT),
     gpmProfileId: parsed.TAB2API_GPM_PROFILE_ID,
     gpmBaseUrl: assertLoopbackHttpUrl(parsed.TAB2API_GPM_BASE_URL),
     concurrency: parsed.TAB2API_CONCURRENCY,

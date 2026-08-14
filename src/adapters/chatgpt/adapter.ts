@@ -64,6 +64,7 @@ export class ChatGptAdapter implements WebChatProvider {
     try {
       if (request.signal.aborted) throw abortError(request.signal);
       page = await this.browser.getPage();
+      if (request.signal.aborted) throw abortError(request.signal);
       await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       const state = await this.waitForInitialState(page);
       this.assertReady(state);
@@ -129,6 +130,7 @@ export class ChatGptAdapter implements WebChatProvider {
     try {
       if (request.signal.aborted) throw abortError(request.signal);
       page = await this.browser.getPage();
+      if (request.signal.aborted) throw abortError(request.signal);
       await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       this.assertReady(await this.waitForInitialState(page));
       const composer = await firstVisible(page, UI_SELECTORS.composer);

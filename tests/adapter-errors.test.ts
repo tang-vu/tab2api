@@ -36,11 +36,14 @@ class FakeLocator {
 
 class FakePage {
   closed = false;
+  navigations = 0;
   currentUrl = 'https://chatgpt.com/';
   waits = 0;
 
   constructor(private readonly mode: 'ready' | 'delayed' | 'login' | 'unknown') {}
-  async goto(): Promise<void> {}
+  async goto(): Promise<void> {
+    this.navigations += 1;
+  }
   async waitForTimeout(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1));
     this.waits += 1;
@@ -73,6 +76,22 @@ class FakeBrowser implements BrowserController {
   }
   async getPage(): Promise<Page> {
     return this.page as unknown as Page;
+  }
+  async close(): Promise<void> {}
+}
+
+class DeferredBrowser implements BrowserController {
+  readonly page = new FakePage('ready');
+  private resolvePage: ((page: Page) => void) | undefined;
+  readonly pendingPage = new Promise<Page>((resolve) => {
+    this.resolvePage = resolve;
+  });
+
+  getPage(): Promise<Page> {
+    return this.pendingPage;
+  }
+  release(): void {
+    this.resolvePage?.(this.page as unknown as Page);
   }
   async close(): Promise<void> {}
 }
@@ -125,6 +144,23 @@ describe('ChatGPT adapter failure cleanup', () => {
     });
     setTimeout(() => controller.abort(), 20);
     await expect(generation).rejects.toMatchObject({ code: 'cancelled' });
+    expect(browser.page.closed).toBe(true);
+  });
+
+  it('does not navigate or submit after cancellation during browser attachment', async () => {
+    const browser = new DeferredBrowser();
+    const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
+    const controller = new AbortController();
+    const generation = adapter.generate({
+      prompt: 'must never be submitted',
+      signal: controller.signal,
+      requestId: 'attach-cancel-test',
+    });
+    controller.abort();
+    browser.release();
+
+    await expect(generation).rejects.toMatchObject({ code: 'cancelled' });
+    expect(browser.page.navigations).toBe(0);
     expect(browser.page.closed).toBe(true);
   });
 
