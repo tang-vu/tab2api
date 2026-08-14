@@ -4,7 +4,8 @@
   "description": "Local-only, unofficial OpenAI-compatible bridge to a user-owned ChatGPT web session",
   "type": "module",
   "bin": {
-    "tab2api": "dist/cli/index.js"
+    "tab2api": "dist/cli/index.js",
+    "tab2api-sidecar": "dist/sidecar/index.js"
   },
   "files": [
     "dist",
@@ -28,6 +29,12 @@
     "reset-session": "tsx src/cli/index.ts reset-session",
     "keys": "tsx src/cli/index.ts keys",
     "usage": "tsx src/cli/index.ts usage",
+    "desktop:prepare:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/prepare-desktop-bundle.ps1",
+    "desktop:ui:check": "node --check desktop/ui/app.js",
+    "desktop:check": "npm run desktop:ui:check && cargo fmt --manifest-path desktop/Cargo.toml --check && cargo clippy --manifest-path desktop/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path desktop/Cargo.toml --all-targets --all-features",
+    "desktop:dev": "npm run build && tauri dev --config desktop/tauri.conf.json",
+    "desktop:build:windows": "npm run desktop:prepare:windows && tauri build --bundles nsis --config desktop/tauri.conf.json",
+    "desktop:smoke:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/smoke-desktop-bundle.ps1",
     "autostart:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install-autostart.ps1",
     "autostart:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/status-autostart.ps1",
     "autostart:remove": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/remove-autostart.ps1",
@@ -41,7 +48,7 @@
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint && npm run format:check"
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run desktop:ui:check"
   },
   "keywords": [
     "chatgpt",
@@ -60,6 +67,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.34.0",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^24.3.0",
     "eslint": "^9.34.0",
     "eslint-config-prettier": "^10.1.8",

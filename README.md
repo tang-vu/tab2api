@@ -143,6 +143,21 @@ GPM's Local API and DevTools port are separate unauthenticated loopback services
 
 GPM mode ignores `TAB2API_HEADLESS`; window behavior is controlled by GPM Login. Stopping tab2api, completing `npm run login`, or calling reset stops the configured GPM browser while preserving its profile data. GPM does not make ChatGPT selectors stable by itself; UI changes can still require an adapter update.
 
+### Rust/Tauri desktop app
+
+`desktop/` contains a Tauri 2 control app for users who do not want Node.js, Chrome, Playwright, or GPM installed separately. Rust owns the native window, tray, app-local paths, and bounded child lifecycle; the packaged Node sidecar retains the tested Fastify/Playwright implementation. ChatGPT opens in the bundled dedicated Chromium window for manual login and is never embedded in the operating-system WebView.
+
+On Windows, build an unsigned self-contained preview with:
+
+```powershell
+npm ci
+npm run desktop:check
+npm run desktop:build:windows
+npm run desktop:smoke:windows
+```
+
+The preparation step stages production dependencies and downloads only the Playwright-matched headed Chromium revision. Generated resources, installers, runtime data, and profiles are ignored by Git. The output under `desktop/target/release/bundle/nsis/` is a developer preview; public releases still require code signing and clean-machine installation tests. See [the desktop guide](docs/desktop.md).
+
 ### Per-device keys, usage, and private remote access
 
 The original `.tab2api/api-token` is the administrator key. Create revocable non-admin keys for other personal devices with `npm run keys -- create "personal laptop"`; the plaintext is printed once and only its SHA-256 digest is persisted. `npm run keys -- list`, `npm run keys -- revoke <id>`, and `npm run usage` manage keys and inspect content-free counters.
@@ -189,6 +204,10 @@ npm run smoke        offline fake-adapter API smoke test
 npm run keys -- create "device label" # print one revocable client key once
 npm run keys -- list                  # list key metadata, never secrets
 npm run usage                         # per-key content-free usage estimates
+npm run desktop:check                 # UI syntax + Rust fmt/clippy/tests
+npm run desktop:dev                   # native shell with the development sidecar
+npm run desktop:build:windows         # self-contained unsigned NSIS preview
+npm run desktop:smoke:windows         # packaged sidecar lifecycle smoke
 npm run autostart:install # Windows per-user startup task
 npm run autostart:status  # Windows task and loopback liveness
 npm run autostart:remove  # remove task; preserve runtime/profile

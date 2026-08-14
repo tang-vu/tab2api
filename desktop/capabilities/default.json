@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Minimal permissions for the local tab2api controller window",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

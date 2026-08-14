@@ -3,3 +3,6 @@ coverage
 .tab2api
 node_modules
 package-lock.json
+desktop/generated
+desktop/target
+desktop/gen

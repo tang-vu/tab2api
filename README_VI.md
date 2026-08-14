@@ -64,6 +64,21 @@ tab2api chỉ gọi get/start/stop profile đã cấu hình; không tạo, liệ
 
 GPM mode bỏ qua `TAB2API_HEADLESS`; cách hiển thị cửa sổ do GPM Login quyết định. Khi tab2api dừng, login CLI hoàn tất hoặc reset-session được gọi, browser GPM đã cấu hình sẽ dừng nhưng dữ liệu profile được giữ. GPM không tự giải quyết việc ChatGPT đổi selector/UI.
 
+### Ứng dụng desktop Rust/Tauri
+
+Thư mục `desktop/` chứa app điều khiển Tauri 2 cho người dùng không muốn cài riêng Node.js, Chrome, Playwright hoặc GPM. Rust quản lý cửa sổ native, system tray, thư mục app-local và vòng đời sidecar có giới hạn; Node sidecar đóng gói vẫn dùng implementation Fastify/Playwright đã được kiểm thử. ChatGPT mở trong Chromium dedicated đi kèm để người dùng tự đăng nhập, tuyệt đối không được nhúng trong system WebView.
+
+Build bản preview Windows self-contained chưa ký:
+
+```powershell
+npm ci
+npm run desktop:check
+npm run desktop:build:windows
+npm run desktop:smoke:windows
+```
+
+Pipeline chỉ stage production dependencies và tải đúng Chromium headed revision khớp Playwright. Resource sinh ra, installer, runtime và profile đều được gitignore. File trong `desktop/target/release/bundle/nsis/` là developer preview; bản public vẫn cần code signing và clean-machine install test. Xem [hướng dẫn desktop](docs/desktop.md).
+
 ## Bắt đầu trên macOS/Linux
 
 ```bash
@@ -164,6 +179,10 @@ npm run smoke
 npm run keys -- create "tên thiết bị"
 npm run keys -- list
 npm run usage
+npm run desktop:check
+npm run desktop:dev
+npm run desktop:build:windows
+npm run desktop:smoke:windows
 npm run autostart:install
 npm run autostart:status
 npm run autostart:remove

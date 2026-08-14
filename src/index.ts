@@ -5,3 +5,13 @@ export type { WebChatProvider, GenerateRequest, GenerateResult, SessionState } f
 export { AppError, type ErrorCode } from './errors.js';
 export { ApiKeyStore, type ApiPrincipal, type ApiKeySummary } from './security/api-keys.js';
 export { UsageStore, estimateTokens, type KeyUsage } from './store/usage.js';
+export {
+  SidecarCommandDecoder,
+  SidecarLifecycle,
+  SidecarReporter,
+  type SidecarAddress,
+  type SidecarEvent,
+  type SidecarOperations,
+  type SidecarState,
+  type SidecarStopReason,
+} from './sidecar/lifecycle.js';

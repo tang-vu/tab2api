@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tab2api</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark">T2</div>
+        <div>
+          <h1>tab2api</h1>
+          <p>Local browser bridge controller</p>
+        </div>
+      </header>
+
+      <section class="status-card" aria-live="polite">
+        <div class="status-heading">
+          <span id="status-dot" class="dot stopped"></span>
+          <strong id="status-label">Checking…</strong>
+        </div>
+        <p id="status-detail">Inspecting the local sidecar.</p>
+        <code id="endpoint">http://127.0.0.1:3210</code>
+      </section>
+
+      <section class="actions" aria-label="Service controls">
+        <button id="start" class="primary">Start service</button>
+        <button id="stop">Stop service</button>
+        <button id="login">Open login browser</button>
+        <button id="refresh">Refresh status</button>
+      </section>
+
+      <aside>
+        <strong>Private by design</strong>
+        <p>
+          The API and browser control stay on loopback. Login happens manually in a dedicated
+          Chromium window; ChatGPT is not embedded in this app.
+        </p>
+      </aside>
+
+      <p id="error" role="alert" hidden></p>
+    </main>
+  </body>
+</html>

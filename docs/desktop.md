@@ -2,9 +2,9 @@
 
 ## Status
 
-The `desktop/` directory is an experimental Tauri 2 controller, not a signed end-user release. It provides a small native window and system tray for status, start, stop, and manual login. The existing TypeScript service and Playwright adapter remain the source of truth for the API and browser automation.
+The `desktop/` directory is a Tauri 2 developer preview, not a signed end-user release. It provides a native window and system tray for status, start, stop, and manual login. The existing TypeScript service and Playwright adapter remain the source of truth for the API and browser automation.
 
-The development build is **not self-contained**: it starts `node ../dist/cli/index.js` and expects the Playwright-managed Chromium installation to exist. `TAB2API_DESKTOP_SIDECAR` can point to a trusted standalone executable for packaging experiments, but the repository does not currently ship such an executable or an installer. CI compiles with `--no-bundle` and deliberately uploads nothing.
+Development mode uses the repository Node.js runtime and Playwright installation. The Windows packaging pipeline is self-contained: it stages the current Node runtime, audited production npm dependencies, compiled service, and only the headed Chromium revision matched to Playwright, then creates an unsigned NSIS installer. CI compiles with `--no-bundle` and deliberately uploads nothing; signing and clean-machine installer validation remain release gates.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Current lifecycle behavior is intentionally small:
 - start waits up to 15 seconds for `GET /healthz` on IPv4 loopback;
 - login is allowed only while the service child is stopped, preventing concurrent profile ownership;
 - status probes only `127.0.0.1` and exposes no authenticated readiness data;
-- stop and application exit terminate and reap the managed child;
+- stop and application exit request graceful shutdown over a private, bounded JSONL stdin protocol, wait up to eight seconds, then terminate and reap the child only as a fallback;
 - the profile and runtime data stay outside the application installation directory.
 
 The current stop path force-terminates the child. A distributable release should first add a bounded authenticated graceful-shutdown handshake, followed by forced termination only after a deadline.
@@ -42,11 +42,8 @@ Build and run from the repository root:
 
 ```powershell
 npm ci
-npm run build
 npx playwright install chromium
-cd desktop
-cargo install tauri-cli --version 2.11.4 --locked
-cargo tauri dev
+npm run desktop:dev
 ```
 
 Use only your own dedicated profile and log in manually. Development and CI commands must not contact ChatGPT.com automatically.
@@ -54,21 +51,28 @@ Use only your own dedicated profile and log in manually. Development and CI comm
 Validate the desktop code:
 
 ```powershell
-npm run build
-cargo fmt --manifest-path desktop/Cargo.toml --all -- --check
-cargo clippy --manifest-path desktop/Cargo.toml --locked --all-targets --all-features -- -D warnings
-cargo test --manifest-path desktop/Cargo.toml --locked --all-targets --all-features
-cd desktop
-cargo tauri build --no-bundle
+npm run check
+npm test
+npm run desktop:check
+npx tauri build --no-bundle --config desktop/tauri.conf.json
 ```
 
 `desktop.yml` runs those checks on Windows, macOS, and Ubuntu 22.04. It skips the Playwright browser download, has read-only repository permissions, supplies no production secrets, creates no installer, and publishes no artifact or release. The build proves compilation; it is not an installation test.
 
-## Self-contained packaging target
+## Self-contained Windows packaging
 
-The preferred OSS distribution remains a Tauri/Rust shell around the existing Node.js/Playwright implementation. Rewriting browser automation in Rust or loading ChatGPT inside the system WebView would add platform-specific behavior without eliminating the need to maintain a browser engine.
+The preferred OSS distribution is a Tauri/Rust shell around the existing Node.js/Playwright implementation. Rewriting browser automation in Rust or loading ChatGPT inside the system WebView would add platform-specific behavior without eliminating the need to maintain a browser engine.
 
-A future signed installer should contain all executable dependencies needed at runtime:
+Build and smoke the current unsigned Windows preview:
+
+```powershell
+npm run desktop:build:windows
+npm run desktop:smoke:windows
+```
+
+`desktop:prepare:windows` creates the ignored `desktop/generated/sidecar/` resource tree from a clean production dependency install and uses Playwright's `--no-shell` option because the application is always headed. Tauri bundles that tree under `sidecar/`; the Rust process never accepts a binary path from the WebView. The generated installer is under `desktop/target/release/bundle/nsis/` and must not be committed.
+
+The implemented Windows staging layout contains all executable dependencies needed at runtime. Other platforms must implement the equivalent native staging before distributing installers:
 
 1. Build `dist/` from a clean `npm ci` checkout and stage only audited production dependencies.
 2. Package a platform-native Node.js 22 runtime or a tested standalone sidecar executable. Do not assume `node` is on the user's `PATH`.

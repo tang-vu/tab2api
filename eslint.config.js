@@ -5,7 +5,17 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**', '.tab2api/**', 'node_modules/**', 'eslint.config.js'],
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      '.tab2api/**',
+      'node_modules/**',
+      'desktop/target/**',
+      'desktop/generated/**',
+      'desktop/gen/**',
+      'desktop/ui/**',
+      'eslint.config.js',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,

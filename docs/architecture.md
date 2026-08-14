@@ -59,6 +59,12 @@ An independent administrative usage store aggregates requests by key and route. 
 
 Fastify continues to listen only on loopback. The default `cloudflared` installer uses a fail-closed fixed-418 probe to prove Access interception. A distinct bearer-only command records the owner's explicit acceptance and skips that probe without weakening application authentication. In bearer-only mode `/readyz`, `/v1/*`, and `/admin/*` require a key; `/healthz` alone is public and does no browser work. Tunnel credentials/configuration remain runtime-only and are never packaged or committed.
 
+### Desktop distribution
+
+The optional Tauri 2 shell is a native lifecycle controller, not a second implementation of the API or ChatGPT adapter. Its operating-system WebView renders bundled local controls under a CSP that denies network connections. Rust exposes only typed start, stop, status, and manual-login commands and never returns the administrator key, child output, browser state, prompts, or responses to the frontend.
+
+Development mode starts the repository-built Node entrypoints. A Windows packaging step instead stages the current Node executable, production-only npm tree, compiled `dist/`, and Playwright-matched headed Chromium under generated Tauri resources. Rust resolves only those resources in a packaged app, forces `127.0.0.1`, the Playwright backend, and per-user app-local runtime/profile paths. Service shutdown uses a versioned, size-bounded JSONL protocol on child stdin; forced termination is an eight-second fallback. GPM is never used by the desktop path.
+
 ### Media fidelity
 
 Vision and transcription use Playwright's public file chooser with in-memory buffers; no ChatGPT upload endpoint is called directly. Image generation waits for a new semantic image element, isolates it from UI overlays, renders it at intrinsic dimensions, and captures only those pixels without extracting private asset URLs. Only `auto` size/quality are accepted. Read-aloud audio cannot be extracted safely from the UI without relying on internal transport, so `/v1/audio/speech` deliberately uses the local OS engine and returns a disclosure header.
