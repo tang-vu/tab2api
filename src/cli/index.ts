@@ -12,6 +12,8 @@ import { GpmBrowserManager } from '../browser/gpm-manager.js';
 import { loadConfig, type AppConfig } from '../config/index.js';
 import { createLogger } from '../observability/logger.js';
 import { SystemSpeechSynthesizer } from '../audio/system-speech.js';
+import { ApiKeyStore } from '../security/api-keys.js';
+import { UsageStore } from '../store/usage.js';
 import { FakeProvider } from '../testing/fake-provider.js';
 
 function print(message: string): void {
@@ -28,7 +30,11 @@ async function dependencies(config: AppConfig) {
 async function start(): Promise<void> {
   const config = await loadConfig();
   const { logger, provider } = await dependencies(config);
-  const app = buildServer({ config, provider, logger });
+  const [apiKeys, usage] = await Promise.all([
+    ApiKeyStore.load(config.dataDir, config.apiToken),
+    UsageStore.load(config.dataDir),
+  ]);
+  const app = buildServer({ config, provider, logger, apiKeys, usage });
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'graceful shutdown');
     await app.close();
@@ -182,12 +188,49 @@ async function resetSession(): Promise<void> {
   print('Browser session process reset. Profile and manual login were preserved.');
 }
 
+async function keys(): Promise<void> {
+  const config = await loadConfig();
+  const store = await ApiKeyStore.load(config.dataDir, config.apiToken);
+  const operation = process.argv[3] ?? 'list';
+  if (operation === 'list') {
+    for (const key of store.list())
+      print(
+        `${key.id}\t${key.role}\t${key.revokedAt === undefined ? 'active' : 'revoked'}\t${key.label}`,
+      );
+    return;
+  }
+  if (operation === 'create') {
+    const label = process.argv.slice(4).join(' ').trim();
+    const created = await store.create(label);
+    print(`Created client API key ${created.id} (${created.label}).`);
+    print('Copy this token now; only its SHA-256 digest is stored:');
+    print(created.token);
+    return;
+  }
+  if (operation === 'revoke') {
+    const id = process.argv[4];
+    if (id === undefined || !(await store.revoke(id)))
+      throw new Error('Key ID is missing, unknown, or already revoked.');
+    print(`Revoked API key ${id}.`);
+    return;
+  }
+  throw new Error('Use `keys list`, `keys create <label>`, or `keys revoke <id>`.');
+}
+
+async function usage(): Promise<void> {
+  const config = await loadConfig();
+  const store = await UsageStore.load(config.dataDir);
+  print(JSON.stringify(store.snapshot(), null, 2));
+}
+
 const command = process.argv[2] ?? 'start';
 const commands: Record<string, () => Promise<void>> = {
   start,
   login,
   doctor,
   smoke,
+  keys,
+  usage,
   'reset-session': resetSession,
 };
 
@@ -195,7 +238,7 @@ try {
   const run = commands[command];
   if (run === undefined)
     throw new Error(
-      `Unknown command ${command}. Use start, login, doctor, smoke, or reset-session.`,
+      `Unknown command ${command}. Use start, login, doctor, smoke, keys, usage, or reset-session.`,
     );
   await run();
 } catch (error) {

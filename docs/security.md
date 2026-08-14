@@ -2,7 +2,7 @@
 
 ## Assets and trust boundary
 
-The dedicated persistent browser profile is the highest-value asset because it contains a user-owned authenticated web session. The local API token, prompts, visible responses, and opt-in screenshots are sensitive. ChatGPT.com and local callers are outside the process trust boundary; other processes running as the same OS user are a partially trusted local threat.
+The dedicated persistent browser profile is the highest-value asset because it contains a user-owned authenticated web session. API keys, prompts, visible responses, and opt-in screenshots are sensitive. ChatGPT.com, Cloudflare when enabled, and callers are outside the process trust boundary; other processes running as the same OS user are a partially trusted local threat.
 
 ## Threats and mitigations
 
@@ -11,6 +11,9 @@ The dedicated persistent browser profile is the highest-value asset because it c
 | Exposed DevTools port          | Full browser/session control                      | Direct Playwright uses private transport. GPM mode accepts only a returned `ws://` loopback endpoint and never logs it. GPM owns the unauthenticated port, so malicious same-user processes remain a material residual risk.            |
 | Stolen persistent profile      | Session takeover                                  | Dedicated path inside data directory, gitignore, restrictive directory mode where honored, no export APIs. Disk malware/backups can still steal it; use OS disk encryption and account permissions.                                     |
 | Malicious local process        | Unauthorized prompts/session use                  | Random 256-bit local bearer token and timing-safe SHA-256 digest comparison. Same-user malware may read the token/profile or inject browser input; this cannot be fully prevented in-process.                                           |
+| Public tunnel or Access bypass | Internet-wide use of the authenticated session    | Origin remains loopback; dedicated tunnel only; installer exposes a fixed 418 probe and refuses activation unless Access redirects first; independent revocable per-device tab2api keys remain mandatory.                               |
+| Stolen client API key          | Replay until revocation                           | High-entropy keys, digest-only registry, one key per device, admin/client roles, immediate revoke command, and Cloudflare identity/service authentication as a separate layer.                                                          |
+| Usage database leakage         | Operational metadata disclosure                   | Runtime-only mode-0600 file stores labels, route names, counters, latency, bytes, and estimates; it never stores prompt/response content or plaintext generated client keys.                                                            |
 | Prompt/response leakage        | Private data disclosure                           | Bodies/content are never logged or stored; metadata is content-free and bounded. Debug screenshots are opt-in and sensitive. ChatGPT itself necessarily receives prompts.                                                               |
 | Media leakage                  | Images/audio expose private information           | Remote image URLs are rejected; uploads are memory-bounded and never logged. TTS text and WAV use a restrictive temporary runtime directory and are deleted in `finally`. Debug/live-test media remains ignored runtime data.           |
 | Accidental LAN exposure        | Remote API access                                 | Startup accepts exactly `127.0.0.1` or `::1`; `localhost`, wildcard, and LAN addresses are rejected and tested. No trust-proxy behavior. Host firewall remains defense-in-depth.                                                        |
@@ -25,6 +28,8 @@ GPM Login is an optional, higher-risk backend. tab2api restricts itself to one c
 ## Secret handling
 
 If `TAB2API_API_TOKEN` is absent, `.tab2api/api-token` is created with cryptographically secure randomness and mode `0600` where supported; the runtime directory requests `0700`. Windows ACL inheritance may not map Unix modes exactly. The token value is never printed. Email, password, cookies, access/refresh tokens, localStorage, and authorization headers are never requested, extracted, exported, or logged.
+
+The original token is the local administrator credential. Additional client keys are random, revocable, limited to non-admin routes, and stored only as SHA-256 digests. Use one per device. Cloudflare Access credentials and tunnel credential JSON files are separate secrets and must also remain outside Git.
 
 The repository ignores `.env`, `.tab2api/`, runtime/profile/artifact directories, logs, screenshots, HARs, traces, and archives. Test fixtures contain no real secrets.
 

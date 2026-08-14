@@ -2,7 +2,7 @@
 
 ## Scope and principles
 
-tab2api is a single-user desktop bridge, not an API service for deployment. It automates only the public ChatGPT.com UI after the user logs in manually, using either a dedicated Playwright persistent context or one explicitly configured GPM Login profile. It never asks for credentials, reads/exports browser storage, calls private endpoints, bypasses controls, or selects/rotates accounts.
+tab2api is a single-user desktop bridge, not a shared API service. It automates only the public ChatGPT.com UI after the user logs in manually, using either a dedicated Playwright persistent context or one explicitly configured GPM Login profile. Its origin remains loopback; optional personal remote access requires a dedicated, deny-by-default Access-protected tunnel. It never asks for credentials, reads/exports browser storage, calls private endpoints, bypasses controls, or selects/rotates accounts.
 
 ## Components
 
@@ -12,9 +12,9 @@ tab2api is a single-user desktop bridge, not an API service for deployment. It a
 - `adapters/chatgpt/`: all URL/UI assumptions, selector candidates, state classification, visible-text extraction, and completion state machine.
 - `queue/`: bounded FIFO scheduler with configurable browser concurrency from one through four.
 - `config/`: environment parsing and runtime token loading/creation.
-- `security/`: loopback, safe path, bearer parsing, and timing-safe digest comparison.
+- `security/`: loopback, safe path, bearer parsing, and digest-only per-device API-key registry.
 - `observability/`: Pino configuration with allowlisted request serialization and redaction.
-- `store/`: bounded, content-free response metadata. No transcript persistence.
+- `store/`: bounded response metadata plus content-free usage counters. No transcript persistence.
 - `cli/`: start, login, doctor, reset-session, and offline smoke commands.
 
 `WebChatProvider` is the only abstraction needed for a future UI provider. Routes depend on it and contain no selectors or Playwright imports. A second provider is deliberately not implemented.
@@ -53,9 +53,15 @@ Browser acquisition may relaunch once only before a request obtains a tab. After
 
 Visible UI text can change non-monotonically while ChatGPT formats an answer. Version 0.1 therefore uses a documented buffered SSE fallback rather than claiming reliable token streaming. It emits compatible event/chunk shapes only after completion and ends with `[DONE]`. Token counts and exact UI-selected model are not observable. Chat usage zeros are explicitly annotated unavailable; Responses usage is `null`.
 
+An independent administrative usage store aggregates requests by key and route. Input/output estimates use UTF-8 byte length divided by four and are explicitly named `estimatedInputTokens`/`estimatedOutputTokens`; they are operational trends, not billing data. Persistence is serialized and contains no prompt or response text.
+
+### Optional personal tunnel
+
+Fastify continues to listen only on loopback. A dedicated `cloudflared` connector may proxy it to the owner's hostname only after a fail-closed probe proves that Cloudflare Access intercepts every path. Cloudflare identity/service authentication and the tab2api key are independent layers. Tunnel credentials/configuration remain runtime-only and are never packaged or committed.
+
 ### Media fidelity
 
-Vision and transcription use Playwright's public file chooser with in-memory buffers; no ChatGPT upload endpoint is called directly. Image generation waits for a new semantic image element and captures only its rendered pixels, avoiding extraction of private asset URLs. Consequently output resolution is the displayed resolution and only `auto` size/quality are accepted. Read-aloud audio cannot be extracted safely from the UI without relying on internal transport, so `/v1/audio/speech` deliberately uses the local OS engine and returns a disclosure header.
+Vision and transcription use Playwright's public file chooser with in-memory buffers; no ChatGPT upload endpoint is called directly. Image generation waits for a new semantic image element, isolates it from UI overlays, renders it at intrinsic dimensions, and captures only those pixels without extracting private asset URLs. Only `auto` size/quality are accepted. Read-aloud audio cannot be extracted safely from the UI without relying on internal transport, so `/v1/audio/speech` deliberately uses the local OS engine and returns a disclosure header.
 
 ### Debug data
 
@@ -63,4 +69,4 @@ No prompt, response, DOM, trace, HAR, cookie, or storage state is persisted. Wit
 
 ## Research basis
 
-Reviewed 2026-08-14: [OpenAI Chat resource](https://developers.openai.com/api/reference/resources/chat), [OpenAI streaming responses](https://developers.openai.com/api/docs/guides/streaming-responses), [OpenAI GPT Image 2](https://developers.openai.com/api/docs/models/gpt-image-2), [OpenAI TTS-1](https://developers.openai.com/api/docs/models/tts-1), [OpenAI model modality guidance](https://developers.openai.com/api/docs/models), [Playwright persistent contexts](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context), [Playwright locators](https://playwright.dev/docs/locators), [Fastify server](https://fastify.dev/docs/latest/Reference/Server/), [Fastify validation](https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/), and [GPM Login Local API](https://api-docs.gpmloginapp.com/).
+Reviewed 2026-08-14: [OpenAI Chat resource](https://developers.openai.com/api/reference/resources/chat), [OpenAI streaming responses](https://developers.openai.com/api/docs/guides/streaming-responses), [OpenAI GPT Image 2](https://developers.openai.com/api/docs/models/gpt-image-2), [OpenAI TTS-1](https://developers.openai.com/api/docs/models/tts-1), [OpenAI model modality guidance](https://developers.openai.com/api/docs/models), [Playwright persistent contexts](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context), [Playwright locators](https://playwright.dev/docs/locators), [Fastify server](https://fastify.dev/docs/latest/Reference/Server/), [Fastify validation](https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/), [GPM Login Local API](https://api-docs.gpmloginapp.com/), [Cloudflare published applications](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/), and [Cloudflare Service Auth](https://developers.cloudflare.com/cloudflare-one/access-controls/authenticate-agents/).

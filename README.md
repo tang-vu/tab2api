@@ -8,7 +8,9 @@ This is browser automation, not the official OpenAI API. It may break whenever C
 
 ```mermaid
 flowchart LR
-    C[OpenAI-compatible client] -->|Bearer token / 127.0.0.1| A[Fastify API]
+    C[Local OpenAI-compatible client] -->|Bearer key / 127.0.0.1| A[Fastify API]
+    R[Owner's remote device] -->|Access + bearer key| F[Cloudflare Access<br/>optional]
+    F -->|Dedicated tunnel| A
     A --> V[Strict validation + prompt serializer]
     V --> Q[Bounded FIFO queue<br/>concurrency 1–4, default 1]
     Q --> P[WebChatProvider interface]
@@ -22,6 +24,8 @@ flowchart LR
 ```
 
 No private ChatGPT endpoint is called. Direct Playwright uses its private transport. Optional GPM mode validates both the Local API and returned DevTools WebSocket as loopback-only. The REST server rejects every host except `127.0.0.1` and `::1`.
+
+Optional remote access is for the same owner's devices only. The origin remains loopback and the dedicated tunnel must be protected by deny-by-default Cloudflare Access plus an independent per-device tab2api key. See [the Cloudflare guide](docs/cloudflare.md).
 
 ## Prerequisites
 
@@ -139,6 +143,12 @@ GPM's Local API and DevTools port are separate unauthenticated loopback services
 
 GPM mode ignores `TAB2API_HEADLESS`; window behavior is controlled by GPM Login. Stopping tab2api, completing `npm run login`, or calling reset stops the configured GPM browser while preserving its profile data. GPM does not make ChatGPT selectors stable by itself; UI changes can still require an adapter update.
 
+### Per-device keys, usage, and private remote access
+
+The original `.tab2api/api-token` is the administrator key. Create revocable non-admin keys for other personal devices with `npm run keys -- create "personal laptop"`; the plaintext is printed once and only its SHA-256 digest is persisted. `npm run keys -- list`, `npm run keys -- revoke <id>`, and `npm run usage` manage keys and inspect content-free counters.
+
+Usage includes real request/success/failure, latency, and byte counters. Token totals are explicitly estimated because ChatGPT Web exposes no authoritative usage. They are not suitable for billing. For `tab2api.tangvu.dev`, follow [docs/cloudflare.md](docs/cloudflare.md); the Windows installer refuses to activate the connector until its safe probe proves Cloudflare Access is in front of the entire hostname.
+
 ## Supported API and limitations
 
 - `GET /healthz`, `GET /readyz`, `GET /v1/models`
@@ -146,6 +156,7 @@ GPM mode ignores `TAB2API_HEADLESS`; window behavior is controlled by GPM Login.
 - `POST /v1/images/generations`
 - `POST /v1/audio/speech`, `POST /v1/audio/transcriptions`
 - `POST /admin/session/reset`
+- `GET/POST/DELETE /admin/api-keys`, `GET/DELETE /admin/usage` (administrator only)
 - Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs. Remote image URLs are rejected.
 - The truthful model is always `chatgpt-web`. A different incoming model string is client metadata and does not control the ChatGPT UI model picker.
 - Tool calls, image editing, live voice/realtime audio, MP3 TTS, JSON schema output, logprobs, and accurate sampling/model controls are not supported.
@@ -158,7 +169,7 @@ GPM mode ignores `TAB2API_HEADLESS`; window behavior is controlled by GPM Login.
 
 ## Security
 
-The dedicated profile grants access to your logged-in session: protect it like a credential. Do not sync or share `.tab2api`, screenshots, logs, or token files. Never point `TAB2API_PROFILE_DIR` at your normal browser profile. Keep the server on loopback. See [the threat model](docs/security.md) and [architecture decisions](docs/architecture.md).
+The dedicated profile grants access to your logged-in session: protect it like a credential. Do not sync or share `.tab2api`, screenshots, logs, token files, Cloudflare credentials, or service-token secrets. Never point `TAB2API_PROFILE_DIR` at your normal browser profile. Keep the server itself on loopback; never run a tunnel without Access. See [the threat model](docs/security.md) and [architecture decisions](docs/architecture.md).
 
 ## Troubleshooting
 
@@ -175,11 +186,17 @@ npm run check        typecheck, lint, formatting check
 npm run login        manual dedicated-profile login
 npm run doctor       environment/session diagnostics
 npm run smoke        offline fake-adapter API smoke test
+npm run keys -- create "device label" # print one revocable client key once
+npm run keys -- list                  # list key metadata, never secrets
+npm run usage                         # per-key content-free usage estimates
 npm run autostart:install # Windows per-user startup task
 npm run autostart:status  # Windows task and loopback liveness
 npm run autostart:remove  # remove task; preserve runtime/profile
+npm run tunnel:install    # fail-closed Access check + tunnel startup task
+npm run tunnel:status     # inspect tunnel task
+npm run tunnel:remove     # stop/remove tunnel task; preserve DNS/credentials
 ```
 
 Manual E2E is never part of CI. After reviewing its prompt and logging into the dedicated profile, explicitly opt in with `$env:TAB2API_MANUAL_E2E='1'; npm run test:manual` on PowerShell or `TAB2API_MANUAL_E2E=1 npm run test:manual` on macOS/Linux. Without that variable, the manual test is skipped.
 
-See [API details](docs/api.md), [contributing](CONTRIBUTING.md), and the [Vietnamese README](README_VI.md). Licensed under MIT.
+See [API details](docs/api.md), [Cloudflare remote access](docs/cloudflare.md), [contributing](CONTRIBUTING.md), and the [Vietnamese README](README_VI.md). Licensed under MIT.

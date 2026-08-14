@@ -14,6 +14,8 @@ import type {
 import { FakeProvider } from '../src/testing/fake-provider.js';
 import { testConfig } from './helpers.js';
 import type { SpeechSynthesizer } from '../src/audio/system-speech.js';
+import { ApiKeyStore } from '../src/security/api-keys.js';
+import { UsageStore } from '../src/store/usage.js';
 
 const auth = { authorization: 'Bearer test-only-token-that-is-long-enough' };
 
@@ -81,6 +83,66 @@ describe('Fastify API contract', () => {
     expect(response.json().model).toBe('chatgpt-web');
     expect(response.json().choices[0].message.content).toBe('chat answer');
     expect(provider.prompts[0]).toContain('hello');
+    await app.close();
+  });
+
+  it('supports revocable client keys and admin-only estimated usage statistics', async () => {
+    const config = testConfig();
+    const apiKeys = ApiKeyStore.memory(config.apiToken);
+    const usage = UsageStore.memory();
+    const created = await apiKeys.create('Laptop client');
+    const clientAuth = { authorization: `Bearer ${created.token}` };
+    const app = buildServer({
+      config,
+      provider: new FakeProvider('measured answer'),
+      logger: createLogger('silent'),
+      apiKeys,
+      usage,
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      headers: clientAuth,
+      payload: { model: 'chatgpt-web', input: 'measure this request' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(
+      (await app.inject({ method: 'GET', url: '/admin/usage', headers: clientAuth })).statusCode,
+    ).toBe(401);
+    const report = await app.inject({ method: 'GET', url: '/admin/usage', headers: auth });
+    expect(report.statusCode).toBe(200);
+    const reportBody = z
+      .object({
+        tokenCounts: z.literal('estimated'),
+        keys: z.array(
+          z.object({
+            keyId: z.string(),
+            requests: z.number(),
+            successful: z.number(),
+            failed: z.number(),
+            estimatedInputTokens: z.number(),
+            estimatedOutputTokens: z.number(),
+            inputBytes: z.number(),
+            outputBytes: z.number(),
+          }),
+        ),
+      })
+      .parse(report.json());
+    const clientUsage = reportBody.keys.find((entry) => entry.keyId === created.id);
+    expect(reportBody.tokenCounts).toBe('estimated');
+    expect(clientUsage).toBeDefined();
+    if (clientUsage === undefined) throw new Error('client usage was not recorded');
+    expect(clientUsage.requests).toBe(2);
+    expect(clientUsage.successful).toBe(1);
+    expect(clientUsage.failed).toBe(1);
+    expect(clientUsage.estimatedInputTokens).toBeGreaterThan(0);
+    expect(clientUsage.estimatedOutputTokens).toBeGreaterThan(0);
+    expect(clientUsage.inputBytes).toBeGreaterThan(0);
+    expect(clientUsage.outputBytes).toBeGreaterThan(0);
+    expect(await apiKeys.revoke(created.id)).toBe(true);
+    expect(
+      (await app.inject({ method: 'GET', url: '/v1/models', headers: clientAuth })).statusCode,
+    ).toBe(401);
     await app.close();
   });
 

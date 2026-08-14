@@ -2,15 +2,17 @@ import { randomUUID } from 'node:crypto';
 import multipart from '@fastify/multipart';
 import Fastify, { LogController, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { Logger } from 'pino';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 import type { AppConfig } from '../config/index.js';
 import { AppError, asSafeAppError } from '../errors.js';
 import type { WebChatProvider } from '../provider.js';
 import type { AudioMimeType, MediaAttachment } from '../provider.js';
 import { FifoQueue } from '../queue/fifo.js';
 import { SystemSpeechSynthesizer, type SpeechSynthesizer } from '../audio/system-speech.js';
-import { parseBearer, secureTokenEqual } from '../security/token.js';
+import { ApiKeyStore, type ApiPrincipal } from '../security/api-keys.js';
+import { parseBearer } from '../security/token.js';
 import { MetadataStore } from '../store/metadata.js';
+import { UsageStore } from '../store/usage.js';
 import { API_MODEL, chatSse, mapChatCompletion, mapResponse, responsesSse } from './mappers.js';
 import {
   chatCompletionRequestSchema,
@@ -40,11 +42,13 @@ function errorEnvelope(error: AppError): ErrorEnvelope {
   return { error: detail };
 }
 
-function authenticate(request: FastifyRequest, token: string): void {
+function authenticate(request: FastifyRequest, keys: ApiKeyStore): ApiPrincipal {
   const presented = parseBearer(request.headers.authorization);
-  if (presented === undefined || !secureTokenEqual(presented, token)) {
-    throw new AppError('authentication_error', 'A valid local bearer token is required.');
+  const principal = presented === undefined ? undefined : keys.authenticate(presented);
+  if (principal === undefined) {
+    throw new AppError('authentication_error', 'A valid tab2api bearer key is required.');
   }
+  return principal;
 }
 
 function requestAbortController(
@@ -83,6 +87,16 @@ export interface ServerDependencies {
   queue?: FifoQueue;
   store?: MetadataStore;
   speech?: SpeechSynthesizer;
+  apiKeys?: ApiKeyStore;
+  usage?: UsageStore;
+}
+
+interface UsageDraft {
+  startedAt: number;
+  inputText?: string;
+  outputText?: string;
+  inputBytes: number;
+  outputBytes: number;
 }
 
 const AUDIO_MIME_TYPES = new Set<AudioMimeType>([
@@ -120,6 +134,10 @@ export function buildServer(dependencies: ServerDependencies) {
   const queue = dependencies.queue ?? new FifoQueue(config.concurrency, config.queueCapacity);
   const store = dependencies.store ?? new MetadataStore();
   const speech = dependencies.speech ?? new SystemSpeechSynthesizer(config);
+  const apiKeys = dependencies.apiKeys ?? ApiKeyStore.memory(config.apiToken);
+  const usage = dependencies.usage ?? UsageStore.memory();
+  const principals = new WeakMap<FastifyRequest, ApiPrincipal>();
+  const usageDrafts = new WeakMap<FastifyRequest, UsageDraft>();
   const app = Fastify({
     loggerInstance: logger,
     logController: new LogController({ disableRequestLogging: true }),
@@ -141,9 +159,38 @@ export function buildServer(dependencies: ServerDependencies) {
   });
 
   app.addHook('onRequest', async (request) => {
+    const declaredBytes = Number(request.headers['content-length'] ?? 0);
+    usageDrafts.set(request, {
+      startedAt: performance.now(),
+      inputBytes: Number.isSafeInteger(declaredBytes) && declaredBytes > 0 ? declaredBytes : 0,
+      outputBytes: 0,
+    });
     request.log.info({ req: request }, 'request started');
   });
+  app.addHook('onSend', async (request, _reply, payload) => {
+    const draft = usageDrafts.get(request);
+    if (draft !== undefined) {
+      if (typeof payload === 'string') draft.outputBytes = Buffer.byteLength(payload);
+      else if (Buffer.isBuffer(payload)) draft.outputBytes = payload.length;
+    }
+    return payload;
+  });
   app.addHook('onResponse', async (request, reply) => {
+    const principal = principals.get(request);
+    const draft = usageDrafts.get(request);
+    if (principal !== undefined && draft !== undefined) {
+      void usage
+        .record(principal, {
+          endpoint: request.routeOptions.url ?? request.url.split('?')[0] ?? 'unknown',
+          successful: reply.statusCode < 400,
+          latencyMs: performance.now() - draft.startedAt,
+          ...(draft.inputText === undefined ? {} : { inputText: draft.inputText }),
+          ...(draft.outputText === undefined ? {} : { outputText: draft.outputText }),
+          inputBytes: draft.inputBytes,
+          outputBytes: draft.outputBytes,
+        })
+        .catch(() => logger.warn({ requestId: request.id }, 'usage statistics persistence failed'));
+    }
     request.log.info({ requestId: request.id, statusCode: reply.statusCode }, 'request completed');
   });
 
@@ -154,8 +201,21 @@ export function buildServer(dependencies: ServerDependencies) {
     return reply.code(ready ? 200 : 503).send({ status: ready ? 'ready' : 'not_ready', session });
   });
 
-  const authenticated = (request: FastifyRequest) =>
-    Promise.resolve(authenticate(request, config.apiToken));
+  const setPrincipal = (request: FastifyRequest) => {
+    principals.set(request, authenticate(request, apiKeys));
+  };
+  const authenticated = async (request: FastifyRequest) => {
+    setPrincipal(request);
+  };
+  const adminOnly = async (request: FastifyRequest) => {
+    setPrincipal(request);
+    if (principals.get(request)?.role !== 'admin')
+      throw new AppError('authentication_error', 'An administrator API key is required.');
+  };
+  const observe = (request: FastifyRequest, values: Partial<Omit<UsageDraft, 'startedAt'>>) => {
+    const draft = usageDrafts.get(request);
+    if (draft !== undefined) Object.assign(draft, values);
+  };
 
   app.get('/v1/models', { preHandler: authenticated }, async () => ({
     object: 'list',
@@ -195,12 +255,14 @@ export function buildServer(dependencies: ServerDependencies) {
     },
     async (request, reply) => {
       const body = chatCompletionRequestSchema.parse(request.body);
+      const prompt = serializeChatRequest(body);
+      observe(request, { inputText: prompt });
       const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
       try {
         const result = await queue.enqueue(
           () =>
             provider.generate({
-              prompt: serializeChatRequest(body),
+              prompt,
               signal: lifecycle.controller.signal,
               requestId: request.id,
               attachments: chatAttachments(body, config.mediaLimitBytes),
@@ -208,6 +270,7 @@ export function buildServer(dependencies: ServerDependencies) {
           lifecycle.controller.signal,
         );
         const response = mapChatCompletion(result.text);
+        observe(request, { outputText: result.text });
         store.set({ id: response.id, createdAt: response.created, status: 'completed' });
         if (body.stream) {
           return reply
@@ -231,12 +294,14 @@ export function buildServer(dependencies: ServerDependencies) {
     },
     async (request, reply) => {
       const body = responsesRequestSchema.parse(request.body);
+      const prompt = serializeResponsesRequest(body);
+      observe(request, { inputText: prompt });
       const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
       try {
         const result = await queue.enqueue(
           () =>
             provider.generate({
-              prompt: serializeResponsesRequest(body),
+              prompt,
               signal: lifecycle.controller.signal,
               requestId: request.id,
               attachments: responsesAttachments(body, config.mediaLimitBytes),
@@ -244,6 +309,7 @@ export function buildServer(dependencies: ServerDependencies) {
           lifecycle.controller.signal,
         );
         const response = mapResponse(result.text);
+        observe(request, { outputText: result.text });
         store.set({ id: response.id, createdAt: response.created_at, status: 'completed' });
         if (body.stream) {
           return reply
@@ -261,6 +327,7 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.post('/v1/images/generations', { preHandler: authenticated }, async (request, reply) => {
     const body = imageGenerationRequestSchema.parse(request.body);
+    observe(request, { inputText: body.prompt });
     const lifecycle = requestAbortController(request, reply, config.imageTimeoutMs);
     try {
       const result = await queue.enqueue(
@@ -272,6 +339,7 @@ export function buildServer(dependencies: ServerDependencies) {
           }),
         lifecycle.controller.signal,
       );
+      observe(request, { outputBytes: result.data.length });
       return reply.header('x-tab2api-image-mode', 'ui-intrinsic-render').send({
         created: Math.floor(Date.now() / 1000),
         data: [{ b64_json: result.data.toString('base64') }],
@@ -283,6 +351,7 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.post('/v1/audio/speech', { preHandler: authenticated }, async (request, reply) => {
     const body = speechRequestSchema.parse(request.body);
+    observe(request, { inputText: body.input });
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       const audio = await queue.enqueue(
@@ -294,6 +363,7 @@ export function buildServer(dependencies: ServerDependencies) {
           }),
         lifecycle.controller.signal,
       );
+      observe(request, { outputBytes: audio.length });
       return reply
         .header('content-type', 'audio/wav')
         .header('x-tab2api-audio-backend', 'operating-system')
@@ -351,6 +421,7 @@ export function buildServer(dependencies: ServerDependencies) {
       ]
         .filter(Boolean)
         .join('\n');
+      observe(request, { inputText: instructions, inputBytes: attachment.data.length });
       const result = await queue.enqueue(
         () =>
           provider.generate({
@@ -361,6 +432,7 @@ export function buildServer(dependencies: ServerDependencies) {
           }),
         lifecycle.controller.signal,
       );
+      observe(request, { outputText: result.text });
       if (responseFormat === 'text')
         return reply.type('text/plain; charset=utf-8').send(result.text);
       return { text: result.text };
@@ -369,7 +441,37 @@ export function buildServer(dependencies: ServerDependencies) {
     }
   });
 
-  app.post('/admin/session/reset', { preHandler: authenticated }, async () => {
+  app.get('/admin/api-keys', { preHandler: adminOnly }, async () => ({ data: apiKeys.list() }));
+
+  app.post('/admin/api-keys', { preHandler: adminOnly }, async (request) => {
+    const body = z
+      .object({ label: z.string().trim().min(1).max(80) })
+      .strict()
+      .parse(request.body);
+    try {
+      return await apiKeys.create(body.label);
+    } catch (error) {
+      throw new AppError(
+        'invalid_request',
+        error instanceof Error ? error.message : 'Could not create the API key.',
+      );
+    }
+  });
+
+  app.delete('/admin/api-keys/:id', { preHandler: adminOnly }, async (request) => {
+    const { id } = z.object({ id: z.string().regex(/^[a-f0-9]{16}$/) }).parse(request.params);
+    if (!(await apiKeys.revoke(id)))
+      throw new AppError('invalid_request', 'The API key does not exist or is already revoked.');
+    return { status: 'revoked', id };
+  });
+
+  app.get('/admin/usage', { preHandler: adminOnly }, async () => usage.snapshot());
+  app.delete('/admin/usage', { preHandler: adminOnly }, async () => {
+    await usage.reset();
+    return { status: 'reset', tokenCounts: 'estimated' };
+  });
+
+  app.post('/admin/session/reset', { preHandler: adminOnly }, async () => {
     await provider.reset();
     return {
       status: 'reset',
@@ -399,6 +501,7 @@ export function buildServer(dependencies: ServerDependencies) {
   app.addHook('onClose', async () => {
     queue.close();
     await provider.close();
+    await Promise.all([apiKeys.flush(), usage.flush()]);
   });
   return app;
 }

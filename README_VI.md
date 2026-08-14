@@ -8,7 +8,9 @@
 
 ```mermaid
 flowchart LR
-    C[OpenAI-compatible client] -->|Bearer / 127.0.0.1| A[Fastify API]
+    C[Client local] -->|Bearer key / 127.0.0.1| A[Fastify API]
+    R[Thiết bị cá nhân từ xa] -->|Access + bearer key| F[Cloudflare Access<br/>tùy chọn]
+    F -->|Tunnel riêng| A
     A --> V[Validate + serialize]
     V --> Q[FIFO queue có giới hạn<br/>concurrency 1–4, mặc định 1]
     Q --> P[Provider interface]
@@ -22,6 +24,8 @@ flowchart LR
 ```
 
 Không gọi endpoint private của ChatGPT. Direct Playwright không mở TCP DevTools port; GPM mode chỉ chấp nhận Local API và DevTools WebSocket trên loopback. Server từ chối bind ngoài `127.0.0.1`/`::1`.
+
+Truy cập từ xa tùy chọn chỉ dành cho các thiết bị của cùng chủ sở hữu. Origin vẫn ở loopback; tunnel riêng bắt buộc có Cloudflare Access deny-by-default và một tab2api key riêng cho từng thiết bị. Xem [hướng dẫn Cloudflare](docs/cloudflare.md).
 
 ## Yêu cầu
 
@@ -116,6 +120,12 @@ const client = new OpenAI({
 
 Mỗi request mở một hội thoại mới. `TAB2API_CONCURRENCY` cho phép 1–4 tab chạy song song; mặc định an toàn là 1. Chỉ nên thử mức 2 sau khi test thật vì một tài khoản có thể bị rate-limit và mỗi tab tốn RAM. Queue vẫn bị giới hạn và giữ thứ tự FIFO. `npm run doctor` kiểm tra Node, browser, quyền ghi, port, token local, kết nối, trạng thái đăng nhập và selector. `npm run reset-session` đóng browser process nhưng giữ profile/login.
 
+### API key, thống kê và truy cập từ xa
+
+Token trong `.tab2api/api-token` là key administrator. Tạo key client có thể revoke cho từng máy bằng `npm run keys -- create "laptop cá nhân"`; plaintext chỉ hiện một lần và runtime chỉ lưu SHA-256 digest. Dùng `npm run keys -- list`, `npm run keys -- revoke <id>` và `npm run usage` để quản lý/xem thống kê.
+
+Số request, thành công/thất bại, latency và bytes là số đo thực. Token chỉ là ước tính vì ChatGPT Web không cung cấp usage chính xác; không dùng cho billing. Với `tab2api.tangvu.dev`, làm theo [docs/cloudflare.md](docs/cloudflare.md). Installer Windows sẽ từ chối bật connector nếu probe chưa chứng minh Cloudflare Access bảo vệ toàn hostname.
+
 ### Tự chạy trên Windows
 
 Sau khi cấu hình `.env` và build, cài Scheduled Task cho user hiện tại:
@@ -151,9 +161,15 @@ npm run check
 npm run login
 npm run doctor
 npm run smoke
+npm run keys -- create "tên thiết bị"
+npm run keys -- list
+npm run usage
 npm run autostart:install
 npm run autostart:status
 npm run autostart:remove
+npm run tunnel:install
+npm run tunnel:status
+npm run tunnel:remove
 ```
 
 Manual E2E không chạy trong CI. Chỉ sau khi đọc prompt test và đăng nhập, bật rõ ràng bằng `$env:TAB2API_MANUAL_E2E='1'; npm run test:manual`. Không có biến này thì test được skip.

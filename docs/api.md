@@ -1,6 +1,6 @@
 # API contract
 
-Base URL: `http://127.0.0.1:3210`. Protected endpoints require `Authorization: Bearer <local-token>`. `/healthz` and `/readyz` are unauthenticated but loopback-only.
+Local base URL: `http://127.0.0.1:3210`. Protected endpoints require `Authorization: Bearer <tab2api-key>`. `/healthz` and `/readyz` are unauthenticated at the origin; an optional remote hostname must place Cloudflare Access in front of every path.
 
 ## Endpoints
 
@@ -60,7 +60,22 @@ curl.exe http://127.0.0.1:3210/v1/audio/transcriptions `
 
 ### `POST /admin/session/reset`
 
-Closes the current browser context. The next operation relaunches it. Dedicated profile/login data is deliberately preserved. This endpoint does not delete files.
+Requires the administrator bearer token. Closes the current browser context. The next operation relaunches it. Dedicated profile/login data is deliberately preserved. This endpoint does not delete files. Client keys receive HTTP 401.
+
+### API-key administration
+
+- `GET /admin/api-keys`: list the administrator identity plus active/revoked client-key metadata; no plaintext secret is returned.
+- `POST /admin/api-keys` with strict `{ "label": "personal laptop" }`: create a client key and return its plaintext token exactly once.
+- `DELETE /admin/api-keys/:id`: revoke a client key immediately.
+
+All require the administrator token. Client keys may call `/v1/*` but no `/admin/*` route.
+
+### Usage administration
+
+- `GET /admin/usage`: per-key and per-endpoint request/success/failure, latency, byte totals, and `estimatedInputTokens`/`estimatedOutputTokens`.
+- `DELETE /admin/usage`: reset counters.
+
+`tokenCounts` is always `"estimated"`. The UI provides no real tokenizer/account usage, so these byte-based estimates are unsuitable for billing or quota claims. No prompt or response text is persisted.
 
 ## Errors
 

@@ -21,6 +21,8 @@ describe('structured log redaction', () => {
       },
       authorization: 'Bearer secret-auth',
       apiToken: 'secret-token',
+      clientSecret: 'secret-cloudflare-access',
+      digest: 'secret-key-digest',
       prompt: 'secret-prompt',
       response: 'secret-response',
     });
@@ -29,6 +31,8 @@ describe('structured log redaction', () => {
     expect(output).not.toContain('secret-token');
     expect(output).not.toContain('secret-prompt');
     expect(output).not.toContain('secret-response');
+    expect(output).not.toContain('secret-cloudflare-access');
+    expect(output).not.toContain('secret-key-digest');
     expect(output).toContain('[REDACTED]');
   });
 });
