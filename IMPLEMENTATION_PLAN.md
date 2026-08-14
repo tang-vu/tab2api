@@ -18,7 +18,7 @@ An authenticated Fastify server bound only to `127.0.0.1` validates OpenAI-shape
 | done   | 5. CLI/docs/OSS                          | start/login/doctor/reset/smoke; bilingual guides; security/API/troubleshooting; CI/templates/license                           | docs reviewed; CLI smoke passed             |
 | done   | 6. Security review/release verification  | Full diff audit, no runtime/secrets, clean install/check/test/build/smoke/audit                                                | acceptance command transcript recorded      |
 | done   | 7. Media compatibility                   | Vision/image generation, honest OS TTS, UI-mediated STT; bounded media and contract/live tests                                 | focused tests and live GPM E2E passed       |
-| active | 8. Personal remote access and accounting | Revocable per-device API keys, content-free usage estimates, Access-gated dedicated Cloudflare tunnel                          | focused/full tests and Access probe         |
+| done   | 8. Personal remote access and accounting | Revocable per-device API keys, content-free usage estimates, explicitly selected bearer-only dedicated Cloudflare tunnel       | focused/full tests and remote contract test |
 
 ## Risks and decisions
 
@@ -34,7 +34,7 @@ An authenticated Fastify server bound only to `127.0.0.1` validates OpenAI-shape
 - **Desktop availability:** optional Windows per-user Scheduled Task starts at logon and restarts process failures. It is not a production SLA and still depends on an interactive GPM/login session.
 - **Parallelism:** browser concurrency is configurable from 1–4 and defaults to 1. Higher values trade latency under load for memory use, UI race exposure, and account rate limits.
 - **Media fidelity:** vision and STT upload through the public file chooser. Generated images are captured from the visible image element rather than fetched from private URLs. TTS uses the OS voice engine and is labelled honestly; unsupported size/quality/audio formats are rejected.
-- **Remote access:** the origin stays on loopback. A dedicated Cloudflare tunnel is permitted only for this owner's devices and only behind a deny-by-default Access application plus a separate revocable tab2api key. The installer probes Access with a fixed 418 origin and fails closed rather than briefly exposing tab2api.
+- **Remote access:** the origin stays on loopback and the tunnel remains single-owner. Access is the default/recommended installer path. After explicit operator acceptance, a separate bearer-only command may activate the dedicated tunnel; `/readyz`, all `/v1/*`, and all `/admin/*` remain authenticated while only cheap `/healthz` is public.
 - **Usage privacy:** API-key files store SHA-256 digests, not generated plaintext keys. Usage persistence contains labels, endpoint names, counters, latency, byte totals, and explicitly estimated token totals; never content.
 
 ## Research record (official sources, reviewed 2026-08-14)
@@ -67,6 +67,7 @@ Completed on Windows/PowerShell with Node v24.14.1 and npm 11.11.0:
 - Windows per-user autostart: installed task reached health/readiness/models HTTP 200; a forced termination of the exact tab2api Node PID recovered to a new PID through the bounded watchdog. GPM Login autostart was detected separately in the user's Startup folder.
 - Live media verification: vision data-URL upload returned text; OS TTS returned a valid RIFF/WAV; that WAV transcribed through multipart/UI; image generation returned a valid PNG `b64_json`. After the intrinsic-render fix, a fresh live Images API request returned HTTP 200 with a 1254x1254 PNG instead of the 480x480 chat preview. Only status and structural metadata were printed, and runtime media remained ignored.
 - API-key/usage verification: digest-only persistence tests and admin/client contract tests passed. A live local create/use/admin-deny/report/revoke sequence returned the expected 200/401 statuses and rejected the revoked key; no ChatGPT prompt was submitted.
-- Cloudflare: a dedicated `tab2api` tunnel and DNS route for `tab2api.tangvu.dev` were created while offline. A fixed-418 origin probe proved Cloudflare Access is not yet configured, so the fail-closed installer refused to register/start the connector. Remote activation remains pending the owner's Access policy or a scoped Cloudflare API token.
+- Cloudflare: a dedicated `tab2api` tunnel and DNS route for `tab2api.tangvu.dev` were created while offline. A fixed-418 origin probe proved Cloudflare Access is not configured. The owner then explicitly selected the separately documented bearer-only activation path and remote contract verification was performed.
+- Bearer-only remote verification: the Windows tunnel task reached Running. Through `https://tab2api.tangvu.dev`, cheap health returned 200; readiness/models without a key returned 401; a temporary client key reached models but not admin usage; the administrator reached usage; and revocation immediately changed that client key to 401. No ChatGPT prompt was submitted.
 - `npm audit --audit-level=high`: zero vulnerabilities.
 - `git diff --check`, ignored-file review, sensitive-term review, and package dry-run completed.

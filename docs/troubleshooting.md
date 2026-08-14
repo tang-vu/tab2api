@@ -4,7 +4,7 @@ Start with `npm run doctor`; it reports actionable checks without printing the l
 
 ## Cloudflare installer says Access is not protecting the hostname
 
-This is a fail-closed result, not a tunnel failure. Create a Cloudflare Zero Trust self-hosted Access application covering all of `tab2api.tangvu.dev`; allow only your identity with MFA or a per-device Service Auth token. Never add `Everyone` or `Bypass`. Then rerun `npm run tunnel:install`. See [cloudflare.md](cloudflare.md).
+This is a fail-closed result, not a tunnel failure. The recommended fix is a Cloudflare Zero Trust self-hosted Access application covering all of `tab2api.tangvu.dev`, followed by `npm run tunnel:install`. A single owner who explicitly accepts bearer-only public reachability may instead run `npm run tunnel:install:bearer-only`. See [cloudflare.md](cloudflare.md).
 
 ## Chromium executable missing
 

@@ -32,6 +32,7 @@
     "autostart:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/status-autostart.ps1",
     "autostart:remove": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/remove-autostart.ps1",
     "tunnel:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install-cloudflare-autostart.ps1",
+    "tunnel:install:bearer-only": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install-cloudflare-autostart.ps1 -AllowBearerOnly",
     "tunnel:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/status-cloudflare-autostart.ps1",
     "tunnel:remove": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/remove-cloudflare-autostart.ps1",
     "test": "vitest run",

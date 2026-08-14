@@ -2,7 +2,7 @@
 
 ## Product and safety invariant
 
-`tab2api` is an unofficial browser automation bridge for one user operating one manually authenticated ChatGPT.com profile. Its HTTP origin and DevTools must remain bound to loopback. Optional personal remote access must use a dedicated tunnel protected by deny-by-default identity/service authentication plus an independent tab2api client key; never operate a public, bypassed, shared, or multi-user proxy. Never read, export, print, persist outside the dedicated profile, or log credentials, cookies, web storage, access/refresh tokens, or authorization headers. Never call private ChatGPT endpoints, bypass challenges/rate limits/paywalls, or rotate accounts/profiles. GPM Login support may only get/start/stop the one explicitly configured profile; do not add profile, proxy, fingerprint, group, or extension management.
+`tab2api` is an unofficial browser automation bridge for one user operating one manually authenticated ChatGPT.com profile. Its HTTP origin and DevTools must remain bound to loopback. Optional personal remote access must use a dedicated tunnel and an independent revocable tab2api client key. Cloudflare Access is preferred; bearer-only activation requires an explicit operator flag and must remain single-owner, never shared or multi-user. Never read, export, print, persist outside the dedicated profile, or log credentials, cookies, web storage, access/refresh tokens, or authorization headers. Never call private ChatGPT endpoints, bypass challenges/rate limits/paywalls, or rotate accounts/profiles. GPM Login support may only get/start/stop the one explicitly configured profile; do not add profile, proxy, fingerprint, group, or extension management.
 
 ## Engineering rules
 

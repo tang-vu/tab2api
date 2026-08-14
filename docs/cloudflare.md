@@ -1,8 +1,8 @@
 # Private remote access with Cloudflare
 
-`tab2api` remains bound to `127.0.0.1`. A Cloudflare Tunnel may proxy the loopback origin only when a Cloudflare Access application protects the entire hostname first. A tunnel without Access is a public Internet route and is unsupported.
+`tab2api` remains bound to `127.0.0.1`. Cloudflare Access is the recommended outer layer. For a single owner who explicitly accepts public reachability, a separate bearer-only installer is supported; application authentication still protects every browser/admin route and only cheap process liveness is public.
 
-## Required controls
+## Recommended Access mode
 
 1. Create a dedicated named tunnel; never reuse another project's tunnel.
 2. Route the dedicated tunnel to `tab2api.tangvu.dev`.
@@ -31,6 +31,16 @@ npm run tunnel:status
 ```
 
 The installer starts a temporary tunnel whose origin is a fixed HTTP 418 response. It refuses installation unless Cloudflare intercepts that response and redirects to a `cloudflareaccess.com` login host. It never exposes tab2api during this check.
+
+## Explicit bearer-only mode
+
+If the owner accepts that the hostname is publicly reachable and relies on tab2api keys, activate with:
+
+```powershell
+npm run tunnel:install:bearer-only
+```
+
+This explicit command skips only the Access probe. It does not disable tab2api authentication: `/readyz`, `/v1/*`, and `/admin/*` require a bearer key; `/healthz` is the sole unauthenticated route and performs no browser work. Use one revocable client key per device, never transmit the administrator token to remote clients, and remove the task immediately if a key may have leaked.
 
 Remove autostart without deleting DNS or credentials:
 

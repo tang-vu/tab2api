@@ -9,8 +9,8 @@
 ```mermaid
 flowchart LR
     C[Client local] -->|Bearer key / 127.0.0.1| A[Fastify API]
-    R[Thiết bị cá nhân từ xa] -->|Access + bearer key| F[Cloudflare Access<br/>tùy chọn]
-    F -->|Tunnel riêng| A
+    R[Thiết bị cá nhân từ xa] -->|Bearer key<br/>khuyến nghị Access| F[Cloudflare Tunnel riêng]
+    F --> A
     A --> V[Validate + serialize]
     V --> Q[FIFO queue có giới hạn<br/>concurrency 1–4, mặc định 1]
     Q --> P[Provider interface]
@@ -25,7 +25,7 @@ flowchart LR
 
 Không gọi endpoint private của ChatGPT. Direct Playwright không mở TCP DevTools port; GPM mode chỉ chấp nhận Local API và DevTools WebSocket trên loopback. Server từ chối bind ngoài `127.0.0.1`/`::1`.
 
-Truy cập từ xa tùy chọn chỉ dành cho các thiết bị của cùng chủ sở hữu. Origin vẫn ở loopback; tunnel riêng bắt buộc có Cloudflare Access deny-by-default và một tab2api key riêng cho từng thiết bị. Xem [hướng dẫn Cloudflare](docs/cloudflare.md).
+Truy cập từ xa tùy chọn chỉ dành cho các thiết bị của cùng chủ sở hữu. Origin vẫn ở loopback và mỗi thiết bị cần một tab2api key có thể revoke. Cloudflare Access được khuyến nghị; chế độ bearer-only phải được chọn rõ ràng. Xem [hướng dẫn Cloudflare](docs/cloudflare.md).
 
 ## Yêu cầu
 
@@ -124,7 +124,7 @@ Mỗi request mở một hội thoại mới. `TAB2API_CONCURRENCY` cho phép 1�
 
 Token trong `.tab2api/api-token` là key administrator. Tạo key client có thể revoke cho từng máy bằng `npm run keys -- create "laptop cá nhân"`; plaintext chỉ hiện một lần và runtime chỉ lưu SHA-256 digest. Dùng `npm run keys -- list`, `npm run keys -- revoke <id>` và `npm run usage` để quản lý/xem thống kê.
 
-Số request, thành công/thất bại, latency và bytes là số đo thực. Token chỉ là ước tính vì ChatGPT Web không cung cấp usage chính xác; không dùng cho billing. Với `tab2api.tangvu.dev`, làm theo [docs/cloudflare.md](docs/cloudflare.md). Installer Windows sẽ từ chối bật connector nếu probe chưa chứng minh Cloudflare Access bảo vệ toàn hostname.
+Số request, thành công/thất bại, latency và bytes là số đo thực. Token chỉ là ước tính vì ChatGPT Web không cung cấp usage chính xác; không dùng cho billing. Với `tab2api.tangvu.dev`, làm theo [docs/cloudflare.md](docs/cloudflare.md). Installer mặc định kiểm tra Access; lệnh bearer-only riêng yêu cầu chủ máy chủ động lựa chọn.
 
 ### Tự chạy trên Windows
 
@@ -168,6 +168,7 @@ npm run autostart:install
 npm run autostart:status
 npm run autostart:remove
 npm run tunnel:install
+npm run tunnel:install:bearer-only
 npm run tunnel:status
 npm run tunnel:remove
 ```

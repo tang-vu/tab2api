@@ -9,8 +9,8 @@ This is browser automation, not the official OpenAI API. It may break whenever C
 ```mermaid
 flowchart LR
     C[Local OpenAI-compatible client] -->|Bearer key / 127.0.0.1| A[Fastify API]
-    R[Owner's remote device] -->|Access + bearer key| F[Cloudflare Access<br/>optional]
-    F -->|Dedicated tunnel| A
+    R[Owner's remote device] -->|Bearer key<br/>Access recommended| F[Dedicated Cloudflare Tunnel]
+    F --> A
     A --> V[Strict validation + prompt serializer]
     V --> Q[Bounded FIFO queue<br/>concurrency 1–4, default 1]
     Q --> P[WebChatProvider interface]
@@ -25,7 +25,7 @@ flowchart LR
 
 No private ChatGPT endpoint is called. Direct Playwright uses its private transport. Optional GPM mode validates both the Local API and returned DevTools WebSocket as loopback-only. The REST server rejects every host except `127.0.0.1` and `::1`.
 
-Optional remote access is for the same owner's devices only. The origin remains loopback and the dedicated tunnel must be protected by deny-by-default Cloudflare Access plus an independent per-device tab2api key. See [the Cloudflare guide](docs/cloudflare.md).
+Optional remote access is for the same owner's devices only. The origin remains loopback and every device needs an independent revocable tab2api key. Cloudflare Access is recommended; an explicitly selected bearer-only mode is also documented. See [the Cloudflare guide](docs/cloudflare.md).
 
 ## Prerequisites
 
@@ -147,7 +147,7 @@ GPM mode ignores `TAB2API_HEADLESS`; window behavior is controlled by GPM Login.
 
 The original `.tab2api/api-token` is the administrator key. Create revocable non-admin keys for other personal devices with `npm run keys -- create "personal laptop"`; the plaintext is printed once and only its SHA-256 digest is persisted. `npm run keys -- list`, `npm run keys -- revoke <id>`, and `npm run usage` manage keys and inspect content-free counters.
 
-Usage includes real request/success/failure, latency, and byte counters. Token totals are explicitly estimated because ChatGPT Web exposes no authoritative usage. They are not suitable for billing. For `tab2api.tangvu.dev`, follow [docs/cloudflare.md](docs/cloudflare.md); the Windows installer refuses to activate the connector until its safe probe proves Cloudflare Access is in front of the entire hostname.
+Usage includes real request/success/failure, latency, and byte counters. Token totals are explicitly estimated because ChatGPT Web exposes no authoritative usage. They are not suitable for billing. For `tab2api.tangvu.dev`, follow [docs/cloudflare.md](docs/cloudflare.md). The default installer verifies Access; the separate bearer-only command requires explicit operator selection.
 
 ## Supported API and limitations
 
@@ -169,7 +169,7 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 
 ## Security
 
-The dedicated profile grants access to your logged-in session: protect it like a credential. Do not sync or share `.tab2api`, screenshots, logs, token files, Cloudflare credentials, or service-token secrets. Never point `TAB2API_PROFILE_DIR` at your normal browser profile. Keep the server itself on loopback; never run a tunnel without Access. See [the threat model](docs/security.md) and [architecture decisions](docs/architecture.md).
+The dedicated profile grants access to your logged-in session: protect it like a credential. Do not sync or share `.tab2api`, screenshots, logs, token files, Cloudflare credentials, or service-token secrets. Never point `TAB2API_PROFILE_DIR` at your normal browser profile. Keep the server itself on loopback and use one revocable client key per remote device. See [the threat model](docs/security.md) and [architecture decisions](docs/architecture.md).
 
 ## Troubleshooting
 
@@ -193,6 +193,7 @@ npm run autostart:install # Windows per-user startup task
 npm run autostart:status  # Windows task and loopback liveness
 npm run autostart:remove  # remove task; preserve runtime/profile
 npm run tunnel:install    # fail-closed Access check + tunnel startup task
+npm run tunnel:install:bearer-only # explicit single-owner bearer-only mode
 npm run tunnel:status     # inspect tunnel task
 npm run tunnel:remove     # stop/remove tunnel task; preserve DNS/credentials
 ```

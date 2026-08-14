@@ -2,7 +2,7 @@
 
 ## Scope and principles
 
-tab2api is a single-user desktop bridge, not a shared API service. It automates only the public ChatGPT.com UI after the user logs in manually, using either a dedicated Playwright persistent context or one explicitly configured GPM Login profile. Its origin remains loopback; optional personal remote access requires a dedicated, deny-by-default Access-protected tunnel. It never asks for credentials, reads/exports browser storage, calls private endpoints, bypasses controls, or selects/rotates accounts.
+tab2api is a single-user desktop bridge, not a shared API service. It automates only the public ChatGPT.com UI after the user logs in manually, using either a dedicated Playwright persistent context or one explicitly configured GPM Login profile. Its origin remains loopback; optional personal remote access uses a dedicated tunnel with Access recommended and bearer-only activation requiring an explicit operator flag. It never asks for credentials, reads/exports browser storage, calls private endpoints, bypasses controls, or selects/rotates accounts.
 
 ## Components
 
@@ -57,7 +57,7 @@ An independent administrative usage store aggregates requests by key and route. 
 
 ### Optional personal tunnel
 
-Fastify continues to listen only on loopback. A dedicated `cloudflared` connector may proxy it to the owner's hostname only after a fail-closed probe proves that Cloudflare Access intercepts every path. Cloudflare identity/service authentication and the tab2api key are independent layers. Tunnel credentials/configuration remain runtime-only and are never packaged or committed.
+Fastify continues to listen only on loopback. The default `cloudflared` installer uses a fail-closed fixed-418 probe to prove Access interception. A distinct bearer-only command records the owner's explicit acceptance and skips that probe without weakening application authentication. In bearer-only mode `/readyz`, `/v1/*`, and `/admin/*` require a key; `/healthz` alone is public and does no browser work. Tunnel credentials/configuration remain runtime-only and are never packaged or committed.
 
 ### Media fidelity
 

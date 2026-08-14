@@ -1,6 +1,6 @@
 # API contract
 
-Local base URL: `http://127.0.0.1:3210`. Protected endpoints require `Authorization: Bearer <tab2api-key>`. `/healthz` and `/readyz` are unauthenticated at the origin; an optional remote hostname must place Cloudflare Access in front of every path.
+Local base URL: `http://127.0.0.1:3210`. Protected endpoints require `Authorization: Bearer <tab2api-key>`. Only `/healthz` is unauthenticated; `/readyz` performs browser work and therefore requires a key. Cloudflare Access is recommended for the optional remote hostname, with explicitly selected bearer-only operation also supported for one owner.
 
 ## Endpoints
 
@@ -10,7 +10,7 @@ Process liveness only: `{"status":"ok","service":"tab2api"}`. It does not launch
 
 ### `GET /readyz`
 
-Checks browser/UI state. HTTP 200 only for `ready`; otherwise 503 with `session` set to `login_required`, `security_challenge`, `generation_in_progress`, `rate_limited`, `ui_changed`, or `browser_disconnected`.
+Requires a bearer key. Checks browser/UI state. HTTP 200 only for `ready`; otherwise 503 with `session` set to `login_required`, `security_challenge`, `generation_in_progress`, `rate_limited`, `ui_changed`, or `browser_disconnected`.
 
 ### `GET /v1/models`
 

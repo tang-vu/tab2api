@@ -194,13 +194,6 @@ export function buildServer(dependencies: ServerDependencies) {
     request.log.info({ requestId: request.id, statusCode: reply.statusCode }, 'request completed');
   });
 
-  app.get('/healthz', async () => ({ status: 'ok', service: 'tab2api' }));
-  app.get('/readyz', async (_request, reply) => {
-    const session = await provider.health();
-    const ready = session === 'ready';
-    return reply.code(ready ? 200 : 503).send({ status: ready ? 'ready' : 'not_ready', session });
-  });
-
   const setPrincipal = (request: FastifyRequest) => {
     principals.set(request, authenticate(request, apiKeys));
   };
@@ -216,6 +209,13 @@ export function buildServer(dependencies: ServerDependencies) {
     const draft = usageDrafts.get(request);
     if (draft !== undefined) Object.assign(draft, values);
   };
+
+  app.get('/healthz', async () => ({ status: 'ok', service: 'tab2api' }));
+  app.get('/readyz', { preHandler: authenticated }, async (_request, reply) => {
+    const session = await provider.health();
+    const ready = session === 'ready';
+    return reply.code(ready ? 200 : 503).send({ status: ready ? 'ready' : 'not_ready', session });
+  });
 
   app.get('/v1/models', { preHandler: authenticated }, async () => ({
     object: 'list',

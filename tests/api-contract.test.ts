@@ -48,6 +48,7 @@ describe('Fastify API contract', () => {
   it('exposes liveness but protects model and generation routes', async () => {
     const app = server(new FakeProvider());
     expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/readyz' })).statusCode).toBe(401);
     const missing = await app.inject({ method: 'GET', url: '/v1/models' });
     expect(missing.statusCode).toBe(401);
     expect(missing.json().error.code).toBe('authentication_error');
