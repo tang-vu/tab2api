@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ChatGptAdapter } from '../../src/adapters/chatgpt/adapter.js';
-import { BrowserManager } from '../../src/browser/manager.js';
+import { createBrowserController } from '../../src/browser/factory.js';
 import { loadConfig } from '../../src/config/index.js';
 import { createLogger } from '../../src/observability/logger.js';
 
@@ -9,7 +9,7 @@ const enabled = process.env.TAB2API_MANUAL_E2E === '1';
 describe.skipIf(!enabled)('manual authenticated ChatGPT E2E', () => {
   it('generates only with explicit opt-in and an existing manual login', async () => {
     const config = await loadConfig();
-    const browser = new BrowserManager({ ...config, headless: false });
+    const browser = createBrowserController({ ...config, headless: false });
     const adapter = new ChatGptAdapter(browser, config, createLogger('info'));
     try {
       expect(await adapter.health()).toBe('ready');

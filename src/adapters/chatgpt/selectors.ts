@@ -15,6 +15,11 @@ export const UI_SELECTORS = {
     'button[aria-label*="Stop"]',
     'button[aria-label*="stop"]',
   ],
+  completionAction: [
+    'button[data-testid="copy-turn-action-button"]',
+    'button[aria-label*="Copy message"]',
+    'button[aria-label*="Sao chép tin nhắn"]',
+  ],
   assistantMessage: [
     '[data-message-author-role="assistant"]',
     'article[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',

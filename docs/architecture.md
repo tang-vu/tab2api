@@ -25,7 +25,7 @@ tab2api is a single-user desktop bridge, not an API service for deployment. It a
 3. The serializer converts messages to an ordered, role-labelled XML-like envelope and entity-escapes boundary characters.
 4. The bounded FIFO admits or rejects work. A request timeout/abort signal applies while queued and running.
 5. The adapter opens a new page, navigates to the public ChatGPT root (a new conversation), classifies state, records the assistant-message baseline, fills the visible composer, and submits once.
-6. A state machine waits for a new assistant node, the generation control to disappear, and visible text to remain unchanged for multiple observations. No fixed one-shot sleep decides completion.
+6. A state machine waits for a new assistant node and stable visible text. Completion additionally requires either the generation control to disappear or a new completed-turn action to appear; this handles UI variants that leave a stale Stop control visible. No fixed one-shot sleep decides completion.
 7. The result is mapped to the truthful `chatgpt-web` model. The page closes in `finally` for success, error, timeout, and cancellation.
 
 ## Decisions

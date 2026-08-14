@@ -21,7 +21,7 @@ An authenticated Fastify server bound only to `127.0.0.1` validates OpenAI-shape
 ## Risks and decisions
 
 - **Volatile UI:** candidate selectors and DOM state rules are centralized; failures become `ui_changed` with opt-in screenshots only.
-- **False completion:** require a new assistant node plus stopped generation and stable text observations; no one-shot sleep.
+- **False completion:** require a new assistant node, stable text observations, and either stopped generation or a new completed-turn action; no one-shot sleep.
 - **Duplicate generation:** never resubmit after an ambiguous post-submit error; reconnect is limited to pre-submit browser acquisition.
 - **Streaming fidelity:** v0.1 returns the completed text in a single content delta/event, then terminates correctly. It is explicitly buffered, not token streaming.
 - **DevTools exposure:** direct Playwright uses private transport. GPM mode validates that both its Local API and returned CDP WebSocket are loopback; the unauthenticated GPM-owned port remains a documented residual risk.
@@ -45,9 +45,11 @@ Completed on Windows/PowerShell with Node v24.14.1 and npm 11.11.0:
 
 - `npm ci`: clean dependency install passed.
 - `npm run check`: strict TypeScript, ESLint, and Prettier checks passed.
-- `npm test`: 11 files / 50 offline tests passed; no ChatGPT request was made.
+- `npm test`: 11 files / 52 offline tests passed; no ChatGPT request was made.
 - `npm run build`: production ESM build passed.
 - `npm run smoke`: authenticated fake-provider Chat Completions path passed.
 - `npm run test:manual` without opt-in: one manual E2E test skipped as designed.
+- Opt-in manual E2E against one already authenticated GPM profile: passed; the profile identifier and content were not persisted.
+- Production-build loopback HTTP verification against that profile: health/readiness, bearer rejection, models, Chat Completions JSON/SSE, Responses JSON/SSE, FIFO concurrency, and session reset all passed. Response bodies and prompts were not printed.
 - `npm audit --audit-level=high`: zero vulnerabilities.
 - `git diff --check`, ignored-file review, sensitive-term review, and package dry-run completed.

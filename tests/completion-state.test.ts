@@ -23,4 +23,24 @@ describe('completion state machine', () => {
     expect(machine.observe({ assistantCount: 1, text: 'ab', generating: false })).toBe('waiting');
     expect(machine.observe({ assistantCount: 1, text: 'ab', generating: false })).toBe('complete');
   });
+
+  it('accepts a new completion action when a stale stop control remains visible', () => {
+    const machine = new CompletionStateMachine(0, 2);
+    expect(
+      machine.observe({
+        assistantCount: 1,
+        text: 'done',
+        generating: true,
+        completionActionAvailable: true,
+      }),
+    ).toBe('waiting');
+    expect(
+      machine.observe({
+        assistantCount: 1,
+        text: 'done',
+        generating: true,
+        completionActionAvailable: true,
+      }),
+    ).toBe('complete');
+  });
 });

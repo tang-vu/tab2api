@@ -15,6 +15,8 @@ import { UI_SELECTORS } from './selectors.js';
 
 const CHATGPT_URL = 'https://chatgpt.com/';
 const POLL_MS = 300;
+const INITIAL_STATE_ATTEMPTS = 20;
+const INITIAL_STATE_POLL_MS = 250;
 
 async function firstVisible(
   page: Page,
@@ -59,17 +61,23 @@ export class ChatGptAdapter implements WebChatProvider {
       if (request.signal.aborted) throw abortError(request.signal);
       page = await this.browser.getPage();
       await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      const state = await this.classifyPage(page);
+      const state = await this.waitForInitialState(page);
       this.assertReady(state);
       const composer = await firstVisible(page, UI_SELECTORS.composer);
       if (composer === undefined) throw this.uiChanged();
       const baseline = await countAll(page, UI_SELECTORS.assistantMessage);
+      const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
       await composer.fill(request.prompt);
       const send = await firstVisible(page, UI_SELECTORS.sendButton);
       if (send !== undefined) await send.click();
       else await composer.press('Enter');
       submitted = true;
-      const text = await this.waitForCompletion(page, baseline, request.signal);
+      const text = await this.waitForCompletion(
+        page,
+        baseline,
+        baselineCompletionActions,
+        request.signal,
+      );
       return { text, providerModel: this.id };
     } catch (error) {
       if (request.signal.aborted) throw abortError(request.signal);
@@ -128,7 +136,7 @@ export class ChatGptAdapter implements WebChatProvider {
     try {
       page = await this.browser.getPage();
       await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      return await this.classifyPage(page);
+      return await this.waitForInitialState(page);
     } catch (error) {
       return error instanceof AppError && error.code === 'browser_disconnected'
         ? 'browser_disconnected'
@@ -149,6 +157,7 @@ export class ChatGptAdapter implements WebChatProvider {
   private async waitForCompletion(
     page: Page,
     baseline: number,
+    baselineCompletionActions: number,
     signal: AbortSignal,
   ): Promise<string> {
     const machine = new CompletionStateMachine(baseline);
@@ -165,7 +174,13 @@ export class ChatGptAdapter implements WebChatProvider {
       const assistantCount = await countAll(page, UI_SELECTORS.assistantMessage);
       const text = await lastAssistantText(page);
       const generating = (await firstVisible(page, UI_SELECTORS.stopButton)) !== undefined;
-      if (machine.observe({ assistantCount, text, generating }) === 'complete') return text;
+      const completionActionAvailable =
+        (await countAll(page, UI_SELECTORS.completionAction)) > baselineCompletionActions;
+      if (
+        machine.observe({ assistantCount, text, generating, completionActionAvailable }) ===
+        'complete'
+      )
+        return text;
       await new Promise<void>((resolve, reject) => {
         const onAbort = () => {
           clearTimeout(timer);
@@ -195,6 +210,15 @@ export class ChatGptAdapter implements WebChatProvider {
       return 'generation_in_progress';
     if ((await firstVisible(page, UI_SELECTORS.composer)) !== undefined) return 'ready';
     return duringGeneration ? 'generation_in_progress' : 'ui_changed';
+  }
+
+  private async waitForInitialState(page: Page): Promise<SessionState> {
+    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+      const state = await this.classifyPage(page);
+      if (state !== 'ui_changed') return state;
+      if (attempt < INITIAL_STATE_ATTEMPTS - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    }
+    return 'ui_changed';
   }
 
   private assertReady(state: SessionState): void {

@@ -2,6 +2,7 @@ export interface CompletionObservation {
   assistantCount: number;
   text: string;
   generating: boolean;
+  completionActionAvailable?: boolean;
 }
 
 export type CompletionDecision = 'waiting' | 'complete';
@@ -27,7 +28,10 @@ export class CompletionStateMachine {
       this.lastText = observation.text;
       this.stableObservations = 1;
     }
-    if (!observation.generating && this.stableObservations >= this.requiredStableObservations) {
+    if (
+      (!observation.generating || observation.completionActionAvailable === true) &&
+      this.stableObservations >= this.requiredStableObservations
+    ) {
       return 'complete';
     }
     return 'waiting';

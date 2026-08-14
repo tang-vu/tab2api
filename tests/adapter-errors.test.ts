@@ -37,9 +37,13 @@ class FakeLocator {
 class FakePage {
   closed = false;
   currentUrl = 'https://chatgpt.com/';
+  waits = 0;
 
-  constructor(private readonly mode: 'ready' | 'login' | 'unknown') {}
+  constructor(private readonly mode: 'ready' | 'delayed' | 'login' | 'unknown') {}
   async goto(): Promise<void> {}
+  async waitForTimeout(): Promise<void> {
+    this.waits += 1;
+  }
   url(): string {
     return this.currentUrl;
   }
@@ -47,8 +51,9 @@ class FakePage {
     return this.closed;
   }
   locator(selector: string): Locator {
-    const composer = selector === '#prompt-textarea' && this.mode === 'ready';
-    const send = selector === 'button[data-testid="send-button"]' && this.mode === 'ready';
+    const ready = this.mode === 'ready' || (this.mode === 'delayed' && this.waits > 0);
+    const composer = selector === '#prompt-textarea' && ready;
+    const send = selector === 'button[data-testid="send-button"]' && ready;
     const login = selector === 'button[data-testid="login-button"]' && this.mode === 'login';
     return new FakeLocator(composer || send || login) as unknown as Locator;
   }
@@ -62,7 +67,7 @@ class FakePage {
 
 class FakeBrowser implements BrowserController {
   readonly page: FakePage;
-  constructor(mode: 'ready' | 'login' | 'unknown') {
+  constructor(mode: 'ready' | 'delayed' | 'login' | 'unknown') {
     this.page = new FakePage(mode);
   }
   async getPage(): Promise<Page> {
@@ -72,6 +77,14 @@ class FakeBrowser implements BrowserController {
 }
 
 describe('ChatGPT adapter failure cleanup', () => {
+  it('waits for the asynchronously rendered initial composer', async () => {
+    const browser = new FakeBrowser('delayed');
+    const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
+    expect(await adapter.health()).toBe('ready');
+    expect(browser.page.waits).toBeGreaterThan(0);
+    expect(browser.page.closed).toBe(true);
+  });
+
   it('closes its tab when a running generation is cancelled', async () => {
     const browser = new FakeBrowser('ready');
     const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
