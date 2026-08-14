@@ -37,8 +37,9 @@ cookies, authorization headers, or sidecar output. It probes only the public loc
 endpoint. Login can only open while the
 service process is stopped, preventing two processes from concurrently using the profile. The shell
 tracks the manual Chromium child until it exits and never falls back to a system browser or personal
-profile. During service operation, the verified owned Chromium window is best-effort docked into a
-native Windows child pane. DPI, ownership, or Win32 hosting failures fall back to the normal external
+profile. During service operation, the verified owned Chromium window is best-effort made a direct
+child of the Tauri main window and positioned over the browser pane. No background thread creates
+an intermediate HWND that would require its own message loop. DPI, ownership, or Win32 hosting failures fall back to the normal external
 app window; the Tauri system WebView never loads ChatGPT. macOS and Linux keep the prior external,
 Playwright-owned browser path. Shutdown
 uses the sidecar's versioned JSON stdin protocol, waits up to eight seconds for cleanup, and only

@@ -15,17 +15,23 @@ use windows_sys::Win32::System::Threading::{
 };
 use windows_sys::Win32::UI::HiDpi::{AreDpiAwarenessContextsEqual, GetWindowDpiAwarenessContext};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DestroyWindow, EnumWindows, GWL_STYLE, GetClassNameW, GetWindowLongPtrW,
-    GetWindowThreadProcessId, IsWindowVisible, SW_RESTORE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    EnumWindows, GWL_STYLE, GetClassNameW, GetWindowLongPtrW, GetWindowThreadProcessId,
+    IsWindowVisible, SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_SHOWWINDOW, SetParent, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION, WS_CHILD,
-    WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_POPUP, WS_SYSMENU, WS_THICKFRAME, WS_VISIBLE,
+    WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
-const HOST_CLASS: &[u16] = &[83, 84, 65, 84, 73, 67, 0]; // STATIC
+#[cfg(test)]
+const USES_INTERMEDIATE_HOST_WINDOW: bool = false;
+
+#[cfg(test)]
+fn uses_intermediate_host_window() -> bool {
+    USES_INTERMEDIATE_HOST_WINDOW
+}
 
 #[derive(Default)]
 pub struct NativeHost {
-    host: isize,
+    parent: isize,
     browser: isize,
     original_parent: isize,
     original_style: isize,
@@ -58,34 +64,14 @@ impl NativeHost {
         if !dpi_matches {
             return Err("Chromium and the desktop window use incompatible DPI modes".into());
         }
-        let host = unsafe {
-            CreateWindowExW(
-                0,
-                HOST_CLASS.as_ptr(),
-                std::ptr::null(),
-                WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-                0,
-                0,
-                1,
-                1,
-                parent as HWND,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null(),
-            )
-        };
-        if host.is_null() {
-            return Err("native browser host window could not be created".into());
-        }
         let original_style = unsafe { GetWindowLongPtrW(browser as HWND, GWL_STYLE) };
-        let original_parent = match unsafe { set_parent_checked(browser as HWND, host) } {
+        // Do not create a helper HWND on this spawn_blocking worker. A Win32 window belongs to
+        // its creating thread and requires that thread to pump messages; using such a helper as
+        // Chromium's parent deadlocks painting and can hang the Tauri window. Chromium already
+        // has its own UI message loop, so make it a direct child of the Tauri main HWND instead.
+        let original_parent = match unsafe { set_parent_checked(browser as HWND, parent as HWND) } {
             Ok(parent) => parent,
-            Err(()) => {
-                unsafe {
-                    DestroyWindow(host);
-                }
-                return Err("Chromium rejected native docking".into());
-            }
+            Err(()) => return Err("Chromium rejected native docking".into()),
         };
         let child_style = (original_style
             & !(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU) as isize)
@@ -100,11 +86,11 @@ impl NativeHost {
                 0,
                 1,
                 1,
-                SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                SWP_ASYNCWINDOWPOS | SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             );
         }
         Ok(Self {
-            host: host as isize,
+            parent,
             browser,
             original_parent: original_parent as isize,
             original_style,
@@ -124,29 +110,20 @@ impl NativeHost {
         if !self.docked {
             return Ok(());
         }
-        let host_ok = unsafe {
+        // HWND_TOP (NULL) keeps Chromium above the WebView sibling. ASYNCWINDOWPOS prevents the
+        // caller from waiting on Chromium's cross-thread window procedure during a resize.
+        let browser_ok = unsafe {
             SetWindowPos(
-                self.host as HWND,
+                self.browser as HWND,
                 std::ptr::null_mut(),
                 b.x,
                 b.y,
                 b.width,
                 b.height,
-                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             )
         };
-        let browser_ok = unsafe {
-            SetWindowPos(
-                self.browser as HWND,
-                std::ptr::null_mut(),
-                0,
-                0,
-                b.width,
-                b.height,
-                SWP_NOACTIVATE | SWP_SHOWWINDOW,
-            )
-        };
-        if host_ok == 0 || browser_ok == 0 {
+        if browser_ok == 0 {
             self.undock()?;
             return Err("native browser resize failed; Chromium was restored externally".into());
         }
@@ -167,7 +144,7 @@ impl NativeHost {
                 80,
                 1000,
                 760,
-                SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                SWP_ASYNCWINDOWPOS | SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             );
             ShowWindow(self.browser as HWND, SW_RESTORE);
         }
@@ -179,10 +156,10 @@ impl NativeHost {
         if self.docked {
             return Ok(());
         }
-        if self.host == 0 || self.browser == 0 {
+        if self.parent == 0 || self.browser == 0 {
             return Err("native browser host is unavailable".into());
         }
-        if unsafe { set_parent_checked(self.browser as HWND, self.host as HWND) }.is_err() {
+        if unsafe { set_parent_checked(self.browser as HWND, self.parent as HWND) }.is_err() {
             return Err("Chromium rejected native re-docking".into());
         }
         let style = (self.original_style
@@ -240,11 +217,6 @@ fn taskkill_arguments(root_pid: u32) -> [String; 4] {
 impl Drop for NativeHost {
     fn drop(&mut self) {
         let _ = self.undock();
-        if self.host != 0 {
-            unsafe {
-                DestroyWindow(self.host as HWND);
-            }
-        }
     }
 }
 
@@ -414,5 +386,10 @@ mod tests {
     #[test]
     fn cleanup_targets_only_the_launched_pid_and_descendants() {
         assert_eq!(taskkill_arguments(4242), ["/PID", "4242", "/T", "/F"]);
+    }
+
+    #[test]
+    fn docking_does_not_create_a_worker_owned_host_window() {
+        assert!(!uses_intermediate_host_window());
     }
 }
