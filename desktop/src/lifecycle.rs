@@ -75,6 +75,7 @@ pub struct SidecarLifecycle {
     runtime: RuntimeSpec,
     data_dir: PathBuf,
     profile_dir: PathBuf,
+    #[cfg_attr(not(windows), allow(dead_code))]
     parent_window: Option<isize>,
 }
 

@@ -1,3 +1,7 @@
+// The embedded host is Windows-only; shared status/bounds types remain compiled on
+// other targets so the desktop API stays portable while those private helpers rest.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use serde::Serialize;
 use std::ffi::OsString;
 use std::fs;
