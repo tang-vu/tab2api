@@ -54,4 +54,4 @@ Codes: `authentication_error` (401), `invalid_request` (400), `cancelled` (499),
 
 ## Request IDs and limits
 
-Each request receives an internal UUID request ID used only in structured logs. Bodies default to 256 KiB, queue capacity to 16 total active/pending jobs, and timeout to 120 seconds. Configuration keys are documented in `.env.example`.
+Each request receives an internal UUID request ID used only in structured logs. Bodies default to 256 KiB, queue capacity to 16 total active/pending jobs, concurrency to one (configurable from 1–4), and timeout to 120 seconds. Configuration keys are documented in `.env.example`.

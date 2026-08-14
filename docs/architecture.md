@@ -23,7 +23,7 @@ tab2api is a single-user desktop bridge, not an API service for deployment. It a
 1. Fastify accepts at most the configured body size and authenticates protected routes.
 2. Zod strict schemas reject unknown/unsupported fields and non-text content.
 3. The serializer converts messages to an ordered, role-labelled XML-like envelope and entity-escapes boundary characters.
-4. The bounded FIFO admits or rejects work. A request timeout/abort signal applies while queued and running.
+4. The bounded FIFO admits or rejects work. Configurable concurrency is constrained to 1–4 browser tabs and defaults to 1; a request timeout/abort signal applies while queued and running.
 5. The adapter opens a new page, navigates to the public ChatGPT root (a new conversation), classifies state, records the assistant-message baseline, fills the visible composer, and submits once.
 6. A state machine waits for a new assistant node and stable visible text. Completion additionally requires either the generation control to disappear or a new completed-turn action to appear; this handles UI variants that leave a stale Stop control visible. No fixed one-shot sleep decides completion.
 7. The result is mapped to the truthful `chatgpt-web` model. The page closes in `finally` for success, error, timeout, and cancellation.
@@ -41,6 +41,8 @@ The `playwright` backend uses `launchPersistentContext` with a profile inside `T
 The `gpm` backend calls only `GET profiles/{id}`, `GET profiles/start/{id}`, and `GET profiles/stop/{id}` for one UUID supplied by `TAB2API_GPM_PROFILE_ID`. It never lists, creates, updates, deletes, or rotates profiles and never calls proxy/fingerprint/group/extension endpoints. The GPM Local API base URL must be loopback. Playwright attaches only if the returned DevTools WebSocket is also `ws://` loopback; LAN/public endpoints are refused. GPM's Local API and debugging port have no tab2api-controlled authentication, so using this backend increases risk from malicious same-user processes and is opt-in.
 
 GPM support was added after an explicit scope change on 2026-08-14. The restriction to one existing profile and three endpoints is intentional; tab2api does not claim that GPM's broader fingerprint/proxy features are safe or necessary. API shapes follow the [GPM Login Local API documentation](https://api-docs.gpmloginapp.com/).
+
+On Windows, an optional per-user Scheduled Task starts the production build at interactive logon and restarts a failed process. It intentionally does not run as SYSTEM because GPM and manual browser challenges require the user's desktop session. This improves desktop availability but is not a production high-availability design.
 
 ### Failure and retry
 

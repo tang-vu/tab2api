@@ -12,6 +12,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     browserBackend: 'playwright',
     gpmProfileId: undefined,
     gpmBaseUrl: 'http://127.0.0.1:9495/api/v1',
+    concurrency: 1,
     queueCapacity: 16,
     requestTimeoutMs: 2_000,
     bodyLimitBytes: 262_144,

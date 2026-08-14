@@ -49,3 +49,9 @@ The request tab is closed and the prompt is not resubmitted automatically. Check
 ## Streaming appears all at once
 
 Expected: v0.1 buffered SSE waits for browser completion and then sends a single text delta plus terminal events. This is documented behavior, not token streaming.
+
+## Windows autostart is installed but unavailable
+
+Run `npm run autostart:status`, then inspect the ignored `.tab2api/service.log`. The task runs only after the configured user logs in. Ensure GPM Login is also configured to start with Windows and its Local API is enabled. Moving the repository or Node executable invalidates the stored task paths; run `npm run autostart:remove` followed by `npm run autostart:install` from the new location.
+
+If parallel requests become unreliable or trigger rate limits, set `TAB2API_CONCURRENCY=1` and restart the task. Values above 4 are rejected rather than allowing unbounded browser tabs.

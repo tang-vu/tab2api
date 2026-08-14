@@ -73,7 +73,7 @@ export interface ServerDependencies {
 
 export function buildServer(dependencies: ServerDependencies) {
   const { config, provider, logger } = dependencies;
-  const queue = dependencies.queue ?? new FifoQueue(1, config.queueCapacity);
+  const queue = dependencies.queue ?? new FifoQueue(config.concurrency, config.queueCapacity);
   const store = dependencies.store ?? new MetadataStore();
   const app = Fastify({
     loggerInstance: logger,

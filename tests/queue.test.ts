@@ -16,6 +16,25 @@ describe('bounded FIFO queue', () => {
     expect(events).toEqual(['start-a', 'end-a', 'start-b', 'end-b']);
   });
 
+  it('runs up to the configured concurrency while preserving FIFO admission', async () => {
+    const queue = new FifoQueue(2, 4);
+    const started: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const task = (name: string) =>
+      queue.enqueue(async () => {
+        started.push(name);
+        await gate;
+        return name;
+      });
+    const jobs = [task('a'), task('b'), task('c')];
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(started).toEqual(['a', 'b']);
+    release();
+    await Promise.all(jobs);
+    expect(started).toEqual(['a', 'b', 'c']);
+  });
+
   it('cancels a queued task without running it', async () => {
     const queue = new FifoQueue(1, 3);
     let release!: () => void;

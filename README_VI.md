@@ -10,7 +10,7 @@
 flowchart LR
     C[OpenAI-compatible client] -->|Bearer / 127.0.0.1| A[Fastify API]
     A --> V[Validate + serialize]
-    V --> Q[FIFO queue có giới hạn<br/>concurrency 1]
+    V --> Q[FIFO queue có giới hạn<br/>concurrency 1–4, mặc định 1]
     Q --> P[Provider interface]
     P --> G[ChatGPT UI adapter]
     G --> B{Browser backend}
@@ -103,7 +103,19 @@ const client = new OpenAI({
 
 ## Vận hành và giới hạn
 
-Mỗi request mở một hội thoại mới; queue mặc định chỉ chạy một request. `npm run doctor` kiểm tra Node, browser, quyền ghi, port, token local, kết nối, trạng thái đăng nhập và selector. `npm run reset-session` đóng browser process nhưng giữ profile/login.
+Mỗi request mở một hội thoại mới. `TAB2API_CONCURRENCY` cho phép 1–4 tab chạy song song; mặc định an toàn là 1. Chỉ nên thử mức 2 sau khi test thật vì một tài khoản có thể bị rate-limit và mỗi tab tốn RAM. Queue vẫn bị giới hạn và giữ thứ tự FIFO. `npm run doctor` kiểm tra Node, browser, quyền ghi, port, token local, kết nối, trạng thái đăng nhập và selector. `npm run reset-session` đóng browser process nhưng giữ profile/login.
+
+### Tự chạy trên Windows
+
+Sau khi cấu hình `.env` và build, cài Scheduled Task cho user hiện tại:
+
+```powershell
+npm run build
+npm run autostart:install
+npm run autostart:status
+```
+
+Task chạy nền khi user đăng nhập Windows và dùng watchdog có giới hạn cùng cơ chế restart của Task Scheduler khi process lỗi. Log đã redact nằm tại `.tab2api/service.log` và được gitignore. GPM Login cũng phải tự mở cùng Windows và profile phải còn đăng nhập. Đây là availability best-effort trên desktop, không phải bảo đảm uptime production: logout, sleep/mất điện, CAPTCHA, rate limit, UI đổi hoặc GPM không chạy đều có thể làm generation ngừng. Gỡ task bằng `npm run autostart:remove`; profile và dữ liệu runtime được giữ lại.
 
 - Chỉ hỗ trợ text với role `system`, `developer`, `user`, `assistant`; dữ liệu/field chưa hỗ trợ bị từ chối rõ ràng.
 - Model trả về luôn là `chatgpt-web`; tên model client gửi không điều khiển model picker trên UI.
@@ -126,6 +138,9 @@ npm run check
 npm run login
 npm run doctor
 npm run smoke
+npm run autostart:install
+npm run autostart:status
+npm run autostart:remove
 ```
 
 Manual E2E không chạy trong CI. Chỉ sau khi đọc prompt test và đăng nhập, bật rõ ràng bằng `$env:TAB2API_MANUAL_E2E='1'; npm run test:manual`. Không có biến này thì test được skip.

@@ -29,6 +29,8 @@ An authenticated Fastify server bound only to `127.0.0.1` validates OpenAI-shape
 - **Profile safety:** custom profile must resolve inside the configured data directory and cannot be a filesystem root or known default browser profile.
 - **Headless login:** first login is headed; headless mode is opt-in only after an authenticated profile exists.
 - **GPM Login restricted:** after an explicit scope change, support only one configured existing profile through get/start/stop. Do not expose GPM profile creation, listing, rotation, proxy, fingerprint, group, or extension features.
+- **Desktop availability:** optional Windows per-user Scheduled Task starts at logon and restarts process failures. It is not a production SLA and still depends on an interactive GPM/login session.
+- **Parallelism:** browser concurrency is configurable from 1–4 and defaults to 1. Higher values trade latency under load for memory use, UI race exposure, and account rate limits.
 
 ## Research record (official sources, reviewed 2026-08-14)
 
@@ -45,11 +47,13 @@ Completed on Windows/PowerShell with Node v24.14.1 and npm 11.11.0:
 
 - `npm ci`: clean dependency install passed.
 - `npm run check`: strict TypeScript, ESLint, and Prettier checks passed.
-- `npm test`: 11 files / 52 offline tests passed; no ChatGPT request was made.
+- `npm test`: 11 files / 54 offline tests passed; no ChatGPT request was made.
 - `npm run build`: production ESM build passed.
 - `npm run smoke`: authenticated fake-provider Chat Completions path passed.
 - `npm run test:manual` without opt-in: one manual E2E test skipped as designed.
 - Opt-in manual E2E against one already authenticated GPM profile: passed; the profile identifier and content were not persisted.
 - Production-build loopback HTTP verification against that profile: health/readiness, bearer rejection, models, Chat Completions JSON/SSE, Responses JSON/SSE, FIFO concurrency, and session reset all passed. Response bodies and prompts were not printed.
+- Live two-tab GPM verification with concurrency 2: both simultaneous Responses requests returned HTTP 200 with valid contracts.
+- Windows per-user autostart: installed task reached health/readiness/models HTTP 200; a forced termination of the exact tab2api Node PID recovered to a new PID through the bounded watchdog. GPM Login autostart was detected separately in the user's Startup folder.
 - `npm audit --audit-level=high`: zero vulnerabilities.
 - `git diff --check`, ignored-file review, sensitive-term review, and package dry-run completed.

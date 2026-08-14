@@ -92,4 +92,18 @@ describe('configuration security', () => {
     expect(config.browserBackend).toBe('gpm');
     expect(config.gpmBaseUrl).toBe('http://127.0.0.1:9495/api/v1');
   });
+
+  it('accepts bounded browser concurrency and rejects unsafe values', async () => {
+    const base = {
+      TAB2API_API_TOKEN: token,
+      TAB2API_DATA_DIR: '.runtime',
+      TAB2API_PROFILE_DIR: '.runtime/profile',
+    };
+    await expect(
+      loadConfig({ ...base, TAB2API_CONCURRENCY: '2' }, 'C:\\work\\tab2api'),
+    ).resolves.toMatchObject({ concurrency: 2 });
+    await expect(
+      loadConfig({ ...base, TAB2API_CONCURRENCY: '5' }, 'C:\\work\\tab2api'),
+    ).rejects.toThrow();
+  });
 });

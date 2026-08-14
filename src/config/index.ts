@@ -28,6 +28,7 @@ const environmentSchema = z.object({
     z.uuid().optional(),
   ),
   TAB2API_GPM_BASE_URL: z.string().default('http://127.0.0.1:9495/api/v1'),
+  TAB2API_CONCURRENCY: integer(1, 4).default(1),
   TAB2API_QUEUE_CAPACITY: integer(1, 100).default(16),
   TAB2API_REQUEST_TIMEOUT_MS: integer(1_000, 600_000).default(120_000),
   TAB2API_BODY_LIMIT_BYTES: integer(1_024, 1_048_576).default(262_144),
@@ -48,6 +49,7 @@ export interface AppConfig {
   browserBackend: 'playwright' | 'gpm';
   gpmProfileId: string | undefined;
   gpmBaseUrl: string;
+  concurrency: number;
   queueCapacity: number;
   requestTimeoutMs: number;
   bodyLimitBytes: number;
@@ -82,6 +84,7 @@ export async function loadConfig(
     browserBackend: parsed.TAB2API_BROWSER_BACKEND,
     gpmProfileId: parsed.TAB2API_GPM_PROFILE_ID,
     gpmBaseUrl: assertLoopbackHttpUrl(parsed.TAB2API_GPM_BASE_URL),
+    concurrency: parsed.TAB2API_CONCURRENCY,
     queueCapacity: parsed.TAB2API_QUEUE_CAPACITY,
     requestTimeoutMs: parsed.TAB2API_REQUEST_TIMEOUT_MS,
     bodyLimitBytes: parsed.TAB2API_BODY_LIMIT_BYTES,

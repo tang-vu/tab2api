@@ -10,7 +10,7 @@ This is browser automation, not the official OpenAI API. It may break whenever C
 flowchart LR
     C[OpenAI-compatible client] -->|Bearer token / 127.0.0.1| A[Fastify API]
     A --> V[Strict validation + prompt serializer]
-    V --> Q[Bounded FIFO queue<br/>concurrency 1]
+    V --> Q[Bounded FIFO queue<br/>concurrency 1–4, default 1]
     Q --> P[WebChatProvider interface]
     P --> G[ChatGPT UI adapter]
     G --> B{Browser backend}
@@ -106,7 +106,19 @@ The `openai` package is only an example client and is not a tab2api dependency.
 
 ## First login and normal operation
 
-`npm run login` launches the selected dedicated profile and waits until the composer is compatible. `npm start` reuses that profile. Each API request opens a fresh ChatGPT page/conversation and closes it afterward. Default concurrency is one, with a bounded FIFO queue. `npm run doctor` checks Node, the selected browser backend, directory permissions, port, local token, browser connectivity, login, and selectors. `npm run reset-session` closes the bridge browser process through the authenticated admin route without deleting the profile.
+`npm run login` launches the selected dedicated profile and waits until the composer is compatible. `npm start` reuses that profile. Each API request opens a fresh ChatGPT page/conversation and closes it afterward. `TAB2API_CONCURRENCY` controls 1–4 parallel browser tabs; the safe default is one, with a bounded FIFO queue. Start with 2 only after a live test because one account may rate-limit and UI tabs consume substantial memory. `npm run doctor` checks Node, the selected browser backend, directory permissions, port, local token, browser connectivity, login, and selectors. `npm run reset-session` closes the bridge browser process through the authenticated admin route without deleting the profile.
+
+### Windows autostart
+
+After configuring `.env` and building, install a per-user Scheduled Task:
+
+```powershell
+npm run build
+npm run autostart:install
+npm run autostart:status
+```
+
+The task starts at interactive user logon, runs in the background, and uses a bounded watchdog plus Task Scheduler restart settings after process failures. Its redacted structured output is written to ignored `.tab2api/service.log`. GPM Login must also start with Windows and remain signed in. This is best-effort desktop availability, not a production uptime guarantee: logout, sleep/power loss, ChatGPT challenges, rate limits, UI changes, or GPM being unavailable stop useful generation. Remove it with `npm run autostart:remove`.
 
 ### GPM Login backend
 
@@ -148,6 +160,9 @@ npm run check        typecheck, lint, formatting check
 npm run login        manual dedicated-profile login
 npm run doctor       environment/session diagnostics
 npm run smoke        offline fake-adapter API smoke test
+npm run autostart:install # Windows per-user startup task
+npm run autostart:status  # Windows task and loopback liveness
+npm run autostart:remove  # remove task; preserve runtime/profile
 ```
 
 Manual E2E is never part of CI. After reviewing its prompt and logging into the dedicated profile, explicitly opt in with `$env:TAB2API_MANUAL_E2E='1'; npm run test:manual` on PowerShell or `TAB2API_MANUAL_E2E=1 npm run test:manual` on macOS/Linux. Without that variable, the manual test is skipped.
