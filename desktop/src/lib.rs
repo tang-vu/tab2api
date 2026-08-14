@@ -1,15 +1,22 @@
 mod lifecycle;
 
+#[cfg(not(test))]
 use lifecycle::{ServiceStatus, SidecarLifecycle};
+#[cfg(not(test))]
 use std::sync::Arc;
+#[cfg(not(test))]
 use tauri::menu::{Menu, MenuItem};
+#[cfg(not(test))]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+#[cfg(not(test))]
 use tauri::{Manager, State};
 
+#[cfg(not(test))]
 struct DesktopState {
     lifecycle: Arc<SidecarLifecycle>,
 }
 
+#[cfg(not(test))]
 #[tauri::command]
 async fn sidecar_status(state: State<'_, DesktopState>) -> Result<ServiceStatus, String> {
     let lifecycle = Arc::clone(&state.lifecycle);
@@ -18,6 +25,7 @@ async fn sidecar_status(state: State<'_, DesktopState>) -> Result<ServiceStatus,
         .map_err(|error| format!("status task failed: {error}"))?
 }
 
+#[cfg(not(test))]
 #[tauri::command]
 async fn start_sidecar(state: State<'_, DesktopState>) -> Result<ServiceStatus, String> {
     let lifecycle = Arc::clone(&state.lifecycle);
@@ -26,6 +34,7 @@ async fn start_sidecar(state: State<'_, DesktopState>) -> Result<ServiceStatus, 
         .map_err(|error| format!("start task failed: {error}"))?
 }
 
+#[cfg(not(test))]
 #[tauri::command]
 async fn stop_sidecar(state: State<'_, DesktopState>) -> Result<ServiceStatus, String> {
     let lifecycle = Arc::clone(&state.lifecycle);
@@ -34,6 +43,7 @@ async fn stop_sidecar(state: State<'_, DesktopState>) -> Result<ServiceStatus, S
         .map_err(|error| format!("stop task failed: {error}"))?
 }
 
+#[cfg(not(test))]
 #[tauri::command]
 async fn open_login(state: State<'_, DesktopState>) -> Result<ServiceStatus, String> {
     let lifecycle = Arc::clone(&state.lifecycle);
@@ -42,6 +52,7 @@ async fn open_login(state: State<'_, DesktopState>) -> Result<ServiceStatus, Str
         .map_err(|error| format!("login task failed: {error}"))?
 }
 
+#[cfg(not(test))]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {

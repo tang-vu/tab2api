@@ -1,5 +1,8 @@
+#![cfg_attr(test, allow(dead_code))]
+
 use serde::Serialize;
 use std::env;
+use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
@@ -61,7 +64,7 @@ pub struct SidecarLifecycle {
 struct RuntimeSpec {
     node: PathBuf,
     service_entrypoint: PathBuf,
-    cli_entrypoint: PathBuf,
+    login_browser: PathBuf,
     working_dir: PathBuf,
     browsers_path: Option<PathBuf>,
 }
@@ -71,14 +74,14 @@ impl RuntimeSpec {
         let bundled_root = resource_dir.join("sidecar");
         let bundled_node = bundled_root.join(if cfg!(windows) { "node.exe" } else { "node" });
         let bundled_service = bundled_root.join("dist/sidecar/index.js");
-        let bundled_cli = bundled_root.join("dist/cli/index.js");
-        if bundled_node.is_file() && bundled_service.is_file() && bundled_cli.is_file() {
+        let bundled_browsers = bundled_root.join("ms-playwright");
+        if bundled_node.is_file() && bundled_service.is_file() {
             return Ok(Self {
                 node: bundled_node,
                 service_entrypoint: bundled_service,
-                cli_entrypoint: bundled_cli,
+                login_browser: find_chromium_executable(&bundled_browsers)?,
                 working_dir: bundled_root.clone(),
-                browsers_path: Some(bundled_root.join("ms-playwright")),
+                browsers_path: Some(bundled_browsers),
             });
         }
 
@@ -87,14 +90,14 @@ impl RuntimeSpec {
             .ok_or("desktop directory has no project parent")?
             .to_path_buf();
         let service_entrypoint = project_root.join("dist/sidecar/index.js");
-        let cli_entrypoint = project_root.join("dist/cli/index.js");
-        if !service_entrypoint.is_file() || !cli_entrypoint.is_file() {
+        if !service_entrypoint.is_file() {
             return Err("Node sidecar is not built; run `npm run build` first".into());
         }
+        let login_browser = playwright_browser_from_node(&project_root)?;
         Ok(Self {
             node: PathBuf::from("node"),
             service_entrypoint,
-            cli_entrypoint,
+            login_browser,
             working_dir: project_root,
             browsers_path: None,
         })
@@ -107,38 +110,119 @@ impl RuntimeSpec {
         data_dir: &Path,
         profile_dir: &Path,
     ) -> Result<ManagedChild, String> {
-        let mut command = Command::new(&self.node);
-        match kind {
+        let mut command = match kind {
             ProcessKind::Service => {
-                command.arg(&self.service_entrypoint).arg("--parent-pipe");
+                let mut command = Command::new(&self.node);
+                command
+                    .arg(&self.service_entrypoint)
+                    .arg("--parent-pipe")
+                    .env("TAB2API_HOST", "127.0.0.1")
+                    .env("TAB2API_PORT", port.to_string())
+                    .env("TAB2API_BROWSER_BACKEND", "playwright")
+                    .env("TAB2API_DATA_DIR", data_dir)
+                    .env("TAB2API_PROFILE_DIR", profile_dir)
+                    .stdin(Stdio::piped());
+                if let Some(browsers_path) = &self.browsers_path {
+                    command.env("PLAYWRIGHT_BROWSERS_PATH", browsers_path);
+                }
+                command
             }
             ProcessKind::Login => {
-                command.arg(&self.cli_entrypoint).arg("login");
+                let mut command = Command::new(&self.login_browser);
+                command
+                    .args(login_arguments(profile_dir))
+                    .stdin(Stdio::null());
+                command
             }
-        }
+        };
         command
             .current_dir(&self.working_dir)
-            .env("TAB2API_HOST", "127.0.0.1")
-            .env("TAB2API_PORT", port.to_string())
-            .env("TAB2API_BROWSER_BACKEND", "playwright")
-            .env("TAB2API_DATA_DIR", data_dir)
-            .env("TAB2API_PROFILE_DIR", profile_dir)
-            .stdin(if kind == ProcessKind::Service {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        if let Some(browsers_path) = &self.browsers_path {
-            command.env("PLAYWRIGHT_BROWSERS_PATH", browsers_path);
-        }
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("could not start the tab2api sidecar: {error}"))?;
-        let input = child.stdin.take();
+        let mut child = command.spawn().map_err(|error| match kind {
+            ProcessKind::Service => format!("could not start the tab2api sidecar: {error}"),
+            ProcessKind::Login => format!("could not open the dedicated Chromium window: {error}"),
+        })?;
+        let input = if kind == ProcessKind::Service {
+            child.stdin.take()
+        } else {
+            None
+        };
         Ok(ManagedChild { child, input, kind })
     }
+}
+
+fn login_arguments(profile_dir: &Path) -> Vec<OsString> {
+    vec![
+        OsString::from(format!("--user-data-dir={}", profile_dir.display())),
+        OsString::from("https://chatgpt.com/"),
+    ]
+}
+
+fn find_chromium_executable(browsers_root: &Path) -> Result<PathBuf, String> {
+    let entries = std::fs::read_dir(browsers_root).map_err(|_| {
+        "bundled Playwright Chromium is missing; rebuild the desktop bundle".to_string()
+    })?;
+    let mut revisions = entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("chromium-"))
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    revisions.sort();
+    revisions.reverse();
+
+    let candidates: &[&str] = if cfg!(windows) {
+        &["chrome-win64/chrome.exe", "chrome-win/chrome.exe"]
+    } else if cfg!(target_os = "macos") {
+        &[
+            "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+            "chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium",
+        ]
+    } else {
+        &["chrome-linux/chrome", "chrome-linux64/chrome"]
+    };
+    for revision in revisions {
+        for candidate in candidates {
+            let executable = revision.join(candidate);
+            if executable.is_file() {
+                let root = browsers_root
+                    .canonicalize()
+                    .map_err(|_| "could not validate bundled browser directory".to_string())?;
+                let executable = executable
+                    .canonicalize()
+                    .map_err(|_| "could not validate bundled Chromium".to_string())?;
+                if executable.starts_with(root) {
+                    return Ok(executable);
+                }
+            }
+        }
+    }
+    Err("bundled Playwright Chromium executable was not found; rebuild the desktop bundle".into())
+}
+
+fn playwright_browser_from_node(project_root: &Path) -> Result<PathBuf, String> {
+    let output = Command::new("node")
+        .args([
+            "--input-type=module",
+            "--eval",
+            "import { chromium } from 'playwright'; process.stdout.write(chromium.executablePath())",
+        ])
+        .current_dir(project_root)
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|_| "Node.js is required for desktop development".to_string())?;
+    if !output.status.success() {
+        return Err(
+            "could not resolve Playwright Chromium; run `npx playwright install chromium`".into(),
+        );
+    }
+    let executable = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    if !executable.is_file() {
+        return Err(
+            "Playwright Chromium is not installed; run `npx playwright install chromium`".into(),
+        );
+    }
+    Ok(executable)
 }
 
 impl SidecarLifecycle {
@@ -434,5 +518,34 @@ mod tests {
         assert_ne!(profile_dir, data_dir);
         assert!(profile_dir.starts_with(&data_dir));
         assert_eq!(profile_dir, data_dir.join("browser-profile"));
+    }
+
+    #[test]
+    fn manual_login_arguments_have_no_automation_or_debugging_switches() {
+        let profile = Path::new("app-local-data/runtime/browser-profile");
+        let arguments = login_arguments(profile)
+            .into_iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(arguments.len(), 2);
+        assert_eq!(arguments[1], "https://chatgpt.com/");
+        assert_eq!(
+            arguments[0],
+            format!("--user-data-dir={}", profile.display())
+        );
+        let joined = arguments.join(" ").to_ascii_lowercase();
+        for forbidden in [
+            "remote-debug",
+            "automation",
+            "webdriver",
+            "fingerprint",
+            "proxy-server",
+            "disable-blink",
+        ] {
+            assert!(
+                !joined.contains(forbidden),
+                "forbidden login flag: {forbidden}"
+            );
+        }
     }
 }

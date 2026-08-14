@@ -14,6 +14,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "tab2api-desktop"
 path = "src/main.rs"
+test = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
