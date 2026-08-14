@@ -11,6 +11,7 @@ import { createBrowserController } from '../browser/factory.js';
 import { GpmBrowserManager } from '../browser/gpm-manager.js';
 import { loadConfig, type AppConfig } from '../config/index.js';
 import { createLogger } from '../observability/logger.js';
+import { SystemSpeechSynthesizer } from '../audio/system-speech.js';
 import { FakeProvider } from '../testing/fake-provider.js';
 
 function print(message: string): void {
@@ -110,6 +111,13 @@ async function doctor(): Promise<void> {
         config.apiToken.length >= 24
           ? 'configured (redacted)'
           : Promise.reject(new Error('missing')),
+    ],
+    [
+      'Local speech engine',
+      async () => {
+        await new SystemSpeechSynthesizer(config).check();
+        return process.platform;
+      },
     ],
   ];
   let failed = false;

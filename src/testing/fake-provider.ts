@@ -1,5 +1,7 @@
 import { abortError } from '../errors.js';
 import type {
+  GenerateImageRequest,
+  GenerateImageResult,
   GenerateRequest,
   GenerateResult,
   SessionState,
@@ -10,6 +12,7 @@ export class FakeProvider implements WebChatProvider {
   readonly id = 'chatgpt-web' as const;
   state: SessionState = 'ready';
   prompts: string[] = [];
+  attachmentCounts: number[] = [];
   active = 0;
   maxActive = 0;
   closed = false;
@@ -21,6 +24,7 @@ export class FakeProvider implements WebChatProvider {
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     this.prompts.push(request.prompt);
+    this.attachmentCounts.push(request.attachments?.length ?? 0);
     this.active += 1;
     this.maxActive = Math.max(this.maxActive, this.active);
     try {
@@ -42,6 +46,10 @@ export class FakeProvider implements WebChatProvider {
     } finally {
       this.active -= 1;
     }
+  }
+
+  async generateImage(_request: GenerateImageRequest): Promise<GenerateImageResult> {
+    return { data: Buffer.from('fake-png'), mimeType: 'image/png' };
   }
 
   async health(): Promise<SessionState> {

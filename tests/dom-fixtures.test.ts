@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
-import { classifyDocument, extractLatestAssistant } from '../src/adapters/chatgpt/dom.js';
+import {
+  classifyDocument,
+  extractLatestAssistant,
+  hasGeneratedImage,
+} from '../src/adapters/chatgpt/dom.js';
 
 function fixture(name: string): Document {
   const html = readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -27,5 +31,8 @@ describe('ChatGPT DOM fixtures', () => {
   });
   it('reports unknown markup as UI changed', () => {
     expect(classifyDocument(parseHTML('<main>unknown</main>').document)).toBe('ui_changed');
+  });
+  it('detects the image-generation DOM without an assistant-role wrapper', () => {
+    expect(hasGeneratedImage(fixture('chatgpt-image-generated.html'))).toBe(true);
   });
 });

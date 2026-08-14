@@ -31,7 +31,9 @@ const environmentSchema = z.object({
   TAB2API_CONCURRENCY: integer(1, 4).default(1),
   TAB2API_QUEUE_CAPACITY: integer(1, 100).default(16),
   TAB2API_REQUEST_TIMEOUT_MS: integer(1_000, 600_000).default(120_000),
+  TAB2API_IMAGE_TIMEOUT_MS: integer(30_000, 900_000).default(300_000),
   TAB2API_BODY_LIMIT_BYTES: integer(1_024, 1_048_576).default(262_144),
+  TAB2API_MEDIA_LIMIT_BYTES: integer(1_048_576, 26_214_400).default(10_485_760),
   TAB2API_DEBUG: booleanValue,
   TAB2API_LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
@@ -52,7 +54,9 @@ export interface AppConfig {
   concurrency: number;
   queueCapacity: number;
   requestTimeoutMs: number;
+  imageTimeoutMs: number;
   bodyLimitBytes: number;
+  mediaLimitBytes: number;
   debug: boolean;
   logLevel: string;
 }
@@ -87,7 +91,9 @@ export async function loadConfig(
     concurrency: parsed.TAB2API_CONCURRENCY,
     queueCapacity: parsed.TAB2API_QUEUE_CAPACITY,
     requestTimeoutMs: parsed.TAB2API_REQUEST_TIMEOUT_MS,
+    imageTimeoutMs: parsed.TAB2API_IMAGE_TIMEOUT_MS,
     bodyLimitBytes: parsed.TAB2API_BODY_LIMIT_BYTES,
+    mediaLimitBytes: parsed.TAB2API_MEDIA_LIMIT_BYTES,
     debug: parsed.TAB2API_DEBUG,
     logLevel: parsed.TAB2API_LOG_LEVEL,
   };

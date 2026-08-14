@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { serializeMessages, serializeResponsesRequest } from '../src/api/serializer.js';
+import {
+  chatAttachments,
+  serializeChatRequest,
+  serializeMessages,
+  serializeResponsesRequest,
+} from '../src/api/serializer.js';
+
+const pixel =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 describe('prompt serializer', () => {
   it('preserves role and exact order', () => {
@@ -33,5 +41,26 @@ describe('prompt serializer', () => {
       stream: false,
     });
     expect(serialized.indexOf('developer rule')).toBeLessThan(serialized.indexOf('question'));
+  });
+
+  it('preserves an image boundary and decodes attachments separately', () => {
+    const request = {
+      model: 'x',
+      stream: false,
+      messages: [
+        {
+          role: 'user' as const,
+          content: [
+            { type: 'text' as const, text: 'inspect' },
+            { type: 'image_url' as const, image_url: { url: pixel } },
+          ],
+        },
+      ],
+    };
+    expect(serializeChatRequest(request)).toContain('[Attached image 1]');
+    const attachments = chatAttachments(request, 1024);
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]?.mimeType).toBe('image/png');
+    expect(attachments[0]?.data.length).toBeGreaterThan(0);
   });
 });

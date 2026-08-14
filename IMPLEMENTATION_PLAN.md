@@ -17,6 +17,7 @@ An authenticated Fastify server bound only to `127.0.0.1` validates OpenAI-shape
 | done   | 4. ChatGPT UI adapter                   | Centralized semantic selectors, state classifier, extraction state machine, debug opt-in                                       | DOM fixtures and adapter tests passed       |
 | done   | 5. CLI/docs/OSS                         | start/login/doctor/reset/smoke; bilingual guides; security/API/troubleshooting; CI/templates/license                           | docs reviewed; CLI smoke passed             |
 | done   | 6. Security review/release verification | Full diff audit, no runtime/secrets, clean install/check/test/build/smoke/audit                                                | acceptance command transcript recorded      |
+| done   | 7. Media compatibility                  | Vision/image generation, honest OS TTS, UI-mediated STT; bounded media and contract/live tests                                 | focused tests and live GPM E2E passed       |
 
 ## Risks and decisions
 
@@ -31,11 +32,15 @@ An authenticated Fastify server bound only to `127.0.0.1` validates OpenAI-shape
 - **GPM Login restricted:** after an explicit scope change, support only one configured existing profile through get/start/stop. Do not expose GPM profile creation, listing, rotation, proxy, fingerprint, group, or extension features.
 - **Desktop availability:** optional Windows per-user Scheduled Task starts at logon and restarts process failures. It is not a production SLA and still depends on an interactive GPM/login session.
 - **Parallelism:** browser concurrency is configurable from 1–4 and defaults to 1. Higher values trade latency under load for memory use, UI race exposure, and account rate limits.
+- **Media fidelity:** vision and STT upload through the public file chooser. Generated images are captured from the visible image element rather than fetched from private URLs. TTS uses the OS voice engine and is labelled honestly; unsupported size/quality/audio formats are rejected.
 
 ## Research record (official sources, reviewed 2026-08-14)
 
 - OpenAI Chat Completions resource and stream chunk schema: https://developers.openai.com/api/reference/resources/chat
 - OpenAI Responses streaming event lifecycle: https://developers.openai.com/api/docs/guides/streaming-responses
+- OpenAI image generation model/endpoints: https://developers.openai.com/api/docs/models/gpt-image-2
+- OpenAI audio speech endpoint: https://developers.openai.com/api/docs/models/tts-1
+- OpenAI image-input model guidance: https://developers.openai.com/api/docs/models
 - Playwright persistent context/default-profile warning: https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context
 - Playwright locator guidance: https://playwright.dev/docs/locators
 - Fastify server/body limit/listen/shutdown: https://fastify.dev/docs/latest/Reference/Server/
@@ -47,7 +52,7 @@ Completed on Windows/PowerShell with Node v24.14.1 and npm 11.11.0:
 
 - `npm ci`: clean dependency install passed.
 - `npm run check`: strict TypeScript, ESLint, and Prettier checks passed.
-- `npm test`: 11 files / 54 offline tests passed; no ChatGPT request was made.
+- `npm test`: 11 files / 65 offline tests passed; no ChatGPT request was made.
 - `npm run build`: production ESM build passed.
 - `npm run smoke`: authenticated fake-provider Chat Completions path passed.
 - `npm run test:manual` without opt-in: one manual E2E test skipped as designed.
@@ -55,5 +60,6 @@ Completed on Windows/PowerShell with Node v24.14.1 and npm 11.11.0:
 - Production-build loopback HTTP verification against that profile: health/readiness, bearer rejection, models, Chat Completions JSON/SSE, Responses JSON/SSE, FIFO concurrency, and session reset all passed. Response bodies and prompts were not printed.
 - Live two-tab GPM verification with concurrency 2: both simultaneous Responses requests returned HTTP 200 with valid contracts.
 - Windows per-user autostart: installed task reached health/readiness/models HTTP 200; a forced termination of the exact tab2api Node PID recovered to a new PID through the bounded watchdog. GPM Login autostart was detected separately in the user's Startup folder.
+- Live media verification: vision data-URL upload returned text; OS TTS returned a valid RIFF/WAV; that WAV transcribed through multipart/UI; image generation returned a valid PNG `b64_json`. Only status and structural metadata were printed, and runtime media remained ignored.
 - `npm audit --audit-level=high`: zero vulnerabilities.
 - `git diff --check`, ignored-file review, sensitive-term review, and package dry-run completed.

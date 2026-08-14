@@ -55,3 +55,15 @@ Expected: v0.1 buffered SSE waits for browser completion and then sends a single
 Run `npm run autostart:status`, then inspect the ignored `.tab2api/service.log`. The task runs only after the configured user logs in. Ensure GPM Login is also configured to start with Windows and its Local API is enabled. Moving the repository or Node executable invalidates the stored task paths; run `npm run autostart:remove` followed by `npm run autostart:install` from the new location.
 
 If parallel requests become unreliable or trigger rate limits, set `TAB2API_CONCURRENCY=1` and restart the task. Values above 4 are rejected rather than allowing unbounded browser tabs.
+
+## Image generation times out
+
+Image UI generation is slower than text and defaults to `TAB2API_IMAGE_TIMEOUT_MS=300000`. Open the latest conversation manually: if the image exists, a ChatGPT DOM experiment may require a selector update. Enable debug only if you accept local screenshots. Do not blindly resend after timeout because the first image may already exist.
+
+## Speech engine unavailable
+
+Windows uses `System.Speech`; macOS requires `say`; Linux requires `espeak`. Only WAV output is supported. The `X-Tab2api-Audio-Backend` header intentionally identifies this as OS speech rather than ChatGPT/OpenAI TTS.
+
+## Audio or image upload is rejected
+
+Use a supported MIME type and stay below `TAB2API_MEDIA_LIMIT_BYTES`. Vision accepts only PNG/JPEG/WebP base64 data URLs, never remote URLs. Transcription accepts one multipart audio file. If ChatGPT itself rejects a valid file, inspect the headed UI; the bridge does not bypass account/UI restrictions.

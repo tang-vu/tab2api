@@ -42,6 +42,7 @@ class FakePage {
   constructor(private readonly mode: 'ready' | 'delayed' | 'login' | 'unknown') {}
   async goto(): Promise<void> {}
   async waitForTimeout(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 1));
     this.waits += 1;
   }
   url(): string {
@@ -110,6 +111,20 @@ describe('ChatGPT adapter failure cleanup', () => {
     });
     setTimeout(() => controller.abort(new AppError('timeout', 'timed out')), 20);
     await expect(generation).rejects.toMatchObject({ code: 'timeout' });
+    expect(browser.page.closed).toBe(true);
+  });
+
+  it('cancels image generation and closes its tab', async () => {
+    const browser = new FakeBrowser('ready');
+    const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
+    const controller = new AbortController();
+    const generation = adapter.generateImage({
+      prompt: 'image request',
+      signal: controller.signal,
+      requestId: 'image-cancel-test',
+    });
+    setTimeout(() => controller.abort(), 20);
+    await expect(generation).rejects.toMatchObject({ code: 'cancelled' });
     expect(browser.page.closed).toBe(true);
   });
 

@@ -3,6 +3,8 @@ import type { Locator, Page } from 'playwright';
 import type { Logger } from 'pino';
 import { AppError, abortError, asSafeAppError } from '../../errors.js';
 import type {
+  GenerateImageRequest,
+  GenerateImageResult,
   GenerateRequest,
   GenerateResult,
   SessionState,
@@ -67,6 +69,18 @@ export class ChatGptAdapter implements WebChatProvider {
       if (composer === undefined) throw this.uiChanged();
       const baseline = await countAll(page, UI_SELECTORS.assistantMessage);
       const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
+      if (request.attachments !== undefined && request.attachments.length > 0) {
+        const fileInput = page.locator(UI_SELECTORS.fileInput[0]).first();
+        if ((await fileInput.count()) === 0)
+          throw new AppError('ui_changed', 'The ChatGPT file input is unavailable.');
+        await fileInput.setInputFiles(
+          request.attachments.map((attachment) => ({
+            name: attachment.filename,
+            mimeType: attachment.mimeType,
+            buffer: attachment.data,
+          })),
+        );
+      }
       await composer.fill(request.prompt);
       const send = await firstVisible(page, UI_SELECTORS.sendButton);
       if (send !== undefined) await send.click();
@@ -101,6 +115,47 @@ export class ChatGptAdapter implements WebChatProvider {
         'browser request failed',
       );
       // A submitted prompt is never retried because generation may already have started.
+      throw asSafeAppError(error);
+    } finally {
+      await page?.close().catch(() => undefined);
+    }
+  }
+
+  async generateImage(request: GenerateImageRequest): Promise<GenerateImageResult> {
+    let page: Page | undefined;
+    let submitted = false;
+    try {
+      if (request.signal.aborted) throw abortError(request.signal);
+      page = await this.browser.getPage();
+      await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      this.assertReady(await this.waitForInitialState(page));
+      const composer = await firstVisible(page, UI_SELECTORS.composer);
+      if (composer === undefined) throw this.uiChanged();
+      const baselineImages = await countAll(page, UI_SELECTORS.generatedImage);
+      const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
+      await composer.fill(`Create exactly one image from this request:\n\n${request.prompt}`);
+      const send = await firstVisible(page, UI_SELECTORS.sendButton);
+      if (send !== undefined) await send.click();
+      else await composer.press('Enter');
+      submitted = true;
+      const data = await this.waitForGeneratedImage(
+        page,
+        baselineImages,
+        baselineCompletionActions,
+        request.signal,
+      );
+      return { data, mimeType: 'image/png' };
+    } catch (error) {
+      if (request.signal.aborted) throw abortError(request.signal);
+      if (error instanceof AppError) throw error;
+      this.logger.warn(
+        {
+          errorType: error instanceof Error ? error.name : 'unknown',
+          requestId: request.requestId,
+          submitted,
+        },
+        'browser image request failed',
+      );
       throw asSafeAppError(error);
     } finally {
       await page?.close().catch(() => undefined);
@@ -192,6 +247,50 @@ export class ChatGptAdapter implements WebChatProvider {
         }, POLL_MS);
         signal.addEventListener('abort', onAbort, { once: true });
       });
+    }
+  }
+
+  private async waitForGeneratedImage(
+    page: Page,
+    baselineImages: number,
+    baselineCompletionActions: number,
+    signal: AbortSignal,
+  ): Promise<Buffer> {
+    let stableObservations = 0;
+    while (true) {
+      if (signal.aborted) throw abortError(signal);
+      const state = await this.classifyPage(page, true);
+      if (state === 'rate_limited' || state === 'security_challenge' || state === 'login_required')
+        this.assertReady(state);
+      let image: Locator | undefined;
+      for (const selector of UI_SELECTORS.generatedImage) {
+        const candidates = page.locator(selector);
+        const count = await candidates.count();
+        if (count > baselineImages) {
+          image = candidates.nth(count - 1);
+          break;
+        }
+      }
+      const complete =
+        image !== undefined &&
+        (await image
+          .evaluate((element) => {
+            const candidate = element as HTMLImageElement;
+            return candidate.complete && candidate.naturalWidth > 0 && candidate.naturalHeight > 0;
+          })
+          .catch(() => false));
+      stableObservations = complete ? stableObservations + 1 : 0;
+      const generating = (await firstVisible(page, UI_SELECTORS.stopButton)) !== undefined;
+      const completionActionAvailable =
+        (await countAll(page, UI_SELECTORS.completionAction)) > baselineCompletionActions;
+      if (
+        image !== undefined &&
+        stableObservations >= 3 &&
+        (!generating || completionActionAvailable)
+      ) {
+        return image.screenshot({ type: 'png' });
+      }
+      await page.waitForTimeout(POLL_MS);
     }
   }
 

@@ -1,5 +1,6 @@
 export type ErrorCode =
   | 'authentication_error'
+  | 'audio_unavailable'
   | 'browser_disconnected'
   | 'cancelled'
   | 'invalid_request'
@@ -12,6 +13,7 @@ export type ErrorCode =
 
 const statusByCode: Record<ErrorCode, number> = {
   authentication_error: 401,
+  audio_unavailable: 503,
   browser_disconnected: 503,
   cancelled: 499,
   invalid_request: 400,

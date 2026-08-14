@@ -106,4 +106,20 @@ describe('configuration security', () => {
       loadConfig({ ...base, TAB2API_CONCURRENCY: '5' }, 'C:\\work\\tab2api'),
     ).rejects.toThrow();
   });
+
+  it('bounds media bytes and permits a longer image timeout', async () => {
+    const base = {
+      TAB2API_API_TOKEN: token,
+      TAB2API_DATA_DIR: '.runtime',
+      TAB2API_PROFILE_DIR: '.runtime/profile',
+      TAB2API_IMAGE_TIMEOUT_MS: '300000',
+    };
+    await expect(loadConfig(base, 'C:\\work\\tab2api')).resolves.toMatchObject({
+      imageTimeoutMs: 300_000,
+      mediaLimitBytes: 10_485_760,
+    });
+    await expect(
+      loadConfig({ ...base, TAB2API_MEDIA_LIMIT_BYTES: '999999999' }, 'C:\\work\\tab2api'),
+    ).rejects.toThrow();
+  });
 });

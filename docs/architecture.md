@@ -6,10 +6,11 @@ tab2api is a single-user desktop bridge, not an API service for deployment. It a
 
 ## Components
 
-- `api/`: Fastify routes, strict Zod schemas, transcript serialization, JSON/SSE mapping, authentication integration.
+- `api/`: Fastify routes, strict Zod/multipart parsing, transcript/media serialization, JSON/SSE/binary mapping, authentication integration.
+- `audio/`: local operating-system WAV synthesis with restrictive temporary files and cleanup.
 - `browser/`: one persistent Chromium context and fresh request tabs. Closing the context closes the browser.
 - `adapters/chatgpt/`: all URL/UI assumptions, selector candidates, state classification, visible-text extraction, and completion state machine.
-- `queue/`: bounded FIFO scheduler. Default and currently fixed execution concurrency is one.
+- `queue/`: bounded FIFO scheduler with configurable browser concurrency from one through four.
 - `config/`: environment parsing and runtime token loading/creation.
 - `security/`: loopback, safe path, bearer parsing, and timing-safe digest comparison.
 - `observability/`: Pino configuration with allowlisted request serialization and redaction.
@@ -21,12 +22,12 @@ tab2api is a single-user desktop bridge, not an API service for deployment. It a
 ## Request lifecycle
 
 1. Fastify accepts at most the configured body size and authenticates protected routes.
-2. Zod strict schemas reject unknown/unsupported fields and non-text content.
+2. Strict schemas reject unknown fields; media parsers enforce MIME, data-URL, count, and byte limits and reject remote image URLs.
 3. The serializer converts messages to an ordered, role-labelled XML-like envelope and entity-escapes boundary characters.
 4. The bounded FIFO admits or rejects work. Configurable concurrency is constrained to 1–4 browser tabs and defaults to 1; a request timeout/abort signal applies while queued and running.
 5. The adapter opens a new page, navigates to the public ChatGPT root (a new conversation), classifies state, records the assistant-message baseline, fills the visible composer, and submits once.
 6. A state machine waits for a new assistant node and stable visible text. Completion additionally requires either the generation control to disappear or a new completed-turn action to appear; this handles UI variants that leave a stale Stop control visible. No fixed one-shot sleep decides completion.
-7. The result is mapped to the truthful `chatgpt-web` model. The page closes in `finally` for success, error, timeout, and cancellation.
+7. Text is mapped to `chatgpt-web`; image elements are screenshotted to PNG, while STT uses a bounded audio attachment. The page closes in `finally` for success, error, timeout, and cancellation. TTS is a separate, labelled OS backend but still enters the bounded work queue for flood control.
 
 ## Decisions
 
@@ -52,10 +53,14 @@ Browser acquisition may relaunch once only before a request obtains a tab. After
 
 Visible UI text can change non-monotonically while ChatGPT formats an answer. Version 0.1 therefore uses a documented buffered SSE fallback rather than claiming reliable token streaming. It emits compatible event/chunk shapes only after completion and ends with `[DONE]`. Token counts and exact UI-selected model are not observable. Chat usage zeros are explicitly annotated unavailable; Responses usage is `null`.
 
+### Media fidelity
+
+Vision and transcription use Playwright's public file chooser with in-memory buffers; no ChatGPT upload endpoint is called directly. Image generation waits for a new semantic image element and captures only its rendered pixels, avoiding extraction of private asset URLs. Consequently output resolution is the displayed resolution and only `auto` size/quality are accepted. Read-aloud audio cannot be extracted safely from the UI without relying on internal transport, so `/v1/audio/speech` deliberately uses the local OS engine and returns a disclosure header.
+
 ### Debug data
 
 No prompt, response, DOM, trace, HAR, cookie, or storage state is persisted. With `TAB2API_DEBUG=true`, only a local screenshot is attempted for `ui_changed`, under a gitignored runtime directory. Screenshots can contain conversation text and must be treated as sensitive.
 
 ## Research basis
 
-Reviewed 2026-08-14: [OpenAI Chat resource](https://developers.openai.com/api/reference/resources/chat), [OpenAI streaming responses](https://developers.openai.com/api/docs/guides/streaming-responses), [Playwright persistent contexts](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context), [Playwright locators](https://playwright.dev/docs/locators), [Fastify server](https://fastify.dev/docs/latest/Reference/Server/), [Fastify validation](https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/), and [GPM Login Local API](https://api-docs.gpmloginapp.com/).
+Reviewed 2026-08-14: [OpenAI Chat resource](https://developers.openai.com/api/reference/resources/chat), [OpenAI streaming responses](https://developers.openai.com/api/docs/guides/streaming-responses), [OpenAI GPT Image 2](https://developers.openai.com/api/docs/models/gpt-image-2), [OpenAI TTS-1](https://developers.openai.com/api/docs/models/tts-1), [OpenAI model modality guidance](https://developers.openai.com/api/docs/models), [Playwright persistent contexts](https://playwright.dev/docs/api/class-browsertype#browser-type-launch-persistent-context), [Playwright locators](https://playwright.dev/docs/locators), [Fastify server](https://fastify.dev/docs/latest/Reference/Server/), [Fastify validation](https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/), and [GPM Login Local API](https://api-docs.gpmloginapp.com/).

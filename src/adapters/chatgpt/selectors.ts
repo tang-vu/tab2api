@@ -20,6 +20,20 @@ export const UI_SELECTORS = {
     'button[aria-label*="Copy message"]',
     'button[aria-label*="Sao chép tin nhắn"]',
   ],
+  fileInput: ['input[type="file"]'],
+  attachmentReady: [
+    '[data-testid*="file"]',
+    'button[aria-label*="Remove file"]',
+    'button[aria-label*="Xóa tệp"]',
+    '[class*="file-preview"]',
+  ],
+  generatedImage: [
+    'main img[alt^="Generated image"]',
+    'main img[alt^="Ảnh đã tạo"]',
+    'main [class*="imagegen-image"] img[alt]:not([alt=""])',
+    '[data-message-author-role="assistant"] img:not([alt="ChatGPT"])',
+    'article[data-testid^="conversation-turn-"] img[src]',
+  ],
   assistantMessage: [
     '[data-message-author-role="assistant"]',
     'article[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',
@@ -48,4 +62,9 @@ export const DOM_MARKERS = {
   login: ['[data-testid="login-button"]', 'a[href*="/auth/login"]'],
   challenge: ['iframe[src*="challenges.cloudflare.com"]', '[id*="challenge"]'],
   rateLimit: ['[data-testid="rate-limit-error"]'],
+  generatedImage: [
+    'main img[alt^="Generated image"]',
+    'main img[alt^="Ảnh đã tạo"]',
+    'main [class*="imagegen-image"] img[alt]:not([alt=""])',
+  ],
 } as const;

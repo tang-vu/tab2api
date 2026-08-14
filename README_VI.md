@@ -1,6 +1,6 @@
 # tab2api
 
-`tab2api` là REST bridge local-first, tương thích một phần với OpenAI, dùng **phiên ChatGPT.com do chính bạn đăng nhập thủ công**. Fastify nhận request tại loopback, Playwright thao tác giao diện web công khai trong profile Chromium riêng, rồi chuyển câu trả lời nhìn thấy thành JSON/SSE.
+`tab2api` là REST bridge local-first, tương thích một phần với OpenAI, dùng **phiên ChatGPT.com do chính bạn đăng nhập thủ công**. Sản phẩm hỗ trợ chat text, vision qua ảnh upload, tạo ảnh qua UI và transcription audio qua UI. Endpoint TTS WAV dùng engine giọng nói cục bộ của hệ điều hành và được ghi nhãn trung thực.
 
 Đây là browser automation không chính thức, không phải OpenAI API chính thức. Giao diện ChatGPT thay đổi có thể làm công cụ hỏng. Công cụ chỉ dành cho một người trên máy cá nhân, không phù hợp production và không được triển khai thành proxy public/shared.
 
@@ -92,6 +92,17 @@ curl.exe http://127.0.0.1:3210/v1/responses `
   -d '{"model":"chatgpt-web","instructions":"Trả lời ngắn.","input":"Local-first là gì?"}'
 ```
 
+Tạo ảnh:
+
+```powershell
+curl.exe http://127.0.0.1:3210/v1/images/generations `
+  -H "Authorization: Bearer $token" `
+  -H "Content-Type: application/json" `
+  -d '{"model":"chatgpt-web-image","prompt":"Một hình tròn xanh trên nền trắng","response_format":"b64_json"}'
+```
+
+Speech dùng `/v1/audio/speech` với JSON và trả WAV. Transcription dùng multipart tại `/v1/audio/transcriptions`. Xem [tài liệu API](docs/api.md) để biết schema và giới hạn media chính xác.
+
 Cấu hình client JavaScript tương thích OpenAI:
 
 ```ts
@@ -117,9 +128,11 @@ npm run autostart:status
 
 Task chạy nền khi user đăng nhập Windows và dùng watchdog có giới hạn cùng cơ chế restart của Task Scheduler khi process lỗi. Log đã redact nằm tại `.tab2api/service.log` và được gitignore. GPM Login cũng phải tự mở cùng Windows và profile phải còn đăng nhập. Đây là availability best-effort trên desktop, không phải bảo đảm uptime production: logout, sleep/mất điện, CAPTCHA, rate limit, UI đổi hoặc GPM không chạy đều có thể làm generation ngừng. Gỡ task bằng `npm run autostart:remove`; profile và dữ liệu runtime được giữ lại.
 
-- Chỉ hỗ trợ text với role `system`, `developer`, `user`, `assistant`; dữ liệu/field chưa hỗ trợ bị từ chối rõ ràng.
+- Hỗ trợ text với role `system`, `developer`, `user`, `assistant`; vision nhận data URL PNG/JPEG/WebP có giới hạn và từ chối URL ảnh từ xa.
 - Model trả về luôn là `chatgpt-web`; tên model client gửi không điều khiển model picker trên UI.
-- Không hỗ trợ tool calling, ảnh, audio, structured output hoặc logprobs.
+- Không hỗ trợ tool calling, sửa ảnh, voice realtime, MP3 TTS, structured output hoặc logprobs.
+- Ảnh output là screenshot PNG của phần tử ảnh đã tạo đang hiển thị; chỉ hỗ trợ `n=1`, `size=auto`, `quality=auto`, `b64_json`.
+- TTS dùng engine OS và không giả là giọng OpenAI/ChatGPT. STT upload audio qua UI nên không khẳng định model transcription cụ thể.
 - UI không cho biết token usage: Chat Completions dùng số 0 kèm `usage_available=false`; Responses dùng `usage: null`. Đây là “không biết”, không phải usage thực bằng 0.
 - `stream: true` là buffered fallback: đợi browser hoàn tất rồi mới gửi một delta. Chat Completions kết thúc bằng `[DONE]`, Responses bằng `response.completed`; đây không phải token streaming thời gian thực.
 - Không bypass CAPTCHA, Cloudflare, rate limit hay security challenge; không stealth/fingerprint spoofing; không retry prompt sau lỗi mơ hồ.

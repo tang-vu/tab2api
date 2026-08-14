@@ -1,6 +1,6 @@
 # tab2api
 
-`tab2api` is a local-first, unofficial OpenAI-compatible REST bridge to **your own manually logged-in ChatGPT.com browser session**. It accepts a small, text-only subset of Chat Completions and Responses requests on loopback, operates the public ChatGPT web UI through Playwright, and maps the visible answer back to JSON or SSE.
+`tab2api` is a local-first, unofficial OpenAI-compatible REST bridge to **your own manually logged-in ChatGPT.com browser session**. It supports text chat, image input, UI image generation, and UI-mediated audio transcription. Local OS speech synthesis provides a clearly labelled WAV compatibility endpoint.
 
 This is browser automation, not the official OpenAI API. It may break whenever ChatGPT's UI changes. It is intended for one user on a personal computer, is not suitable for production, and must never be hosted as a shared or public proxy.
 
@@ -104,6 +104,17 @@ const result = await client.chat.completions.create({
 
 The `openai` package is only an example client and is not a tab2api dependency.
 
+Image generation:
+
+```powershell
+curl.exe http://127.0.0.1:3210/v1/images/generations `
+  -H "Authorization: Bearer $token" `
+  -H "Content-Type: application/json" `
+  -d '{"model":"chatgpt-web-image","prompt":"A blue circle on white","response_format":"b64_json"}'
+```
+
+Speech and transcription use `/v1/audio/speech` (JSON, WAV output) and `/v1/audio/transcriptions` (multipart). See [the API reference](docs/api.md) for exact schemas and media limits.
+
 ## First login and normal operation
 
 `npm run login` launches the selected dedicated profile and waits until the composer is compatible. `npm start` reuses that profile. Each API request opens a fresh ChatGPT page/conversation and closes it afterward. `TAB2API_CONCURRENCY` controls 1–4 parallel browser tabs; the safe default is one, with a bounded FIFO queue. Start with 2 only after a live test because one account may rate-limit and UI tabs consume substantial memory. `npm run doctor` checks Node, the selected browser backend, directory permissions, port, local token, browser connectivity, login, and selectors. `npm run reset-session` closes the bridge browser process through the authenticated admin route without deleting the profile.
@@ -132,10 +143,14 @@ GPM mode ignores `TAB2API_HEADLESS`; window behavior is controlled by GPM Login.
 
 - `GET /healthz`, `GET /readyz`, `GET /v1/models`
 - `POST /v1/chat/completions`, `POST /v1/responses`
+- `POST /v1/images/generations`
+- `POST /v1/audio/speech`, `POST /v1/audio/transcriptions`
 - `POST /admin/session/reset`
-- Text messages with `system`, `developer`, `user`, and prior `assistant` roles; unsupported content and unknown request fields are rejected.
+- Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs. Remote image URLs are rejected.
 - The truthful model is always `chatgpt-web`. A different incoming model string is client metadata and does not control the ChatGPT UI model picker.
-- Tool calls, images, audio, JSON schema output, logprobs, and accurate sampling/model controls are not supported.
+- Tool calls, image editing, live voice/realtime audio, MP3 TTS, JSON schema output, logprobs, and accurate sampling/model controls are not supported.
+- Image output is a screenshot of the displayed generated-image element. Only `n=1`, `size=auto`, `quality=auto`, and `b64_json` are accepted.
+- TTS uses the local OS voice engine and returns WAV; it is not ChatGPT/OpenAI speech. STT uploads the audio through the UI and therefore cannot assert an exact transcription model.
 - Token counts are not visible in the UI. Chat Completions returns zero counts with `tab2api.usage_available=false`; Responses returns `usage: null`. These values mean “unknown,” not zero actual usage.
 - `stream: true` is a **buffered fallback**: generation finishes in the browser, then one text delta is sent. Chat Completions ends with `[DONE]`; Responses ends with `response.completed`. It is not live token streaming.
 - UI text extraction preserves visible multiline/code/list text but may differ from original Markdown source.

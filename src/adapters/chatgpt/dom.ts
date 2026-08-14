@@ -33,3 +33,7 @@ export function extractLatestAssistant(document: Document): string | undefined {
   }
   return undefined;
 }
+
+export function hasGeneratedImage(document: Document): boolean {
+  return matchesAny(document, DOM_MARKERS.generatedImage);
+}
