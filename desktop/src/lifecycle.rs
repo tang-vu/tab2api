@@ -1,13 +1,13 @@
 #![cfg_attr(test, allow(dead_code))]
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::ffi::OsString;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::Mutex;
+use std::process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -27,6 +27,21 @@ struct ManagedChild {
     child: Child,
     input: Option<ChildStdin>,
     kind: ProcessKind,
+    protocol: Arc<Mutex<ProtocolState>>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ProtocolState {
+    last_event: Option<ProtocolEvent>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ProtocolEvent {
+    protocol: u8,
+    event: String,
+    state: String,
+    code: Option<String>,
+    reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -121,7 +136,8 @@ impl RuntimeSpec {
                     .env("TAB2API_BROWSER_BACKEND", "playwright")
                     .env("TAB2API_DATA_DIR", data_dir)
                     .env("TAB2API_PROFILE_DIR", profile_dir)
-                    .stdin(Stdio::piped());
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped());
                 if let Some(browsers_path) = &self.browsers_path {
                     command.env("PLAYWRIGHT_BROWSERS_PATH", browsers_path);
                 }
@@ -131,24 +147,121 @@ impl RuntimeSpec {
                 let mut command = Command::new(&self.login_browser);
                 command
                     .args(login_arguments(profile_dir))
-                    .stdin(Stdio::null());
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null());
                 command
             }
         };
-        command
-            .current_dir(&self.working_dir)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+        command.current_dir(&self.working_dir).stderr(Stdio::null());
         let mut child = command.spawn().map_err(|error| match kind {
             ProcessKind::Service => format!("could not start the tab2api sidecar: {error}"),
             ProcessKind::Login => format!("could not open the dedicated Chromium window: {error}"),
         })?;
+        let protocol = Arc::new(Mutex::new(ProtocolState::default()));
         let input = if kind == ProcessKind::Service {
-            child.stdin.take()
+            let output = child
+                .stdout
+                .take()
+                .ok_or("sidecar protocol output pipe was not created")?;
+            read_protocol(output, Arc::clone(&protocol));
+            let mut input = child
+                .stdin
+                .take()
+                .ok_or("sidecar protocol input pipe was not created")?;
+            if write_protocol_handshake(&mut input).is_err() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("sidecar protocol handshake failed before startup".into());
+            }
+            Some(input)
         } else {
             None
         };
-        Ok(ManagedChild { child, input, kind })
+        Ok(ManagedChild {
+            child,
+            input,
+            kind,
+            protocol,
+        })
+    }
+}
+
+fn write_protocol_handshake(output: &mut impl Write) -> std::io::Result<()> {
+    output.write_all(b"{\"command\":\"status\"}\n")?;
+    output.flush()
+}
+
+fn read_protocol(output: ChildStdout, state: Arc<Mutex<ProtocolState>>) {
+    thread::spawn(move || {
+        let reader = BufReader::new(output);
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            if line.len() > 4096 {
+                continue;
+            }
+            let Ok(event) = serde_json::from_str::<ProtocolEvent>(&line) else {
+                continue;
+            };
+            if protocol_event_is_safe(&event)
+                && let Ok(mut current) = state.lock()
+            {
+                current.last_event = Some(event);
+            }
+        }
+    });
+}
+
+fn protocol_event_is_safe(event: &ProtocolEvent) -> bool {
+    event.protocol == 1
+        && matches!(
+            event.event.as_str(),
+            "starting"
+                | "listening"
+                | "status"
+                | "stopping"
+                | "stopped"
+                | "fatal"
+                | "protocol_error"
+        )
+        && matches!(
+            event.state.as_str(),
+            "idle" | "starting" | "listening" | "stopping" | "stopped" | "failed"
+        )
+        && event.code.as_deref().is_none_or(|code| {
+            matches!(
+                code,
+                "startup_failed" | "invalid_command" | "command_too_large"
+            )
+        })
+        && event.reason.as_deref().is_none_or(|reason| {
+            matches!(
+                reason,
+                "parent_stream_closed" | "parent_request" | "SIGINT" | "SIGTERM"
+            )
+        })
+}
+
+fn sanitized_exit_detail(managed: &ManagedChild, status: ExitStatus) -> String {
+    let event = managed
+        .protocol
+        .lock()
+        .ok()
+        .and_then(|state| state.last_event.clone());
+    let status = status
+        .code()
+        .map_or_else(|| "terminated".to_string(), |code| format!("exit {code}"));
+    match event {
+        Some(event) if event.code.as_deref() == Some("startup_failed") => format!(
+            "sidecar reported startup_failed ({status}); verify port availability and app-local data permissions"
+        ),
+        Some(event) if event.reason.as_deref() == Some("parent_stream_closed") => {
+            format!("sidecar protocol pipe closed unexpectedly ({status}); restart the desktop app")
+        }
+        Some(event) => format!(
+            "sidecar exited after protocol event {} ({status})",
+            event.event
+        ),
+        None => format!("sidecar exited without a protocol event ({status})"),
     }
 }
 
@@ -273,9 +386,25 @@ impl SidecarLifecycle {
         while Instant::now() < deadline {
             {
                 let mut inner = self.lock()?;
-                Self::refresh_process(&mut inner)?;
-                if inner.process.is_none() {
-                    return Err("tab2api exited before its health endpoint became available".into());
+                let exit_status = match inner.process.as_mut() {
+                    Some(managed) => managed
+                        .child
+                        .try_wait()
+                        .map_err(|error| format!("could not inspect tab2api: {error}"))?,
+                    None => {
+                        return Err(
+                            "tab2api process disappeared before its health endpoint became available"
+                                .into(),
+                        );
+                    }
+                };
+                if let Some(exit_status) = exit_status {
+                    let managed = inner
+                        .process
+                        .take()
+                        .ok_or("tab2api process state was lost during startup")?;
+                    inner.phase = ServicePhase::Stopped;
+                    return Err(sanitized_exit_detail(&managed, exit_status));
                 }
             }
             if probe_health(self.port, Duration::from_millis(500)) {
@@ -547,5 +676,35 @@ mod tests {
                 "forbidden login flag: {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn protocol_diagnostics_accept_only_versioned_allowlisted_fields() {
+        let valid = ProtocolEvent {
+            protocol: 1,
+            event: "fatal".into(),
+            state: "failed".into(),
+            code: Some("startup_failed".into()),
+            reason: None,
+        };
+        assert!(protocol_event_is_safe(&valid));
+
+        let mut invalid = valid.clone();
+        invalid.code = Some("token=must-not-be-forwarded".into());
+        assert!(!protocol_event_is_safe(&invalid));
+        invalid = valid.clone();
+        invalid.event = "arbitrary_child_output".into();
+        assert!(!protocol_event_is_safe(&invalid));
+        invalid = valid;
+        invalid.protocol = 2;
+        assert!(!protocol_event_is_safe(&invalid));
+    }
+
+    #[test]
+    fn parent_pipe_handshake_is_one_bounded_protocol_command() {
+        let mut output = Vec::new();
+        write_protocol_handshake(&mut output).unwrap();
+        assert_eq!(output, b"{\"command\":\"status\"}\n");
+        assert!(output.len() < 4096);
     }
 }
