@@ -8,7 +8,9 @@ import type {
   GenerateImageResult,
   GenerateRequest,
   GenerateResult,
+  ProjectSummary,
   SessionState,
+  UploadProjectFilesResult,
   WebChatProvider,
 } from '../src/provider.js';
 import { FakeProvider } from '../src/testing/fake-provider.js';
@@ -26,6 +28,18 @@ class ErrorProvider implements WebChatProvider {
     throw this.error;
   }
   async generateImage(_request: GenerateImageRequest): Promise<GenerateImageResult> {
+    throw this.error;
+  }
+  async createProject(): Promise<ProjectSummary> {
+    throw this.error;
+  }
+  async listProjects(): Promise<readonly ProjectSummary[]> {
+    throw this.error;
+  }
+  async deleteProject(): Promise<void> {
+    throw this.error;
+  }
+  async uploadProjectFiles(): Promise<UploadProjectFilesResult> {
     throw this.error;
   }
   async health(): Promise<SessionState> {

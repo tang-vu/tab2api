@@ -65,6 +65,51 @@ export const UI_SELECTORS = {
     '[class*="aria-busy"]',
     '[aria-busy="true"]',
   ],
+  // The projects surface renders a grid, not links: no element carries the `g-p-` id, so a
+  // row's identity is only observable by opening it. These selectors are taken from the
+  // live UI rather than guessed.
+  newProjectButton: [
+    'main button:visible:has-text("Tạo")',
+    'main button:visible:has-text("Create")',
+    'button[aria-label="Dự án mới"]',
+    'button[aria-label*="New project" i]',
+  ],
+  projectNameInput: ['input#project-name', 'input[name="projectName"]'],
+  projectCreateConfirm: [
+    'button[type="submit"]:has-text("Tạo dự án")',
+    'button[type="submit"]:has-text("Create project")',
+    'button[type="submit"]:visible',
+  ],
+  projectRow: ['[role="row"][data-page-table-selectable-row]', '[role="grid"] [role="row"]'],
+  projectTitle: [
+    'button[aria-label^="Chỉnh sửa tiêu đề của"]',
+    'button[aria-label^="Edit title of"]',
+    'button[aria-label*="tiêu đề" i]',
+    'button[aria-label*="title" i]',
+  ],
+  projectOptionsButton: [
+    'button[aria-label^="Mở các tùy chọn dự án cho"]',
+    'button[aria-label^="Open project options for"]',
+    'button[aria-label*="tùy chọn dự án" i]',
+    'button[aria-label*="project options" i]',
+  ],
+  projectDeleteMenuItem: [
+    '[role="menuitem"]:has-text("Xóa dự án")',
+    '[role="menuitem"]:has-text("Xoá dự án")',
+    '[role="menuitem"]:has-text("Delete project")',
+  ],
+  projectDeleteConfirm: [
+    '[role="dialog"] button:has-text("Xóa")',
+    '[role="dialog"] button:has-text("Xoá")',
+    '[role="dialog"] button:has-text("Delete")',
+    'button[data-testid*="confirm"]',
+  ],
+  // On the sources tab two unrestricted file inputs exist: the composer's attachment input
+  // and the project's own sources input. They are told apart by ancestry, not by selector,
+  // because only the composer one sits inside the composer wrapper below.
+  projectFileInput: ['input[type="file"][multiple]:not([accept])', 'input[type="file"][multiple]'],
+  composerWrapper: '[class*="group/composer"]',
+  projectSourceEntry: ['[data-testid*="source"]', 'main'],
 } as const;
 
 export const DOM_MARKERS = {

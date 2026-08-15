@@ -6,7 +6,7 @@ import { z, ZodError } from 'zod';
 import type { AppConfig } from '../config/index.js';
 import { AppError, asSafeAppError } from '../errors.js';
 import type { WebChatProvider } from '../provider.js';
-import type { AudioMimeType, MediaAttachment } from '../provider.js';
+import type { AudioMimeType, DocumentMimeType, MediaAttachment } from '../provider.js';
 import { FifoQueue } from '../queue/fifo.js';
 import { SystemSpeechSynthesizer, type SpeechSynthesizer } from '../audio/system-speech.js';
 import { ApiKeyStore, type ApiPrincipal } from '../security/api-keys.js';
@@ -16,7 +16,9 @@ import { UsageStore } from '../store/usage.js';
 import { API_MODEL, chatSse, mapChatCompletion, mapResponse, responsesSse } from './mappers.js';
 import {
   chatCompletionRequestSchema,
+  createProjectRequestSchema,
   imageGenerationRequestSchema,
+  projectParamsSchema,
   responsesRequestSchema,
   speechRequestSchema,
 } from './schemas.js';
@@ -129,6 +131,39 @@ function promptData(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
+const MAX_PROJECT_FILES = 20;
+
+const DOCUMENT_MIME_TYPES = new Set<DocumentMimeType>([
+  'application/json',
+  'application/pdf',
+  'application/zip',
+  'text/csv',
+  'text/html',
+  'text/markdown',
+  'text/plain',
+]);
+
+/**
+ * Source files arrive with inconsistent or absent types (`text/x-python`, `application/
+ * octet-stream`, ...). Anything outside the known set is uploaded as plain text rather than
+ * widening the attachment union to an arbitrary client-supplied string.
+ */
+function documentMimeType(mimeType: string): DocumentMimeType {
+  return DOCUMENT_MIME_TYPES.has(mimeType as DocumentMimeType)
+    ? (mimeType as DocumentMimeType)
+    : 'text/plain';
+}
+
+/**
+ * The upload name reaches the browser's file chooser, so it must stay a bare filename:
+ * directory separators and traversal segments are dropped rather than rejected.
+ */
+function safeUploadFilename(filename: string | undefined, index: number): string {
+  const base = (filename ?? '').split(/[\\/]/).pop() ?? '';
+  const cleaned = base.replaceAll(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '');
+  return cleaned.length > 0 ? cleaned.slice(0, 100) : `project-file-${index}.txt`;
+}
+
 export function buildServer(dependencies: ServerDependencies) {
   const { config, provider, logger } = dependencies;
   const queue = dependencies.queue ?? new FifoQueue(config.concurrency, config.queueCapacity);
@@ -150,11 +185,13 @@ export function buildServer(dependencies: ServerDependencies) {
   });
   void app.register(multipart, {
     limits: {
-      files: 1,
+      // Project uploads accept a batch; the transcription route still rejects a second
+      // file itself, so raising this ceiling does not loosen that contract.
+      files: MAX_PROJECT_FILES,
       fileSize: config.mediaLimitBytes,
       fields: 8,
       fieldSize: 32_768,
-      parts: 9,
+      parts: MAX_PROJECT_FILES + 9,
     },
   });
 
@@ -247,39 +284,200 @@ export function buildServer(dependencies: ServerDependencies) {
     ],
   }));
 
+  // Shared by the plain and the project-scoped routes; `projectId` is the only difference.
+  async function runChatCompletion(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    projectId?: string,
+  ): Promise<unknown> {
+    const body = chatCompletionRequestSchema.parse(request.body);
+    const prompt = serializeChatRequest(body);
+    observe(request, { inputText: prompt });
+    const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
+    try {
+      const result = await queue.enqueue(
+        () =>
+          provider.generate({
+            prompt,
+            signal: lifecycle.controller.signal,
+            requestId: request.id,
+            attachments: chatAttachments(body, config.mediaLimitBytes),
+            ...(projectId !== undefined && { projectId }),
+            ...(body.conversation_id !== undefined && { conversationId: body.conversation_id }),
+          }),
+        lifecycle.controller.signal,
+      );
+      const response = mapChatCompletion(result.text, Date.now(), result.conversationId);
+      observe(request, { outputText: result.text });
+      store.set({ id: response.id, createdAt: response.created, status: 'completed' });
+      if (body.stream) {
+        return reply
+          .header('content-type', 'text/event-stream; charset=utf-8')
+          .header('cache-control', 'no-cache')
+          .header('x-tab2api-stream-mode', 'buffered')
+          .send(chatSse(response));
+      }
+      return response;
+    } finally {
+      lifecycle.dispose();
+    }
+  }
+
+  async function runResponses(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    projectId?: string,
+  ): Promise<unknown> {
+    const body = responsesRequestSchema.parse(request.body);
+    const prompt = serializeResponsesRequest(body);
+    observe(request, { inputText: prompt });
+    const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
+    try {
+      const result = await queue.enqueue(
+        () =>
+          provider.generate({
+            prompt,
+            signal: lifecycle.controller.signal,
+            requestId: request.id,
+            attachments: responsesAttachments(body, config.mediaLimitBytes),
+            ...(projectId !== undefined && { projectId }),
+            ...(body.conversation_id !== undefined && { conversationId: body.conversation_id }),
+          }),
+        lifecycle.controller.signal,
+      );
+      const response = mapResponse(result.text, Date.now(), result.conversationId);
+      observe(request, { outputText: result.text });
+      store.set({ id: response.id, createdAt: response.created_at, status: 'completed' });
+      if (body.stream) {
+        return reply
+          .header('content-type', 'text/event-stream; charset=utf-8')
+          .header('cache-control', 'no-cache')
+          .header('x-tab2api-stream-mode', 'buffered')
+          .send(responsesSse(response));
+      }
+      return response;
+    } finally {
+      lifecycle.dispose();
+    }
+  }
+
+  const generationRouteOptions = {
+    preHandler: authenticated,
+    bodyLimit: Math.ceil((config.mediaLimitBytes * 4) / 3) + 262_144,
+  };
+
+  app.post('/v1/chat/completions', generationRouteOptions, async (request, reply) =>
+    runChatCompletion(request, reply),
+  );
+
+  app.post('/v1/responses', generationRouteOptions, async (request, reply) =>
+    runResponses(request, reply),
+  );
+
+  app.post('/v1/projects', { preHandler: authenticated }, async (request, reply) => {
+    const body = createProjectRequestSchema.parse(request.body);
+    observe(request, { inputText: body.name });
+    const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
+    try {
+      return await queue.enqueue(
+        () =>
+          provider.createProject({
+            name: body.name,
+            signal: lifecycle.controller.signal,
+            requestId: request.id,
+          }),
+        lifecycle.controller.signal,
+      );
+    } finally {
+      lifecycle.dispose();
+    }
+  });
+
+  app.get('/v1/projects', { preHandler: authenticated }, async (request, reply) => {
+    const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
+    try {
+      const data = await queue.enqueue(
+        () =>
+          provider.listProjects({
+            signal: lifecycle.controller.signal,
+            requestId: request.id,
+          }),
+        lifecycle.controller.signal,
+      );
+      return { object: 'list', data };
+    } finally {
+      lifecycle.dispose();
+    }
+  });
+
+  app.delete('/v1/projects/:projectId', { preHandler: authenticated }, async (request, reply) => {
+    const { projectId } = projectParamsSchema.parse(request.params);
+    if (request.headers['x-tab2api-confirm-delete'] !== projectId)
+      throw new AppError(
+        'invalid_request',
+        'Project deletion requires X-Tab2api-Confirm-Delete to exactly match the project id.',
+      );
+    const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
+    try {
+      await queue.enqueue(
+        () =>
+          provider.deleteProject({
+            projectId,
+            signal: lifecycle.controller.signal,
+            requestId: request.id,
+          }),
+        lifecycle.controller.signal,
+      );
+      return { id: projectId, object: 'project', deleted: true };
+    } finally {
+      lifecycle.dispose();
+    }
+  });
+
   app.post(
-    '/v1/chat/completions',
-    {
-      preHandler: authenticated,
-      bodyLimit: Math.ceil((config.mediaLimitBytes * 4) / 3) + 262_144,
-    },
+    '/v1/projects/:projectId/files',
+    { preHandler: authenticated },
     async (request, reply) => {
-      const body = chatCompletionRequestSchema.parse(request.body);
-      const prompt = serializeChatRequest(body);
-      observe(request, { inputText: prompt });
+      const { projectId } = projectParamsSchema.parse(request.params);
       const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
       try {
-        const result = await queue.enqueue(
+        const attachments: MediaAttachment[] = [];
+        let total = 0;
+        for await (const part of request.parts()) {
+          if (part.type !== 'file') continue;
+          if (attachments.length >= MAX_PROJECT_FILES)
+            throw new AppError(
+              'invalid_request',
+              `At most ${MAX_PROJECT_FILES} files are supported per upload.`,
+            );
+          const data = await part.toBuffer();
+          if (data.length === 0)
+            throw new AppError('invalid_request', 'An uploaded project file is empty.');
+          total += data.length;
+          if (total > config.mediaLimitBytes)
+            throw new AppError(
+              'invalid_request',
+              'The uploaded project files exceed TAB2API_MEDIA_LIMIT_BYTES.',
+            );
+          attachments.push({
+            data,
+            mimeType: documentMimeType(part.mimetype),
+            filename: safeUploadFilename(part.filename, attachments.length + 1),
+          });
+        }
+        if (attachments.length === 0)
+          throw new AppError('invalid_request', 'At least one multipart file field is required.');
+        observe(request, { inputBytes: total });
+        return await queue.enqueue(
           () =>
-            provider.generate({
-              prompt,
+            provider.uploadProjectFiles({
+              projectId,
+              attachments,
               signal: lifecycle.controller.signal,
               requestId: request.id,
-              attachments: chatAttachments(body, config.mediaLimitBytes),
             }),
           lifecycle.controller.signal,
         );
-        const response = mapChatCompletion(result.text);
-        observe(request, { outputText: result.text });
-        store.set({ id: response.id, createdAt: response.created, status: 'completed' });
-        if (body.stream) {
-          return reply
-            .header('content-type', 'text/event-stream; charset=utf-8')
-            .header('cache-control', 'no-cache')
-            .header('x-tab2api-stream-mode', 'buffered')
-            .send(chatSse(response));
-        }
-        return response;
       } finally {
         lifecycle.dispose();
       }
@@ -287,43 +485,18 @@ export function buildServer(dependencies: ServerDependencies) {
   );
 
   app.post(
-    '/v1/responses',
-    {
-      preHandler: authenticated,
-      bodyLimit: Math.ceil((config.mediaLimitBytes * 4) / 3) + 262_144,
-    },
+    '/v1/projects/:projectId/chat/completions',
+    generationRouteOptions,
     async (request, reply) => {
-      const body = responsesRequestSchema.parse(request.body);
-      const prompt = serializeResponsesRequest(body);
-      observe(request, { inputText: prompt });
-      const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
-      try {
-        const result = await queue.enqueue(
-          () =>
-            provider.generate({
-              prompt,
-              signal: lifecycle.controller.signal,
-              requestId: request.id,
-              attachments: responsesAttachments(body, config.mediaLimitBytes),
-            }),
-          lifecycle.controller.signal,
-        );
-        const response = mapResponse(result.text);
-        observe(request, { outputText: result.text });
-        store.set({ id: response.id, createdAt: response.created_at, status: 'completed' });
-        if (body.stream) {
-          return reply
-            .header('content-type', 'text/event-stream; charset=utf-8')
-            .header('cache-control', 'no-cache')
-            .header('x-tab2api-stream-mode', 'buffered')
-            .send(responsesSse(response));
-        }
-        return response;
-      } finally {
-        lifecycle.dispose();
-      }
+      const { projectId } = projectParamsSchema.parse(request.params);
+      return runChatCompletion(request, reply, projectId);
     },
   );
+
+  app.post('/v1/projects/:projectId/responses', generationRouteOptions, async (request, reply) => {
+    const { projectId } = projectParamsSchema.parse(request.params);
+    return runResponses(request, reply, projectId);
+  });
 
   app.post('/v1/images/generations', { preHandler: authenticated }, async (request, reply) => {
     const body = imageGenerationRequestSchema.parse(request.body);

@@ -22,13 +22,29 @@ Required: `model`, non-empty `messages`. Supported roles are `system`, `develope
 
 Non-stream responses use `object: "chat.completion"`, model `chatgpt-web`, and one assistant choice. Usage counts are zero placeholders accompanied by `tab2api.usage_available: false`.
 
+Optional `conversation_id` continues an existing ChatGPT conversation instead of opening a new one. It must match the conversation id format ChatGPT uses; anything else is rejected as `invalid_request` before a browser tab is opened. When the UI exposed a conversation, the response carries it back as `tab2api.conversation_id`.
+
 For `stream: true`, `Content-Type` is `text/event-stream`, `X-Tab2api-Stream-Mode` is `buffered`, role/content/final chunks are emitted, and the stream ends with `data: [DONE]`.
 
 ### `POST /v1/responses`
 
 Required: `model` and `input`. Input is a non-empty string or ordered message array. Message content may contain `input_text` and `input_image` data-URL parts. Optional `instructions` becomes a leading developer message. Accepted optional fields are `stream` and client metadata `user`.
 
-Non-stream responses contain one completed assistant `message`/`output_text`; `usage` is `null`. Buffered streaming emits sequenced `response.created`, item/content events, one `response.output_text.delta`, and finally `response.completed`; unlike Chat Completions, the typed Responses event stream does not add `[DONE]`.
+Non-stream responses contain one completed assistant `message`/`output_text`; `usage` is `null`. Optional `conversation_id` behaves as it does for Chat Completions, and the resulting conversation is reported as `metadata.tab2api_conversation_id`. Buffered streaming emits sequenced `response.created`, item/content events, one `response.output_text.delta`, and finally `response.completed`; unlike Chat Completions, the typed Responses event stream does not add `[DONE]`.
+
+### Projects
+
+ChatGPT projects hold files and instructions that apply to every conversation inside them. Asking inside a project is the supported way to work against a large codebase: upload the sources once, then ask repeatedly without resending them. tab2api stores nothing locally — the project lives in the ChatGPT account, and the client owns whichever identifiers it chooses to pass back.
+
+Project ids always take the `g-p-<hex>` form and conversation ids the ChatGPT conversation format. Both are interpolated into a chatgpt.com URL, so both are validated against anchored, charset-restricted patterns in the API layer and again in the adapter; a value that does not match is rejected with `invalid_request` and never reaches the browser.
+
+- `POST /v1/projects` with `{ "name": "my codebase" }`: creates a project and returns `{ id, name }`.
+- `GET /v1/projects`: reports the projects the projects page currently lists as `{ object: "list", data: [{ id, name }] }`. This reads live browser state rather than a tab2api-owned database, so it includes projects created outside tab2api. The grid publishes no identifier, so each project must be opened to learn its id: expect roughly one navigation per project, and at most 25 are reported.
+- `DELETE /v1/projects/:projectId`: requires `X-Tab2api-Confirm-Delete: <projectId>`, deletes that project, and returns `{ id, object: "project", deleted: true }` only after the project has stopped being listed. The id is first resolved to the project's name, and the row bearing that name is deleted; row position is never used, because opening a project re-sorts the grid by modification time. If two projects share that name the request is rejected as `invalid_request` rather than guessing. Deletion is irreversible and applies to whatever id the client supplies, including projects tab2api did not create.
+- `POST /v1/projects/:projectId/files`: `multipart/form-data` with one or more file parts, uploaded to the project's sources so they persist across conversations. At most 20 files per request, with the combined size capped by `TAB2API_MEDIA_LIMIT_BYTES`. Upload filenames are reduced to a bare, sanitised name before reaching the browser's file chooser. Types outside a small known set are uploaded as `text/plain`, which suits source files. The response `{ projectId, uploaded }` is returned only once the sources list shows every uploaded name.
+- `POST /v1/projects/:projectId/chat/completions` and `POST /v1/projects/:projectId/responses`: identical bodies and responses to the routes above, but the conversation happens inside the project so its files and instructions apply. Omitting `conversation_id` starts a fresh conversation in the project; supplying one continues that thread.
+
+These routes drive the same public web UI as everything else: they click the controls a person would click. They inherit every limitation documented below, and a ChatGPT UI change can break them.
 
 ### `POST /v1/images/generations`
 

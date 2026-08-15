@@ -4,6 +4,11 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+### Added
+
+- ChatGPT project routes so a large codebase is uploaded once instead of resent with every request: `POST/GET /v1/projects`, `DELETE /v1/projects/:projectId`, `POST /v1/projects/:projectId/files`, and project-scoped Chat Completions and Responses.
+- Optional `conversation_id` on Chat Completions and Responses, returned as `tab2api.conversation_id` and `metadata.tab2api_conversation_id`, so a client can continue a thread instead of always starting a new conversation.
+
 ### Fixed
 
 - Upgrade the supported lint/test toolchain to ESLint 10, `globals` 17, and Vitest 4; the minimum
@@ -18,6 +23,15 @@ All notable user-facing changes are documented here. This project follows semant
   ChatGPT has already rendered the completed-turn action.
 - Isolate generated images from chat controls and blank page chrome, then clip the screenshot to
   the image box so a correctly sized but visually incorrect result is never returned.
+
+### Security
+
+- Project and conversation identifiers are interpolated into a chatgpt.com URL, so both are validated against anchored, charset-restricted patterns in the API layer and again in the adapter, and upload filenames are reduced to a bare sanitised name before reaching the browser file chooser.
+
+### Limitations
+
+- Listing and deleting projects cost roughly one navigation per project because the projects grid publishes no identifier; listing reports at most 25.
+- Deletion is irreversible, requires an exact project-id confirmation header, applies to whatever identifier the client supplies including projects tab2api did not create, and is refused when two projects share the resolved name.
 
 ## [0.1.0] - 2026-08-15
 

@@ -122,6 +122,24 @@ curl.exe http://127.0.0.1:3210/v1/images/generations `
 
 Speech and transcription use `/v1/audio/speech` (JSON, WAV output) and `/v1/audio/transcriptions` (multipart). See [the API reference](docs/api.md) for exact schemas and media limits.
 
+Working against a large codebase uses ChatGPT projects, so the sources are uploaded once instead of resent with every request:
+
+```powershell
+$project = (curl.exe http://127.0.0.1:3210/v1/projects `
+  -H "Authorization: Bearer $token" -H "Content-Type: application/json" `
+  -d '{"name":"my codebase"}' | ConvertFrom-Json).id
+
+curl.exe "http://127.0.0.1:3210/v1/projects/$project/files" `
+  -H "Authorization: Bearer $token" `
+  -F "file=@src/index.ts;type=text/plain"
+
+curl.exe "http://127.0.0.1:3210/v1/projects/$project/chat/completions" `
+  -H "Authorization: Bearer $token" -H "Content-Type: application/json" `
+  -d '{"model":"chatgpt-web","messages":[{"role":"user","content":"What does this project do?"}]}'
+```
+
+The reply carries `tab2api.conversation_id`; passing it back as `conversation_id` continues that same thread instead of starting a new conversation.
+
 ## First login and normal operation
 
 `npm run login` launches the dedicated profile and waits until the composer is compatible. `npm start` reuses that profile. Each API request opens a fresh ChatGPT page/conversation and closes it afterward. `TAB2API_CONCURRENCY` controls 1–4 parallel browser tabs; the safe default is one, with a bounded FIFO queue. Start with 2 only after a live test because one account may rate-limit and UI tabs consume substantial memory. `npm run doctor` checks Node, Chromium, directory permissions, port, local token, browser connectivity, login, and selectors. `npm run reset-session` closes the bridge browser process through the authenticated admin route without deleting the profile.
@@ -167,6 +185,8 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 - `POST /v1/chat/completions`, `POST /v1/responses`
 - `POST /v1/images/generations`
 - `POST /v1/audio/speech`, `POST /v1/audio/transcriptions`
+- `POST/GET /v1/projects`, `DELETE /v1/projects/:projectId`, `POST /v1/projects/:projectId/files`
+- `POST /v1/projects/:projectId/chat/completions`, `POST /v1/projects/:projectId/responses`
 - `POST /admin/session/reset`
 - `GET/POST/DELETE /admin/api-keys`, `GET/DELETE /admin/usage` (administrator only)
 - Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs. Remote image URLs are rejected.
@@ -177,6 +197,9 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 - Token counts are not visible in the UI. Chat Completions returns zero counts with `tab2api.usage_available=false`; Responses returns `usage: null`. These values mean “unknown,” not zero actual usage.
 - `stream: true` is a **buffered fallback**: generation finishes in the browser, then one text delta is sent. Chat Completions ends with `[DONE]`; Responses ends with `response.completed`. It is not live token streaming.
 - UI text extraction preserves visible multiline/code/list text but may differ from original Markdown source.
+- Project routes drive the same public UI. `GET /v1/projects` reads live browser state rather than a tab2api database, and because the grid exposes no identifier it opens each project to learn its id: roughly one navigation per project, capped at 25.
+- `DELETE /v1/projects/:projectId` acts on whatever id the client supplies, so it can remove a project created outside tab2api, and deletion is irreversible. It resolves the id to a name and deletes the row with that name; two projects sharing a name are rejected rather than guessed between.
+- A project keeps its uploaded files and instructions, but ChatGPT still governs how much of them a given answer uses. Project context is not a substitute for a large context window, and account-level memory is not isolated by a project.
 - ChatGPT UI changes, localization, experiments, rate limits, account policy, network conditions, and security challenges can break operation. No challenge is bypassed and an ambiguous submitted prompt is never retried automatically.
 
 ## Security
