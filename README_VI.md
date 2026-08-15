@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml)
 [![Desktop CI](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml)
-[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](package.json)
+[![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)](package.json)
 [![Giấy phép: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 `tab2api` là REST bridge local-first, tương thích một phần với OpenAI, dùng **phiên ChatGPT.com do chính bạn đăng nhập thủ công**. Sản phẩm hỗ trợ chat text, vision qua ảnh upload, tạo ảnh qua UI và transcription audio qua UI. Endpoint TTS WAV dùng engine giọng nói cục bộ của hệ điều hành và được ghi nhãn trung thực.
@@ -33,7 +33,7 @@ Truy cập từ xa tùy chọn chỉ dành cho các thiết bị của cùng ch�
 
 ## Yêu cầu
 
-- Node.js 22+ và npm
+- Node.js 22.13+ và npm
 - Tài khoản ChatGPT thuộc sở hữu của bạn
 - Desktop tương tác được cho lần đăng nhập đầu
 - Chromium cho direct Playwright (`npx playwright install chromium`); app desktop đóng gói sẵn đúng revision Chromium tương thích

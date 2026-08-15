@@ -33,7 +33,7 @@ tab2api is a single-user desktop bridge, not a shared API service. It automates 
 
 ### Required stack
 
-Node.js 22+, strict TypeScript, Fastify, Playwright, Zod, Pino, Vitest, ESLint, Prettier, and npm are retained. Zod is used at the API/config boundary because it provides a small, explicit strict parser and inferred types; Fastify still enforces the byte limit and secure JSON parsing before Zod. `linkedom` is test-only so DOM fixtures do not require a browser or network in CI.
+Node.js 22.13+, strict TypeScript, Fastify, Playwright, Zod, Pino, Vitest, ESLint, Prettier, and npm are retained. Zod is used at the API/config boundary because it provides a small, explicit strict parser and inferred types; Fastify still enforces the byte limit and secure JSON parsing before Zod. `linkedom` is test-only so DOM fixtures do not require a browser or network in CI.
 
 ### Browser lifecycle and DevTools
 

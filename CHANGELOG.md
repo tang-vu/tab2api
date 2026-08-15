@@ -6,6 +6,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Fixed
 
+- Upgrade the supported lint/test toolchain to ESLint 10, `globals` 17, and Vitest 4; the minimum
+  development Node.js version is now 22.13 to match ESLint's runtime requirement.
 - Keep the desktop responsive during Cloudflare operations, serialize tunnel mutations, and make
   Windows Task Scheduler transitions bounded across repeated disable/enable cycles.
 - Keep confirmation and settings dialogs inside the control column so the native Chromium child

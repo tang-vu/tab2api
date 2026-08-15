@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml)
 [![Desktop CI](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml)
-[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](package.json)
+[![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 `tab2api` is a local-first, unofficial OpenAI-compatible REST bridge to **your own manually logged-in ChatGPT.com browser session**. It supports text chat, image input, UI image generation, and UI-mediated audio transcription. Local OS speech synthesis provides a clearly labelled WAV compatibility endpoint.
@@ -33,7 +33,7 @@ Optional remote access is for the same owner's devices only. The origin remains 
 
 ## Prerequisites
 
-- Node.js 22 or newer and npm
+- Node.js 22.13 or newer and npm
 - A ChatGPT account you own and are allowed to use
 - An interactive desktop for the first manual login
 - Chromium installed for direct Playwright (`npx playwright install chromium`); the packaged desktop app bundles its matched Chromium revision
