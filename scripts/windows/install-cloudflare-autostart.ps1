@@ -23,16 +23,17 @@ if ($hostname -notmatch '^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.
 if (-not (Test-Path -LiteralPath $configPath)) {
     throw "Missing ignored runtime config: $configPath"
 }
-if (-not (Test-Path -LiteralPath $probePath)) {
+if (-not $AllowBearerOnly -and -not (Test-Path -LiteralPath $probePath)) {
     throw "Missing ignored Access probe config: $probePath"
 }
 
 & $cloudflaredPath --config $configPath tunnel ingress validate
 if ($LASTEXITCODE -ne 0) { throw 'The tab2api tunnel ingress configuration is invalid.' }
-& $cloudflaredPath --config $probePath tunnel ingress validate
-if ($LASTEXITCODE -ne 0) { throw 'The Cloudflare Access probe configuration is invalid.' }
 
 if (-not $AllowBearerOnly) {
+    & $cloudflaredPath --config $probePath tunnel ingress validate
+    if ($LASTEXITCODE -ne 0) { throw 'The Cloudflare Access probe configuration is invalid.' }
+
     # The probe publishes only a fixed 418 response, never the tab2api origin. Installation
     # continues only when Cloudflare Access intercepts it first and redirects to its login host.
     $probe = Start-Process -FilePath $cloudflaredPath -ArgumentList @('--config', $probePath, 'tunnel', 'run') -PassThru -WindowStyle Hidden
@@ -66,6 +67,30 @@ else {
     Write-Warning 'Installing bearer-only public routing by explicit operator request. Cloudflare Access is not enabled.'
 }
 
+# Task Scheduler transitions are asynchronous. Fully settle an older task before replacing it so
+# Disable -> Enable cannot race with an instance that Windows is still stopping.
+$existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if ($null -ne $existingTask) {
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    $stopDeadline = (Get-Date).AddSeconds(10)
+    do {
+        Start-Sleep -Milliseconds 200
+        $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    } while ($null -ne $existingTask -and [string]$existingTask.State -eq 'Running' -and (Get-Date) -lt $stopDeadline)
+    if ($null -ne $existingTask -and [string]$existingTask.State -eq 'Running') {
+        throw 'The previous Cloudflare Tunnel task did not stop within 10 seconds.'
+    }
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    $removeDeadline = (Get-Date).AddSeconds(10)
+    do {
+        $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        if ($null -ne $existingTask) { Start-Sleep -Milliseconds 200 }
+    } while ($null -ne $existingTask -and (Get-Date) -lt $removeDeadline)
+    if ($null -ne $existingTask) {
+        throw 'The previous Cloudflare Tunnel task was not removed within 10 seconds.'
+    }
+}
+
 $arguments = '--config "{0}" tunnel run' -f $configPath
 $action = New-ScheduledTaskAction -Execute $cloudflaredPath -Argument $arguments -WorkingDirectory $workingDirectory
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
@@ -74,4 +99,12 @@ $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" 
 $description = if ($AllowBearerOnly) { 'Bearer-only Cloudflare Tunnel for the loopback-only personal tab2api origin.' } else { 'Access-protected Cloudflare Tunnel for the loopback-only tab2api origin.' }
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description $description -Force | Out-Null
 Start-ScheduledTask -TaskName $taskName
+$startDeadline = (Get-Date).AddSeconds(10)
+do {
+    Start-Sleep -Milliseconds 200
+    $startedTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+} while (($null -eq $startedTask -or [string]$startedTask.State -ne 'Running') -and (Get-Date) -lt $startDeadline)
+if ($null -eq $startedTask -or [string]$startedTask.State -ne 'Running') {
+    throw 'The Cloudflare Tunnel task did not reach Running within 10 seconds.'
+}
 Write-Output "Installed and started Scheduled Task '$taskName'."

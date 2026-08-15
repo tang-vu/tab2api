@@ -79,6 +79,25 @@ aside {
   margin-top: 18px;
   padding: 18px 20px;
 }
+.tunnel-card[aria-busy='true'] {
+  border-color: #b58a35;
+}
+.tunnel-card[aria-busy='true'] #tunnel-detail::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border: 2px solid #6f5b32;
+  border-top-color: #f6c85f;
+  border-radius: 50%;
+  animation: tunnel-spin 0.8s linear infinite;
+}
+@keyframes tunnel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .tunnel-heading {
   display: flex;
   justify-content: space-between;
@@ -313,7 +332,15 @@ aside p {
   padding: 12px 14px;
 }
 dialog {
-  width: min(520px, calc(100% - 32px));
+  position: fixed;
+  inset: auto;
+  left: max(18px, calc((100vw - 1320px) / 2));
+  top: 50%;
+  width: min(340px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  margin: 0;
+  overflow-y: auto;
+  transform: translateY(-50%);
   border: 1px solid #324057;
   border-radius: 18px;
   background: #111722;
@@ -376,6 +403,12 @@ dialog section p {
 .dialog-action {
   width: 100%;
   margin-top: 20px;
+}
+.dialog-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
 }
 @media (max-width: 920px) {
   main.shell {

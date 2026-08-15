@@ -47,7 +47,7 @@
     "keys": "tsx src/cli/index.ts keys",
     "usage": "tsx src/cli/index.ts usage",
     "desktop:prepare:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/prepare-desktop-bundle.ps1",
-    "desktop:ui:check": "node --check desktop/ui/app.js && node --check desktop/ui/i18n.js && node --test desktop/ui/i18n.test.mjs",
+    "desktop:ui:check": "node --check desktop/ui/app.js && node --check desktop/ui/i18n.js && node --check desktop/ui/tunnel-controls.js && node --test desktop/ui/*.test.mjs",
     "desktop:check": "npm run desktop:ui:check && cargo fmt --manifest-path desktop/Cargo.toml --check && cargo clippy --manifest-path desktop/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path desktop/Cargo.toml --all-targets --all-features",
     "desktop:dev": "npm run build && tauri dev --config desktop/tauri.conf.json",
     "desktop:build:windows": "npm run desktop:prepare:windows && tauri build --bundles nsis --config desktop/tauri.conf.json",

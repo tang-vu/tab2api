@@ -35,6 +35,8 @@ test('all advertised languages provide the complete English key set', () => {
       'confirmBearer',
       'tunnelHostname',
       'hostnameError',
+      'tunnelDisabling',
+      'confirmBearerTitle',
     ]) {
       assert.notEqual(messages[code][key], messages.en[key]);
     }
@@ -70,10 +72,11 @@ test('locked storage never blocks local locale detection', () => {
 });
 
 test('every translated DOM key exists and locale selection performs no network lookup', async () => {
-  const [html, app, i18n] = await Promise.all([
+  const [html, app, i18n, styles] = await Promise.all([
     readFile(new URL('./index.html', import.meta.url), 'utf8'),
     readFile(new URL('./app.js', import.meta.url), 'utf8'),
     readFile(new URL('./i18n.js', import.meta.url), 'utf8'),
+    readFile(new URL('./styles.css', import.meta.url), 'utf8'),
   ]);
   const keys = [...html.matchAll(/data-i18n="([^"]+)"/g)].map((match) => match[1]);
   assert.ok(keys.length > 30);
@@ -85,4 +88,11 @@ test('every translated DOM key exists and locale selection performs no network l
   assert.match(html, /id="tunnel-hostname"/);
   assert.match(app, /enable_access_tunnel', \{ hostname: tunnelHostname\(\) \}/);
   assert.match(app, /tab2api\.tunnelHostname/);
+  assert.equal(app.match(/querySelectorAll\('button'\)/g)?.length, 1);
+  assert.match(app, /refreshTunnel\(true\)/);
+  assert.doesNotMatch(app, /window\.confirm/);
+  assert.match(html, /id="bearer-dialog"/);
+  assert.match(html, /id="confirm-bearer"[\s\S]*autofocus/);
+  assert.match(styles, /dialog \{[\s\S]*width: min\(340px/);
+  assert.match(styles, /left: max\(18px/);
 });

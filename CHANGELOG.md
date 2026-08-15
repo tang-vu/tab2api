@@ -4,6 +4,13 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep the desktop responsive during Cloudflare operations, serialize tunnel mutations, and make
+  Windows Task Scheduler transitions bounded across repeated disable/enable cycles.
+- Keep confirmation and settings dialogs inside the control column so the native Chromium child
+  window cannot cover them.
+
 ## [0.1.0] - 2026-08-15
 
 ### Added

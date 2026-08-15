@@ -1,5 +1,6 @@
 /* global document, navigator, window */
 import { languageOptions, loadLanguage, saveLanguage, translate } from './i18n.js';
+import { tunnelControlState, tunnelOperationDetail } from './tunnel-controls.js';
 
 const invoke = window.__TAURI__?.core?.invoke;
 const elements = {
@@ -16,6 +17,7 @@ const elements = {
   redock: document.querySelector('#redock'),
   browserHost: document.querySelector('#browser-host'),
   browserMode: document.querySelector('#browser-mode'),
+  tunnelCard: document.querySelector('#tunnel-card'),
   tunnelMode: document.querySelector('#tunnel-mode'),
   tunnelDetail: document.querySelector('#tunnel-detail'),
   tunnelPrerequisites: document.querySelector('#tunnel-prerequisites'),
@@ -27,6 +29,8 @@ const elements = {
   openTunnelFolder: document.querySelector('#open-tunnel-folder'),
   openSettings: document.querySelector('#open-settings'),
   settingsDialog: document.querySelector('#settings-dialog'),
+  bearerDialog: document.querySelector('#bearer-dialog'),
+  confirmBearer: document.querySelector('#confirm-bearer'),
   languageSelect: document.querySelector('#language-select'),
 };
 
@@ -43,6 +47,7 @@ const tunnelHostnameStorageKey = 'tab2api.tunnelHostname';
 let language = loadLanguage(settingsStorage, navigator.languages ?? [navigator.language]);
 let lastServiceStatus;
 let lastTunnelStatus;
+let tunnelOperation;
 const t = (key) => translate(language, key);
 
 try {
@@ -142,29 +147,22 @@ function renderTunnel(status) {
   elements.tunnelMode.textContent = status.supported
     ? t(modeKeys[status.mode] ?? 'tunnelUnknown')
     : t('tunnelUnsupported');
-  elements.tunnelDetail.textContent = tunnelDetail(status);
+  const operationDetail = tunnelOperationDetail(tunnelOperation);
+  elements.tunnelDetail.textContent = operationDetail ? t(operationDetail) : tunnelDetail(status);
   const ready = (value) => t(value ? 'prerequisiteReady' : 'prerequisiteMissing');
   elements.tunnelPrerequisites.textContent = [
     `${t('cloudflared')}: ${ready(status.cloudflared_installed)}`,
     `${t('tunnelConfig')}: ${ready(status.config_ready)}`,
     `${t('accessProbe')}: ${ready(status.access_probe_ready)}`,
   ].join(' / ');
-  elements.installCloudflared.disabled = !status.supported || status.cloudflared_installed;
-  elements.enableAccess.disabled =
-    !status.supported ||
-    !status.cloudflared_installed ||
-    !status.config_ready ||
-    !status.access_probe_ready ||
-    status.running ||
-    !validTunnelHostname();
-  elements.enableBearer.disabled =
-    !status.supported ||
-    !status.cloudflared_installed ||
-    !status.config_ready ||
-    status.running ||
-    !validTunnelHostname();
-  elements.disableTunnel.disabled = !status.supported || !status.task_installed;
-  elements.openTunnelFolder.disabled = !status.supported;
+  const controls = tunnelControlState(status, validTunnelHostname(), tunnelOperation);
+  elements.tunnelCard.setAttribute('aria-busy', String(controls.busy));
+  elements.tunnelHostname.disabled = controls.hostnameDisabled;
+  elements.installCloudflared.disabled = controls.installDisabled;
+  elements.enableAccess.disabled = controls.accessDisabled;
+  elements.enableBearer.disabled = controls.bearerDisabled;
+  elements.disableTunnel.disabled = controls.disableDisabled;
+  elements.openTunnelFolder.disabled = controls.folderDisabled;
 }
 
 function localizedError(error) {
@@ -174,6 +172,7 @@ function localizedError(error) {
   }
   if (message.includes('bearer-only tunnel task')) return t('bearerActivationError');
   if (message.includes('valid dedicated tunnel hostname')) return t('hostnameError');
+  if (message.includes('another Cloudflare Tunnel operation')) return t('tunnelBusyError');
   return message;
 }
 
@@ -202,7 +201,16 @@ function queueBrowserBounds() {
 
 async function perform(command) {
   elements.error.hidden = true;
-  for (const button of document.querySelectorAll('button')) button.disabled = true;
+  for (const button of [
+    elements.start,
+    elements.stop,
+    elements.login,
+    elements.refresh,
+    elements.undock,
+    elements.redock,
+  ]) {
+    button.disabled = true;
+  }
   try {
     render(await invoke(command));
   } catch (error) {
@@ -220,10 +228,17 @@ async function refresh() {
 }
 
 let tunnelRefreshInFlight;
-function refreshTunnel() {
+function refreshTunnel(force = false) {
+  if (tunnelOperation && !force) return Promise.resolve(lastTunnelStatus);
+  if (force && tunnelRefreshInFlight) {
+    return tunnelRefreshInFlight.finally(() => refreshTunnel(true));
+  }
   if (tunnelRefreshInFlight) return tunnelRefreshInFlight;
   tunnelRefreshInFlight = invoke('tunnel_status')
-    .then(renderTunnel)
+    .then((status) => {
+      if (!tunnelOperation) renderTunnel(status);
+      return status;
+    })
     .catch(showError)
     .finally(() => {
       tunnelRefreshInFlight = undefined;
@@ -232,14 +247,21 @@ function refreshTunnel() {
 }
 
 async function performTunnel(command, args) {
+  if (tunnelOperation) {
+    showError(t('tunnelBusyError'));
+    return;
+  }
   elements.error.hidden = true;
-  for (const button of document.querySelectorAll('button')) button.disabled = true;
+  tunnelOperation = command;
+  if (lastTunnelStatus) renderTunnel(lastTunnelStatus);
   try {
     renderTunnel(await invoke(command, args));
   } catch (error) {
     showError(error);
   } finally {
-    await Promise.all([refresh(), refreshTunnel()]);
+    tunnelOperation = undefined;
+    await refreshTunnel(true);
+    void refresh();
   }
 }
 
@@ -265,10 +287,13 @@ if (typeof invoke !== 'function') {
   elements.enableAccess.addEventListener('click', () =>
     performTunnel('enable_access_tunnel', { hostname: tunnelHostname() }),
   );
-  elements.enableBearer.addEventListener('click', () => {
-    if (window.confirm(t('confirmBearer'))) {
-      performTunnel('enable_bearer_tunnel', { hostname: tunnelHostname(), accepted: true });
-    }
+  elements.enableBearer.addEventListener('click', () => elements.bearerDialog.showModal());
+  elements.confirmBearer.addEventListener('click', () => {
+    elements.bearerDialog.close();
+    void performTunnel('enable_bearer_tunnel', {
+      hostname: tunnelHostname(),
+      accepted: true,
+    });
   });
   elements.disableTunnel.addEventListener('click', () => performTunnel('disable_tunnel'));
   elements.openTunnelFolder.addEventListener('click', () => performTunnel('open_tunnel_folder'));

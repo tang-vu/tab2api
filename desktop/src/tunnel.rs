@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -52,6 +53,7 @@ pub struct TunnelManager {
     scripts: TunnelScripts,
     runtime_dir: PathBuf,
     working_dir: PathBuf,
+    operation: Mutex<()>,
 }
 
 impl TunnelManager {
@@ -91,7 +93,14 @@ impl TunnelManager {
             scripts,
             runtime_dir,
             working_dir: app_local_data_dir.to_path_buf(),
+            operation: Mutex::new(()),
         })
+    }
+
+    fn begin_operation(&self) -> Result<MutexGuard<'_, ()>, String> {
+        self.operation
+            .try_lock()
+            .map_err(|_| "another Cloudflare Tunnel operation is already running".into())
     }
 
     pub fn status(&self) -> Result<TunnelStatus, String> {
@@ -113,6 +122,7 @@ impl TunnelManager {
 
         #[cfg(windows)]
         {
+            let _operation = self.begin_operation()?;
             let args = winget_install_arguments();
             run_bounded_command("winget.exe", &args, INSTALL_TIMEOUT)
                 .map_err(|_| "cloudflared installation failed; verify winget and network access")?;
@@ -144,6 +154,7 @@ impl TunnelManager {
 
         #[cfg(windows)]
         {
+            let _operation = self.begin_operation()?;
             let current = self.status()?;
             if !current.cloudflared_installed {
                 return Err("install cloudflared before enabling the tunnel".into());
@@ -161,22 +172,13 @@ impl TunnelManager {
                 &hostname,
                 bearer_only,
             );
-            let first_attempt = run_bounded_command("powershell.exe", &args, COMMAND_TIMEOUT);
-            if first_attempt.is_err() && bearer_only {
-                if let Ok(observed) = self.status()
-                    && activation_matches(&observed, true)
-                {
-                    return Ok(observed);
+            run_bounded_command("powershell.exe", &args, COMMAND_TIMEOUT).map_err(|_| {
+                if bearer_only {
+                    "could not install and start the bearer-only tunnel task"
+                } else {
+                    "Cloudflare Access verification or tunnel activation failed"
                 }
-                // Scheduled Task registration can fail transiently while its prior state is being
-                // removed. Bearer-only activation is idempotent and has no network Access probe,
-                // so permit exactly one bounded retry after observing that it is not already live.
-                run_bounded_command("powershell.exe", &args, COMMAND_TIMEOUT)
-                    .map_err(|_| "could not install and start the bearer-only tunnel task")?;
-            } else {
-                first_attempt
-                    .map_err(|_| "Cloudflare Access verification or tunnel activation failed")?;
-            }
+            })?;
             let activated = self.status()?;
             if !activation_matches(&activated, bearer_only) {
                 return Err(if bearer_only {
@@ -196,6 +198,7 @@ impl TunnelManager {
 
         #[cfg(windows)]
         {
+            let _operation = self.begin_operation()?;
             let args = script_arguments(&self.scripts.remove);
             run_bounded_command("powershell.exe", &args, COMMAND_TIMEOUT)
                 .map_err(|_| "could not stop and remove the Cloudflare Tunnel task")?;
@@ -456,12 +459,32 @@ mod tests {
             },
             runtime_dir: PathBuf::from("missing-runtime"),
             working_dir: PathBuf::from("missing-work"),
+            operation: Mutex::new(()),
         };
         assert_eq!(
             manager
                 .enable_bearer_only("tab2api.example.com", false)
                 .unwrap_err(),
             "bearer-only activation requires explicit single-owner risk acceptance"
+        );
+    }
+
+    #[test]
+    fn concurrent_tunnel_mutations_fail_fast_instead_of_blocking_the_app() {
+        let manager = TunnelManager {
+            scripts: TunnelScripts {
+                install: PathBuf::from("missing-install.ps1"),
+                status: PathBuf::from("missing-status.ps1"),
+                remove: PathBuf::from("missing-remove.ps1"),
+            },
+            runtime_dir: PathBuf::from("missing-runtime"),
+            working_dir: PathBuf::from("missing-work"),
+            operation: Mutex::new(()),
+        };
+        let _operation = manager.begin_operation().unwrap();
+        assert_eq!(
+            manager.begin_operation().unwrap_err(),
+            "another Cloudflare Tunnel operation is already running"
         );
     }
 
@@ -490,6 +513,18 @@ mod tests {
         assert!(script.contains("[string]$Hostname"));
         assert!(script.contains("https://$hostname/healthz"));
         assert!(!script.contains("-Uri 'https://"));
+    }
+
+    #[test]
+    fn task_transitions_are_bounded_and_bearer_mode_does_not_require_an_access_probe() {
+        let install = include_str!("../../scripts/windows/install-cloudflare-autostart.ps1");
+        let remove = include_str!("../../scripts/windows/remove-cloudflare-autostart.ps1");
+        assert!(install.contains("-not $AllowBearerOnly -and -not (Test-Path"));
+        assert!(install.contains("did not reach Running within 10 seconds"));
+        assert!(install.contains("previous Cloudflare Tunnel task did not stop within 10 seconds"));
+        assert!(remove.contains("did not stop within 10 seconds"));
+        assert!(remove.contains("was not removed within 10 seconds"));
+        assert!(!install.contains("permit exactly one bounded retry"));
     }
 
     #[test]

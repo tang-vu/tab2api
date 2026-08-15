@@ -262,6 +262,7 @@ mod tests {
         ] {
             assert!(script.contains(command));
         }
-        assert!(script.contains("window.confirm"));
+        assert!(script.contains("bearerDialog.showModal"));
+        assert!(!script.contains("window.confirm"));
     }
 }

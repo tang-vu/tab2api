@@ -37,12 +37,14 @@
           <button id="redock" data-i18n="dockBrowser">Dock browser</button>
         </section>
 
-        <section class="tunnel-card" aria-live="polite">
+        <section id="tunnel-card" class="tunnel-card" aria-live="polite" aria-busy="false">
           <div class="tunnel-heading">
             <strong data-i18n="tunnelTitle">Personal Cloudflare Tunnel</strong>
             <span id="tunnel-mode" data-i18n="checking">Checking...</span>
           </div>
-          <p id="tunnel-detail" data-i18n="inspectingTunnel">Inspecting optional remote access.</p>
+          <p id="tunnel-detail" aria-live="polite" data-i18n="inspectingTunnel">
+            Inspecting optional remote access.
+          </p>
           <label class="tunnel-hostname" for="tunnel-hostname">
             <span data-i18n="tunnelHostname">Tunnel hostname</span>
             <input
@@ -142,6 +144,31 @@
         </div>
       </section>
     </main>
+
+    <dialog id="bearer-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <strong data-i18n="confirmBearerTitle">Enable bearer-only tunnel?</strong>
+        </div>
+        <p data-i18n="confirmBearer">
+          Bearer-only makes the hostname publicly reachable. Continue only for one owner, with an
+          independent revocable tab2api client key. Cloudflare Access is safer. Enable bearer-only
+          mode?
+        </p>
+        <div class="dialog-buttons">
+          <button value="cancel" data-i18n="cancel">Cancel</button>
+          <button
+            id="confirm-bearer"
+            type="button"
+            class="primary"
+            autofocus
+            data-i18n="confirmEnable"
+          >
+            Enable bearer-only
+          </button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="settings-dialog">
       <form method="dialog">

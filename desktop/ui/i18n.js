@@ -854,7 +854,117 @@ Object.assign(de, {
   hostnameError: 'Geben Sie einen gültigen dedizierten Hostnamen wie tab2api.example.com ein.',
 });
 
+const tunnelProgressTranslations = {
+  en: {
+    tunnelInstalling: 'Installing cloudflared. The rest of the app remains available.',
+    tunnelEnablingAccess: 'Verifying Access and starting the tunnel...',
+    tunnelEnablingBearer: 'Starting the explicit bearer-only tunnel...',
+    tunnelDisabling: 'Stopping and removing the tunnel task...',
+    tunnelOpeningFolder: 'Opening the private setup folder...',
+    tunnelBusyError: 'Another tunnel operation is already running. Wait for it to finish.',
+    confirmBearerTitle: 'Enable bearer-only tunnel?',
+    cancel: 'Cancel',
+    confirmEnable: 'Enable bearer-only',
+    bearerActivationError:
+      'Windows could not install and start the bearer-only Scheduled Task within the bounded transition. Check Task Scheduler, then retry.',
+  },
+  vi: {
+    tunnelInstalling: 'Đang cài cloudflared. Các phần khác của app vẫn sử dụng được.',
+    tunnelEnablingAccess: 'Đang xác minh Access và bật tunnel...',
+    tunnelEnablingBearer: 'Đang bật tunnel bearer-only đã được xác nhận...',
+    tunnelDisabling: 'Đang dừng và gỡ tác vụ tunnel...',
+    tunnelOpeningFolder: 'Đang mở thư mục thiết lập riêng tư...',
+    tunnelBusyError: 'Một thao tác tunnel khác đang chạy. Hãy chờ thao tác đó hoàn tất.',
+    confirmBearerTitle: 'Bật tunnel bearer-only?',
+    cancel: 'Hủy',
+    confirmEnable: 'Bật bearer-only',
+    bearerActivationError:
+      'Windows không thể cài và bật Scheduled Task bearer-only trong thời gian chuyển trạng thái giới hạn. Hãy kiểm tra Task Scheduler rồi thử lại.',
+  },
+  zh: {
+    tunnelInstalling: '正在安装 cloudflared。应用的其他部分仍可使用。',
+    tunnelEnablingAccess: '正在验证 Access 并启动隧道...',
+    tunnelEnablingBearer: '正在启动已明确确认的仅 Bearer 隧道...',
+    tunnelDisabling: '正在停止并移除隧道任务...',
+    tunnelOpeningFolder: '正在打开私有设置文件夹...',
+    tunnelBusyError: '另一个隧道操作正在运行，请等待其完成。',
+    confirmBearerTitle: '启用仅 Bearer 隧道？',
+    cancel: '取消',
+    confirmEnable: '启用仅 Bearer',
+    bearerActivationError:
+      'Windows 无法在限定时间内安装并启动仅 Bearer 计划任务。请检查任务计划程序后重试。',
+  },
+  ja: {
+    tunnelInstalling: 'cloudflared をインストール中です。アプリの他の機能は利用できます。',
+    tunnelEnablingAccess: 'Access を検証してトンネルを開始しています...',
+    tunnelEnablingBearer: '明示的に承認された Bearer 専用トンネルを開始しています...',
+    tunnelDisabling: 'トンネルタスクを停止して削除しています...',
+    tunnelOpeningFolder: '非公開の設定フォルダーを開いています...',
+    tunnelBusyError: '別のトンネル操作が実行中です。完了するまでお待ちください。',
+    confirmBearerTitle: 'Bearer 専用トンネルを有効にしますか？',
+    cancel: 'キャンセル',
+    confirmEnable: 'Bearer 専用を有効化',
+    bearerActivationError:
+      'Windows は制限時間内に Bearer 専用タスクをインストールして開始できませんでした。タスク スケジューラを確認して再試行してください。',
+  },
+  ko: {
+    tunnelInstalling: 'cloudflared를 설치 중입니다. 앱의 다른 기능은 계속 사용할 수 있습니다.',
+    tunnelEnablingAccess: 'Access를 확인하고 터널을 시작하는 중...',
+    tunnelEnablingBearer: '명시적으로 승인된 Bearer 전용 터널을 시작하는 중...',
+    tunnelDisabling: '터널 작업을 중지하고 제거하는 중...',
+    tunnelOpeningFolder: '비공개 설정 폴더를 여는 중...',
+    tunnelBusyError: '다른 터널 작업이 실행 중입니다. 완료될 때까지 기다리세요.',
+    confirmBearerTitle: 'Bearer 전용 터널을 활성화할까요?',
+    cancel: '취소',
+    confirmEnable: 'Bearer 전용 활성화',
+    bearerActivationError:
+      'Windows가 제한된 전환 시간 안에 Bearer 전용 예약 작업을 설치하고 시작하지 못했습니다. 작업 스케줄러를 확인한 후 다시 시도하세요.',
+  },
+  es: {
+    tunnelInstalling: 'Instalando cloudflared. El resto de la app sigue disponible.',
+    tunnelEnablingAccess: 'Verificando Access e iniciando el túnel...',
+    tunnelEnablingBearer: 'Iniciando el túnel explícito solo bearer...',
+    tunnelDisabling: 'Deteniendo y eliminando la tarea del túnel...',
+    tunnelOpeningFolder: 'Abriendo la carpeta privada de configuración...',
+    tunnelBusyError: 'Ya hay otra operación del túnel en curso. Espera a que termine.',
+    confirmBearerTitle: '¿Activar el túnel solo bearer?',
+    cancel: 'Cancelar',
+    confirmEnable: 'Activar solo bearer',
+    bearerActivationError:
+      'Windows no pudo instalar e iniciar la tarea programada solo bearer dentro del tiempo limitado. Comprueba el Programador de tareas y reintenta.',
+  },
+  fr: {
+    tunnelInstalling: "Installation de cloudflared. Le reste de l'application reste disponible.",
+    tunnelEnablingAccess: "Vérification d'Access et démarrage du tunnel...",
+    tunnelEnablingBearer: 'Démarrage du tunnel bearer uniquement explicitement accepté...',
+    tunnelDisabling: 'Arrêt et suppression de la tâche du tunnel...',
+    tunnelOpeningFolder: 'Ouverture du dossier de configuration privé...',
+    tunnelBusyError: 'Une autre opération du tunnel est en cours. Attendez sa fin.',
+    confirmBearerTitle: 'Activer le tunnel bearer uniquement ?',
+    cancel: 'Annuler',
+    confirmEnable: 'Activer bearer uniquement',
+    bearerActivationError:
+      "Windows n'a pas pu installer et démarrer la tâche planifiée bearer dans le délai limité. Vérifiez le Planificateur de tâches puis réessayez.",
+  },
+  de: {
+    tunnelInstalling: 'cloudflared wird installiert. Der Rest der App bleibt verfügbar.',
+    tunnelEnablingAccess: 'Access wird geprüft und der Tunnel gestartet...',
+    tunnelEnablingBearer: 'Der ausdrücklich bestätigte Bearer-Tunnel wird gestartet...',
+    tunnelDisabling: 'Die Tunnelaufgabe wird beendet und entfernt...',
+    tunnelOpeningFolder: 'Der private Einrichtungsordner wird geöffnet...',
+    tunnelBusyError: 'Ein anderer Tunnelvorgang läuft bereits. Warten Sie auf den Abschluss.',
+    confirmBearerTitle: 'Tunnel nur mit Bearer aktivieren?',
+    cancel: 'Abbrechen',
+    confirmEnable: 'Nur Bearer aktivieren',
+    bearerActivationError:
+      'Windows konnte die geplante Bearer-Aufgabe nicht innerhalb des begrenzten Übergangs installieren und starten. Prüfen Sie die Aufgabenplanung und versuchen Sie es erneut.',
+  },
+};
+
 export const messages = { en, vi, zh, ja, ko, es, fr, de };
+for (const [code, translations] of Object.entries(tunnelProgressTranslations)) {
+  Object.assign(messages[code], translations);
+}
 
 export function detectLanguage(locales = []) {
   for (const locale of locales) {
