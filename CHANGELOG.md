@@ -12,6 +12,8 @@ All notable user-facing changes are documented here. This project follows semant
   window cannot cover them.
 - Run the service just compiled by `npm run build` in desktop development builds instead of a
   previously staged sidecar, while packaged builds continue to use only bundled resources.
+- Never treat a working status line such as "Analyzing image" as a completed answer, even when
+  ChatGPT has already rendered the completed-turn action.
 
 ## [0.1.0] - 2026-08-15
 

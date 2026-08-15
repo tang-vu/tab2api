@@ -56,6 +56,10 @@ If parallel requests become unreliable or trigger rate limits, set `TAB2API_CONC
 
 Image UI generation is slower than text and defaults to `TAB2API_IMAGE_TIMEOUT_MS=300000`. Open the latest conversation manually: if the image exists, a ChatGPT DOM experiment may require a selector update. Enable debug only if you accept local screenshots. Do not blindly resend after timeout because the first image may already exist.
 
+## An answer takes longer than the visible reply suggests
+
+Requests that attach an image wait for the real answer rather than the status line ChatGPT shows first, so they finish later than a plain text turn. That delay is deliberate: returning early would hand the client a status message instead of a reply.
+
 ## Speech engine unavailable
 
 Windows uses `System.Speech`; macOS requires `say`; Linux requires `espeak`. Only WAV output is supported. The `X-Tab2api-Audio-Backend` header intentionally identifies this as OS speech rather than ChatGPT/OpenAI TTS.
