@@ -54,6 +54,17 @@ export const UI_SELECTORS = {
     'text=/too many requests|rate limit|try again later|reached.*limit/i',
     '[data-testid="rate-limit-error"]',
   ],
+  /**
+   * Markers ChatGPT puts on a turn that is still working. The copy action already exists at
+   * that point, so it cannot be used on its own to decide that an answer is final: while
+   * these are present the visible text is a status line ("Analyzing image") or empty.
+   */
+  pendingAnswer: [
+    '[class*="loading-shimmer"]',
+    '[class*="result-thinking"]',
+    '[class*="aria-busy"]',
+    '[aria-busy="true"]',
+  ],
 } as const;
 
 export const DOM_MARKERS = {

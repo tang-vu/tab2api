@@ -70,6 +70,31 @@ export function validateIntrinsicPng(
   return data;
 }
 
+/** True while the newest assistant turn still carries one of ChatGPT's working markers. */
+async function lastAnswerPending(page: Page): Promise<boolean> {
+  for (const selector of UI_SELECTORS.assistantMessage) {
+    const locator = page.locator(selector);
+    const count = await locator.count();
+    if (count === 0) continue;
+    const last = locator.nth(count - 1);
+    for (const marker of UI_SELECTORS.pendingAnswer) {
+      if (
+        (await last
+          .locator(marker)
+          .count()
+          .catch(() => 0)) > 0
+      )
+        return true;
+      const selfMatches = await last
+        .evaluate((element, candidate) => element.matches(candidate), marker)
+        .catch(() => false);
+      if (selfMatches) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
 async function lastAssistantText(page: Page): Promise<string> {
   for (const selector of UI_SELECTORS.assistantMessage) {
     const locator = page.locator(selector);
@@ -265,9 +290,15 @@ export class ChatGptAdapter implements WebChatProvider {
       const generating = (await firstVisible(page, UI_SELECTORS.stopButton)) !== undefined;
       const completionActionAvailable =
         (await countAll(page, UI_SELECTORS.completionAction)) > baselineCompletionActions;
+      const pending = await lastAnswerPending(page);
       if (
-        machine.observe({ assistantCount, text, generating, completionActionAvailable }) ===
-        'complete'
+        machine.observe({
+          assistantCount,
+          text,
+          generating,
+          completionActionAvailable,
+          pending,
+        }) === 'complete'
       )
         return text;
       await new Promise<void>((resolve, reject) => {
