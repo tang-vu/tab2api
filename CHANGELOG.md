@@ -14,6 +14,8 @@ All notable user-facing changes are documented here. This project follows semant
   previously staged sidecar, while packaged builds continue to use only bundled resources.
 - Never treat a working status line such as "Analyzing image" as a completed answer, even when
   ChatGPT has already rendered the completed-turn action.
+- Isolate generated images from chat controls and blank page chrome, then clip the screenshot to
+  the image box so a correctly sized but visually incorrect result is never returned.
 
 ## [0.1.0] - 2026-08-15
 

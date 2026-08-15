@@ -60,6 +60,10 @@ Image UI generation is slower than text and defaults to `TAB2API_IMAGE_TIMEOUT_M
 
 Requests that attach an image wait for the real answer rather than the status line ChatGPT shows first, so they finish later than a plain text turn. That delay is deliberate: returning early would hand the client a status message instead of a reply.
 
+## Image capture reports a size mismatch
+
+A `ui_changed` error naming the expected and captured sizes, such as `expected 1254x1254, captured 956x836`, means the frame could not be clipped to the whole picture. This is deliberate: the request fails rather than returning an image padded with chat interface and blank background. It usually indicates the viewport could not be sized to contain the element, so retry once and report a selector bug if it persists.
+
 ## Speech engine unavailable
 
 Windows uses `System.Speech`; macOS requires `say`; Linux requires `espeak`. Only WAV output is supported. The `X-Tab2api-Audio-Backend` header intentionally identifies this as OS speech rather than ChatGPT/OpenAI TTS.
