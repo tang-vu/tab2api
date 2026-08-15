@@ -4,6 +4,10 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+### Fixed
+
+- `POST /v1/images/generations` returned the chat page instead of the generated picture. The capture had the right dimensions but its contents were the edit and feedback controls, the composer, the disclaimer, and blank background, with the image itself filling only part of the frame, so the size check could not detect it. The element is now isolated from everything else on the page and the capture is clipped to exactly its box.
+
 ## [0.1.0] - 2026-08-15
 
 ### Added
