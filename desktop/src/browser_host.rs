@@ -43,27 +43,37 @@ impl BrowserBounds {
             || ![self.x, self.y, self.width, self.height]
                 .iter()
                 .all(|v| v.is_finite())
+            || self.width <= 0.0
+            || self.height <= 0.0
+            || max_width == 0
+            || max_height == 0
         {
             return Err("browser pane bounds are invalid".into());
         }
-        let converted = PhysicalBounds {
-            x: (self.x * scale).round() as i32,
-            y: (self.y * scale).round() as i32,
-            width: (self.width * scale).round() as i32,
-            height: (self.height * scale).round() as i32,
-        };
-        if converted.x < 0
-            || converted.y < 0
-            || converted.width < 160
-            || converted.height < 120
-            || converted.x as u32 > max_width
-            || converted.y as u32 > max_height
-            || converted.x as u32 + converted.width as u32 > max_width
-            || converted.y as u32 + converted.height as u32 > max_height
-        {
-            return Err("browser pane bounds are outside the application window".into());
-        }
-        Ok(converted)
+
+        // DOM rectangles are reported in logical viewport pixels while the native child window
+        // uses physical client coordinates. DPI conversion can put the far edge one pixel beyond
+        // the client area, and responsive/scrolling layouts can leave only part of the host pane
+        // visible. Fit the native child to that visible intersection instead of rejecting the
+        // entire resize. Keeping a one-pixel edge when the pane is fully out of view also prevents
+        // Chromium from covering unrelated controls while the user scrolls it back into view.
+        let scaled_left = (self.x * scale).round();
+        let scaled_top = (self.y * scale).round();
+        let scaled_right = ((self.x + self.width) * scale).round();
+        let scaled_bottom = ((self.y + self.height) * scale).round();
+        let max_right = f64::from(max_width);
+        let max_bottom = f64::from(max_height);
+        let left = scaled_left.clamp(0.0, max_right - 1.0);
+        let top = scaled_top.clamp(0.0, max_bottom - 1.0);
+        let right = scaled_right.clamp(left + 1.0, max_right);
+        let bottom = scaled_bottom.clamp(top + 1.0, max_bottom);
+
+        Ok(PhysicalBounds {
+            x: left as i32,
+            y: top as i32,
+            width: (right - left) as i32,
+            height: (bottom - top) as i32,
+        })
     }
 }
 
@@ -292,7 +302,7 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
     #[test]
-    fn browser_bounds_are_finite_minimum_sized_and_contained() {
+    fn browser_bounds_are_scaled_and_contained() {
         assert_eq!(
             BrowserBounds {
                 x: 10.0,
@@ -309,11 +319,63 @@ mod tests {
                 height: 300
             }
         );
-        assert!(
+        assert_eq!(
             BrowserBounds {
                 x: -1.0,
                 y: 0.0,
                 width: 300.0,
+                height: 200.0
+            }
+            .physical(1.0, 1000, 800)
+            .unwrap(),
+            PhysicalBounds {
+                x: 0,
+                y: 0,
+                width: 299,
+                height: 200
+            }
+        );
+        assert_eq!(
+            BrowserBounds {
+                x: 900.0,
+                y: 700.0,
+                width: 300.0,
+                height: 200.0
+            }
+            .physical(1.0, 1000, 800)
+            .unwrap(),
+            PhysicalBounds {
+                x: 900,
+                y: 700,
+                width: 100,
+                height: 100
+            }
+        );
+        assert_eq!(
+            BrowserBounds {
+                x: 1200.0,
+                y: 900.0,
+                width: 300.0,
+                height: 200.0
+            }
+            .physical(1.0, 1000, 800)
+            .unwrap(),
+            PhysicalBounds {
+                x: 999,
+                y: 799,
+                width: 1,
+                height: 1
+            }
+        );
+    }
+
+    #[test]
+    fn browser_bounds_reject_invalid_numbers_and_empty_areas() {
+        assert!(
+            BrowserBounds {
+                x: 0.0,
+                y: 0.0,
+                width: f64::NAN,
                 height: 200.0
             }
             .physical(1.0, 1000, 800)
@@ -323,10 +385,20 @@ mod tests {
             BrowserBounds {
                 x: 0.0,
                 y: 0.0,
-                width: f64::NAN,
+                width: 0.0,
                 height: 200.0
             }
             .physical(1.0, 1000, 800)
+            .is_err()
+        );
+        assert!(
+            BrowserBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 300.0,
+                height: 200.0
+            }
+            .physical(1.0, 0, 800)
             .is_err()
         );
     }

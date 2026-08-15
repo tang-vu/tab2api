@@ -101,6 +101,8 @@ if (typeof invoke !== 'function') {
     queueBrowserBounds();
   });
   new ResizeObserver(queueBrowserBounds).observe(elements.browserHost);
+  window.addEventListener('resize', queueBrowserBounds);
+  window.addEventListener('scroll', queueBrowserBounds, { passive: true });
 
   await refresh();
   window.setInterval(refresh, 3000);
