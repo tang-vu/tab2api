@@ -1,5 +1,10 @@
 # tab2api
 
+[![CI](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml)
+[![Desktop CI](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml)
+[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](package.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 `tab2api` is a local-first, unofficial OpenAI-compatible REST bridge to **your own manually logged-in ChatGPT.com browser session**. It supports text chat, image input, UI image generation, and UI-mediated audio transcription. Local OS speech synthesis provides a clearly labelled WAV compatibility endpoint.
 
 This is browser automation, not the official OpenAI API. It may break whenever ChatGPT's UI changes. It is intended for one user on a personal computer, is not suitable for production, and must never be hosted as a shared or public proxy.
@@ -37,7 +42,7 @@ Optional remote access is for the same owner's devices only. The origin remains 
 ## Windows PowerShell quickstart
 
 ```powershell
-git clone https://github.com/your-name/tab2api.git
+git clone https://github.com/tang-vu/tab2api.git
 Set-Location tab2api
 npm ci
 Copy-Item .env.example .env
@@ -59,7 +64,7 @@ On first configuration load, a cryptographically random local API token is writt
 ## macOS/Linux quickstart
 
 ```bash
-git clone https://github.com/your-name/tab2api.git
+git clone https://github.com/tang-vu/tab2api.git
 cd tab2api
 npm ci
 npx playwright install chromium
@@ -221,4 +226,4 @@ npm run tunnel:remove     # stop/remove tunnel task; preserve DNS/credentials
 
 Manual E2E is never part of CI. After reviewing its prompt and logging into the dedicated profile, explicitly opt in with `$env:TAB2API_MANUAL_E2E='1'; npm run test:manual` on PowerShell or `TAB2API_MANUAL_E2E=1 npm run test:manual` on macOS/Linux. Without that variable, the manual test is skipped.
 
-See [API details](docs/api.md), [Cloudflare remote access](docs/cloudflare.md), [contributing](CONTRIBUTING.md), and the [Vietnamese README](README_VI.md). Licensed under MIT.
+See [API details](docs/api.md), [Cloudflare remote access](docs/cloudflare.md), [contributing](CONTRIBUTING.md), [support](SUPPORT.md), [security policy](SECURITY.md), [changelog](CHANGELOG.md), and the [Vietnamese README](README_VI.md). Licensed under MIT and governed by the [Code of Conduct](CODE_OF_CONDUCT.md).

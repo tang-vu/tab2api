@@ -2,6 +2,15 @@
   "name": "tab2api",
   "version": "0.1.0",
   "description": "Local-only, unofficial OpenAI-compatible bridge to a user-owned ChatGPT web session",
+  "author": "Tang Vu",
+  "homepage": "https://github.com/tang-vu/tab2api#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tang-vu/tab2api.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tang-vu/tab2api/issues"
+  },
   "type": "module",
   "bin": {
     "tab2api": "dist/cli/index.js",
@@ -12,6 +21,7 @@
     "scripts/windows",
     "README.md",
     "README_VI.md",
+    "CHANGELOG.md",
     "LICENSE",
     ".env.example"
   ],
@@ -52,9 +62,13 @@
   },
   "keywords": [
     "chatgpt",
+    "browser-automation",
+    "fastify",
     "openai-compatible",
     "playwright",
-    "local-first"
+    "local-first",
+    "tauri",
+    "typescript"
   ],
   "license": "MIT",
   "dependencies": {

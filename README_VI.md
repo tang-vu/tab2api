@@ -1,5 +1,10 @@
 # tab2api
 
+[![CI](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml)
+[![Desktop CI](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml)
+[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](package.json)
+[![Giấy phép: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 `tab2api` là REST bridge local-first, tương thích một phần với OpenAI, dùng **phiên ChatGPT.com do chính bạn đăng nhập thủ công**. Sản phẩm hỗ trợ chat text, vision qua ảnh upload, tạo ảnh qua UI và transcription audio qua UI. Endpoint TTS WAV dùng engine giọng nói cục bộ của hệ điều hành và được ghi nhãn trung thực.
 
 Đây là browser automation không chính thức, không phải OpenAI API chính thức. Giao diện ChatGPT thay đổi có thể làm công cụ hỏng. Công cụ chỉ dành cho một người trên máy cá nhân, không phù hợp production và không được triển khai thành proxy public/shared.
@@ -37,7 +42,7 @@ Truy cập từ xa tùy chọn chỉ dành cho các thiết bị của cùng ch�
 ## Bắt đầu trên Windows PowerShell
 
 ```powershell
-git clone https://github.com/your-name/tab2api.git
+git clone https://github.com/tang-vu/tab2api.git
 Set-Location tab2api
 npm ci
 Copy-Item .env.example .env
@@ -84,7 +89,7 @@ App desktop có Settings đa ngôn ngữ và hướng dẫn Cloudflare Tunnel đ
 ## Bắt đầu trên macOS/Linux
 
 ```bash
-git clone https://github.com/your-name/tab2api.git
+git clone https://github.com/tang-vu/tab2api.git
 cd tab2api
 npm ci
 npx playwright install chromium
@@ -195,3 +200,5 @@ npm run tunnel:remove
 ```
 
 Manual E2E không chạy trong CI. Chỉ sau khi đọc prompt test và đăng nhập, bật rõ ràng bằng `$env:TAB2API_MANUAL_E2E='1'; npm run test:manual`. Không có biến này thì test được skip.
+
+Xem thêm [API](docs/api.md), [Cloudflare](docs/cloudflare.md), [đóng góp](CONTRIBUTING.md), [hỗ trợ](SUPPORT.md), [chính sách bảo mật](SECURITY.md), [changelog](CHANGELOG.md) và [Code of Conduct](CODE_OF_CONDUCT.md). Dự án dùng giấy phép MIT.
