@@ -24,27 +24,42 @@ import {
   PROJECTS_URL,
   conversationIdFromUrl,
   conversationUrl,
+  projectConversationUrl,
   projectIdFromHref,
+  projectSourcesUrl,
   projectUrl,
 } from './identifiers.js';
 import { UI_SELECTORS } from './selectors.js';
 
 const POLL_MS = 300;
-const INITIAL_STATE_ATTEMPTS = 20;
+// Opening an existing conversation can involve a redirect plus an SPA render, so readiness
+// is given more room than a cold composer needs before it is called a UI change.
+const INITIAL_STATE_ATTEMPTS = 40;
 const INITIAL_STATE_POLL_MS = 250;
 const MAX_CAPTURE_DIMENSION = 4_096;
 const MAX_CAPTURE_PIXELS = 16_777_216;
 /** Padding around the isolated element so the clip never sits flush against the viewport. */
 const CAPTURE_MARGIN_PX = 256;
 const PROJECT_SETTLE_MS = 1_500;
-const PROJECT_ATTACHMENT_SETTLE_MS = 2_000;
+const PROJECT_UPLOAD_TIMEOUT_MS = 120_000;
+const PROJECT_ID_ATTEMPTS = 40;
+/**
+ * Listing and deleting cost one navigation per row because the grid publishes no id, so the
+ * work is bounded rather than proportional to an unbounded account.
+ */
+const MAX_LISTED_PROJECTS = 25;
 
 /**
- * Continuing a conversation wins over the project it belongs to: the conversation URL
- * already carries the project's files and instructions.
+ * Continuing a conversation wins over starting a new one in the project. When both are
+ * known the project-scoped conversation URL is used directly, because the bare `/c/<id>`
+ * form only redirects there and the redirect can outlast the initial readiness wait.
  */
 function navigationTarget(request: GenerateRequest): string {
-  if (request.conversationId !== undefined) return conversationUrl(request.conversationId);
+  if (request.conversationId !== undefined) {
+    return request.projectId === undefined
+      ? conversationUrl(request.conversationId)
+      : projectConversationUrl(request.projectId, request.conversationId);
+  }
   if (request.projectId !== undefined) return projectUrl(request.projectId);
   return CHATGPT_URL;
 }
@@ -258,7 +273,6 @@ export class ChatGptAdapter implements WebChatProvider {
 
   async createProject(request: CreateProjectRequest): Promise<ProjectSummary> {
     return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
-      const knownBefore = new Set((await this.readProjectLinks(page)).map((entry) => entry.id));
       const newProject = await firstVisible(page, UI_SELECTORS.newProjectButton);
       if (newProject === undefined) throw this.uiChanged();
       await newProject.click();
@@ -271,36 +285,55 @@ export class ChatGptAdapter implements WebChatProvider {
       const confirm = await firstVisible(page, UI_SELECTORS.projectCreateConfirm);
       if (confirm === undefined) throw this.uiChanged();
       await confirm.click();
-
-      // ChatGPT either navigates into the new project or adds it to the list in place.
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        if (request.signal.aborted) throw abortError(request.signal);
-        const current = projectIdFromHref(page.url());
-        if (current !== undefined && !knownBefore.has(current))
-          return { id: current, name: request.name };
-        const added = (await this.readProjectLinks(page)).find(
-          (entry) => !knownBefore.has(entry.id),
-        );
-        if (added !== undefined) return { id: added.id, name: added.name || request.name };
-        await page.waitForTimeout(POLL_MS);
-      }
-      throw this.uiChanged();
+      // Creating navigates into the new project, which is the only place its id appears.
+      const id = await this.waitForProjectId(page, request.signal);
+      return { id, name: request.name };
     });
   }
 
   async listProjects(request: ListProjectsRequest): Promise<readonly ProjectSummary[]> {
     return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
       await page.waitForTimeout(PROJECT_SETTLE_MS);
-      return this.readProjectLinks(page);
+      const rows = await this.projectRowSelector(page);
+      if (rows === undefined) return [];
+      const summaries = new Map<string, string>();
+      const total = Math.min(rows.count, MAX_LISTED_PROJECTS);
+      for (let index = 0; index < total; index += 1) {
+        if (request.signal.aborted) throw abortError(request.signal);
+        const opened = await this.openProjectRow(page, rows.selector, index, request.signal);
+        if (opened !== undefined && !summaries.has(opened.id))
+          summaries.set(opened.id, opened.name);
+        await this.returnToProjects(page);
+      }
+      return [...summaries].map(([id, name]) => ({ id, name }));
     });
   }
 
   async deleteProject(request: DeleteProjectRequest): Promise<void> {
     const target = projectUrl(request.projectId);
     await this.withProjectPage(target, request.signal, request.requestId, async (page) => {
-      const options = await firstVisible(page, UI_SELECTORS.projectOptionsButton);
-      if (options === undefined) throw this.uiChanged();
-      await options.click();
+      // Resolve the id to its name inside the project, then delete the row bearing that
+      // name. Row position must not be used: opening a project updates its modified time
+      // and re-sorts the grid, so an index captured beforehand can point at a different
+      // project by the time the delete runs.
+      const name = await this.readProjectName(page, request.signal);
+      await this.returnToProjects(page);
+      const options = page.locator(this.projectOptionsSelectorFor(name));
+      const matches = await options.count();
+      if (matches === 0)
+        throw new AppError(
+          'invalid_request',
+          'No project with that id is listed for this account.',
+        );
+      if (matches > 1)
+        throw new AppError(
+          'invalid_request',
+          `More than one project is named "${name}". Rename them so deletion is unambiguous.`,
+        );
+      // The per-row options control is only revealed while its row is hovered.
+      const optionsButton = options.first();
+      await optionsButton.locator('xpath=ancestor::*[@role="row"][1]').hover();
+      await optionsButton.click();
       const remove = await this.waitForVisible(
         page,
         UI_SELECTORS.projectDeleteMenuItem,
@@ -313,16 +346,41 @@ export class ChatGptAdapter implements WebChatProvider {
         request.signal,
       );
       await confirm.click();
-      await page.waitForTimeout(PROJECT_SETTLE_MS);
+      await this.waitForProjectGone(page, name, request.signal);
     });
   }
 
+  /** Escapes the name for a CSS attribute selector so quotes in a title cannot break out. */
+  private projectOptionsSelectorFor(name: string): string {
+    const escaped = name.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+    return `button[aria-label$="${escaped}"]`;
+  }
+
+  private async readProjectName(page: Page, signal: AbortSignal): Promise<string> {
+    const title = await this.waitForVisible(page, UI_SELECTORS.projectTitle, signal);
+    const name = (await title.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
+    if (name.length === 0)
+      throw new AppError('ui_changed', 'The ChatGPT project title could not be read.');
+    return name;
+  }
+
+  /** A destructive step is only reported as done once the row is actually gone. */
+  private async waitForProjectGone(page: Page, name: string, signal: AbortSignal): Promise<void> {
+    const selector = this.projectOptionsSelectorFor(name);
+    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+      if (signal.aborted) throw abortError(signal);
+      if ((await page.locator(selector).count()) === 0) return;
+      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    }
+    throw new AppError('ui_changed', 'ChatGPT still lists the project after the delete action.');
+  }
+
   async uploadProjectFiles(request: UploadProjectFilesRequest): Promise<UploadProjectFilesResult> {
-    const target = projectUrl(request.projectId);
+    // The sources tab is the project's own file store. Uploading through the composer
+    // instead would attach the files to a single message that is discarded with the tab.
+    const target = projectSourcesUrl(request.projectId);
     return this.withProjectPage(target, request.signal, request.requestId, async (page) => {
-      const fileInput = page.locator(UI_SELECTORS.fileInput[0]).first();
-      if ((await fileInput.count()) === 0)
-        throw new AppError('ui_changed', 'The ChatGPT project file input is unavailable.');
+      const fileInput = await this.projectSourcesInput(page, request.signal);
       await fileInput.setInputFiles(
         request.attachments.map((attachment) => ({
           name: attachment.filename,
@@ -330,10 +388,114 @@ export class ChatGptAdapter implements WebChatProvider {
           buffer: attachment.data,
         })),
       );
-      // Uploads are asynchronous; give the UI time to accept them before closing the tab.
-      await page.waitForTimeout(PROJECT_ATTACHMENT_SETTLE_MS);
+      // Confirm the sources list actually took the files rather than sleeping blindly.
+      await this.waitForSourceNames(
+        page,
+        request.attachments.map((attachment) => attachment.filename),
+        request.signal,
+      );
       return { projectId: request.projectId, uploaded: request.attachments.length };
     });
+  }
+
+  /**
+   * The sources tab exposes two unrestricted file inputs. Only the composer's one sits
+   * inside the composer wrapper, so ancestry — not order — selects the project's input.
+   */
+  private async projectSourcesInput(page: Page, signal: AbortSignal): Promise<Locator> {
+    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+      if (signal.aborted) throw abortError(signal);
+      for (const selector of UI_SELECTORS.projectFileInput) {
+        const candidates = page.locator(selector);
+        const count = await candidates.count();
+        for (let index = 0; index < count; index += 1) {
+          const candidate = candidates.nth(index);
+          const insideComposer = await candidate
+            .evaluate(
+              (element, wrapper) => element.closest(wrapper) !== null,
+              UI_SELECTORS.composerWrapper,
+            )
+            .catch(() => true);
+          if (!insideComposer) return candidate;
+        }
+      }
+      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    }
+    throw new AppError('ui_changed', 'The ChatGPT project sources file input is unavailable.');
+  }
+
+  private async waitForSourceNames(
+    page: Page,
+    filenames: readonly string[],
+    signal: AbortSignal,
+  ): Promise<void> {
+    const deadline = Date.now() + PROJECT_UPLOAD_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (signal.aborted) throw abortError(signal);
+      const text = await page
+        .locator(UI_SELECTORS.projectSourceEntry[1])
+        .innerText()
+        .catch(() => '');
+      if (filenames.every((filename) => text.includes(filename))) return;
+      await page.waitForTimeout(POLL_MS);
+    }
+    throw new AppError(
+      'ui_changed',
+      'ChatGPT did not list the uploaded files in the project sources.',
+    );
+  }
+
+  /**
+   * Opens the row at `index` and reports the project it belongs to. The projects grid
+   * publishes no identifier, so opening the row is the only way to learn its id.
+   */
+  private async openProjectRow(
+    page: Page,
+    selector: string,
+    index: number,
+    signal: AbortSignal,
+  ): Promise<ProjectSummary | undefined> {
+    const row = this.projectRowAt(page, selector, index);
+    if ((await row.count()) === 0) return undefined;
+    const name = (await row.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
+    await row.click();
+    const id = await this.waitForProjectId(page, signal).catch(() => undefined);
+    return id === undefined ? undefined : { id, name };
+  }
+
+  private async returnToProjects(page: Page): Promise<void> {
+    await page.goto(PROJECTS_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await this.waitForProjectState(page);
+    await page.waitForTimeout(PROJECT_SETTLE_MS);
+  }
+
+  /**
+   * Resolves the row selector once and reports how many rows it matches. Counting with one
+   * selector and indexing with another would address different elements, which previously
+   * made a single project appear twice.
+   */
+  private async projectRowSelector(
+    page: Page,
+  ): Promise<{ selector: string; count: number } | undefined> {
+    for (const selector of UI_SELECTORS.projectRow) {
+      const count = await page.locator(selector).count();
+      if (count > 0) return { selector, count };
+    }
+    return undefined;
+  }
+
+  private projectRowAt(page: Page, selector: string, index: number): Locator {
+    return page.locator(selector).nth(index);
+  }
+
+  private async waitForProjectId(page: Page, signal: AbortSignal): Promise<string> {
+    for (let attempt = 0; attempt < PROJECT_ID_ATTEMPTS; attempt += 1) {
+      if (signal.aborted) throw abortError(signal);
+      const id = projectIdFromHref(page.url());
+      if (id !== undefined) return id;
+      await page.waitForTimeout(POLL_MS);
+    }
+    throw this.uiChanged();
   }
 
   /** Opens a tab on a project surface, asserts it is usable, and always closes it. */
@@ -365,30 +527,10 @@ export class ChatGptAdapter implements WebChatProvider {
     }
   }
 
-  private async readProjectLinks(page: Page): Promise<ProjectSummary[]> {
-    const summaries = new Map<string, string>();
-    for (const selector of UI_SELECTORS.projectLink) {
-      const links = page.locator(selector);
-      const count = await links.count();
-      for (let index = 0; index < count; index += 1) {
-        const link = links.nth(index);
-        const href = await link.getAttribute('href').catch(() => null);
-        if (href === null) continue;
-        const id = projectIdFromHref(href);
-        if (id === undefined) continue;
-        const label = (await link.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
-        // Later selectors are fallbacks; keep the first non-empty name we saw for an id.
-        if (!summaries.has(id) || (summaries.get(id) === '' && label !== ''))
-          summaries.set(id, label);
-      }
-    }
-    return [...summaries].map(([id, name]) => ({ id, name }));
-  }
-
   /**
    * The projects surface has no composer, so `classifyPage` would report `ui_changed`.
-   * Treat "a project link or the new-project control is present" as ready instead, while
-   * still surfacing login, challenge, and rate-limit states.
+   * Treat "a project row or the create control is present" as ready instead, while still
+   * surfacing login, challenge, and rate-limit states.
    */
   private async waitForProjectState(page: Page): Promise<SessionState> {
     for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
@@ -396,7 +538,7 @@ export class ChatGptAdapter implements WebChatProvider {
       if (state !== 'ui_changed') return state;
       if (
         (await firstVisible(page, UI_SELECTORS.newProjectButton)) !== undefined ||
-        (await countAll(page, UI_SELECTORS.projectLink)) > 0
+        (await countAll(page, UI_SELECTORS.projectRow)) > 0
       ) {
         return 'ready';
       }

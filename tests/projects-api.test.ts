@@ -5,8 +5,8 @@ import { FakeProvider } from '../src/testing/fake-provider.js';
 import { testConfig } from './helpers.js';
 
 const auth = { authorization: 'Bearer test-only-token-that-is-long-enough' };
-const PROJECT_ID = 'g-p-6a7fe6399d0c819196f3dc4ae1aa83fe';
-const CONVERSATION_ID = '6a80100f-332c-83ec-9f7c-44a526f82a4b';
+const PROJECT_ID = 'g-p-0123456789abcdef0123456789abcdef';
+const CONVERSATION_ID = '0123abcd-4567-89ef-0123-456789abcdef';
 
 function server(provider: FakeProvider) {
   return buildServer({

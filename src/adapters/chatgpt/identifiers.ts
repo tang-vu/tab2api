@@ -17,10 +17,27 @@ export function projectUrl(projectId: string): string {
   return `${CHATGPT_URL}g/${projectId}/project`;
 }
 
+/** The project's own files live behind the sources tab, not the conversation composer. */
+export function projectSourcesUrl(projectId: string): string {
+  return `${projectUrl(projectId)}?tab=sources`;
+}
+
 export function conversationUrl(conversationId: string): string {
+  return `${CHATGPT_URL}c/${conversationIdOrThrow(conversationId)}`;
+}
+
+/**
+ * A conversation that belongs to a project canonically lives under the project. Bare
+ * `/c/<id>` redirects here, so addressing it directly avoids waiting out that redirect.
+ */
+export function projectConversationUrl(projectId: string, conversationId: string): string {
+  return `${projectUrl(projectId).replace(/\/project$/, '')}/c/${conversationIdOrThrow(conversationId)}`;
+}
+
+function conversationIdOrThrow(conversationId: string): string {
   if (!CONVERSATION_ID_PATTERN.test(conversationId))
     throw new AppError('invalid_request', 'The conversation id is not a ChatGPT conversation id.');
-  return `${CHATGPT_URL}c/${conversationId}`;
+  return conversationId;
 }
 
 export function conversationIdFromUrl(url: string): string | undefined {

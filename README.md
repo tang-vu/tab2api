@@ -197,7 +197,8 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 - Token counts are not visible in the UI. Chat Completions returns zero counts with `tab2api.usage_available=false`; Responses returns `usage: null`. These values mean “unknown,” not zero actual usage.
 - `stream: true` is a **buffered fallback**: generation finishes in the browser, then one text delta is sent. Chat Completions ends with `[DONE]`; Responses ends with `response.completed`. It is not live token streaming.
 - UI text extraction preserves visible multiline/code/list text but may differ from original Markdown source.
-- Project routes drive the same public UI. `GET /v1/projects` reads live browser state rather than a tab2api database, and `DELETE` acts on whatever id the client supplies, so it can remove a project created outside tab2api. Deletion is irreversible.
+- Project routes drive the same public UI. `GET /v1/projects` reads live browser state rather than a tab2api database, and because the grid exposes no identifier it opens each project to learn its id: roughly one navigation per project, capped at 25.
+- `DELETE /v1/projects/:projectId` acts on whatever id the client supplies, so it can remove a project created outside tab2api, and deletion is irreversible. It resolves the id to a name and deletes the row with that name; two projects sharing a name are rejected rather than guessed between.
 - A project keeps its uploaded files and instructions, but ChatGPT still governs how much of them a given answer uses. Project context is not a substitute for a large context window, and account-level memory is not isolated by a project.
 - ChatGPT UI changes, localization, experiments, rate limits, account policy, network conditions, and security challenges can break operation. No challenge is bypassed and an ambiguous submitted prompt is never retried automatically.
 
