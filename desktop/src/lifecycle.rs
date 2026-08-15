@@ -79,6 +79,43 @@ pub struct SidecarLifecycle {
     parent_window: Option<isize>,
 }
 
+fn project_root() -> Result<PathBuf, String> {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "desktop directory has no project parent".to_string())
+}
+
+/// The service the developer has just compiled, when this is a development build.
+///
+/// `desktop:prepare:*` is what refreshes the staged bundle, and `desktop:dev` does not run
+/// it, so a development build that preferred the bundle would keep running whatever was
+/// staged last — silently ignoring `npm run build`.
+fn development_service_entrypoint() -> Option<PathBuf> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let entrypoint = project_root().ok()?.join("dist/sidecar/index.js");
+    entrypoint.is_file().then_some(entrypoint)
+}
+
+/// Chooses which compiled service to run, and the directory to run it from.
+///
+/// Only the JavaScript is taken from the repository: the bundled Node runtime and Chromium
+/// are still used, because a development machine may have no working Playwright install of
+/// its own. Release builds pass `None` and therefore stay inside the packaged resources.
+fn select_service_entrypoint(
+    bundled_service: PathBuf,
+    bundled_root: PathBuf,
+    development_service: Option<PathBuf>,
+    development_root: PathBuf,
+) -> (PathBuf, PathBuf) {
+    match development_service {
+        Some(service) => (service, development_root),
+        None => (bundled_service, bundled_root),
+    }
+}
+
 #[derive(Clone, Debug)]
 struct RuntimeSpec {
     node: PathBuf,
@@ -101,20 +138,23 @@ impl RuntimeSpec {
             let bundled_service = bundled_root.join("dist/sidecar/index.js");
             let bundled_browsers = bundled_root.join("ms-playwright");
             if bundled_node.is_file() && bundled_service.is_file() {
+                let (service_entrypoint, working_dir) = select_service_entrypoint(
+                    bundled_service,
+                    bundled_root.clone(),
+                    development_service_entrypoint(),
+                    project_root()?,
+                );
                 return Ok(Self {
                     node: normalize_child_path(&bundled_node)?,
-                    service_entrypoint: normalize_child_path(&bundled_service)?,
+                    service_entrypoint: normalize_child_path(&service_entrypoint)?,
                     login_browser: find_chromium_executable(&bundled_browsers)?,
-                    working_dir: normalize_child_path(&bundled_root)?,
+                    working_dir: normalize_child_path(&working_dir)?,
                     browsers_path: Some(normalize_child_path(&bundled_browsers)?),
                 });
             }
         }
 
-        let project_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .ok_or("desktop directory has no project parent")?
-            .to_path_buf();
+        let project_root = project_root()?;
         let service_entrypoint = project_root.join("dist/sidecar/index.js");
         if !service_entrypoint.is_file() {
             return Err("Node sidecar is not built; run `npm run build` first".into());
@@ -784,6 +824,42 @@ mod tests {
         assert!(!debug.contains("token"));
         assert!(!debug.contains("authorization"));
         assert!(!debug.contains("cookie"));
+    }
+
+    #[test]
+    fn a_development_build_runs_the_freshly_compiled_service() {
+        // `desktop:dev` rebuilds dist/ but does not restage the bundle, so preferring the
+        // bundle would keep running whatever was staged last.
+        let (entrypoint, working_dir) = select_service_entrypoint(
+            PathBuf::from("resources/sidecar/dist/sidecar/index.js"),
+            PathBuf::from("resources/sidecar"),
+            Some(PathBuf::from("repo/dist/sidecar/index.js")),
+            PathBuf::from("repo"),
+        );
+        assert_eq!(entrypoint, PathBuf::from("repo/dist/sidecar/index.js"));
+        assert_eq!(working_dir, PathBuf::from("repo"));
+    }
+
+    #[test]
+    fn a_packaged_build_stays_inside_its_own_resources() {
+        let (entrypoint, working_dir) = select_service_entrypoint(
+            PathBuf::from("resources/sidecar/dist/sidecar/index.js"),
+            PathBuf::from("resources/sidecar"),
+            None,
+            PathBuf::from("repo"),
+        );
+        assert_eq!(
+            entrypoint,
+            PathBuf::from("resources/sidecar/dist/sidecar/index.js")
+        );
+        assert_eq!(working_dir, PathBuf::from("resources/sidecar"));
+    }
+
+    #[test]
+    fn release_builds_never_offer_a_development_entrypoint() {
+        if !cfg!(debug_assertions) {
+            assert!(development_service_entrypoint().is_none());
+        }
     }
 
     #[test]
