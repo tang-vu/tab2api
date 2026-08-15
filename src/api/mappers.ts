@@ -14,10 +14,19 @@ export interface ChatCompletionResponse {
     finish_reason: 'stop';
   }>;
   usage: { prompt_tokens: 0; completion_tokens: 0; total_tokens: 0 };
-  tab2api: { usage_available: false; stream_mode: 'buffered' };
+  tab2api: {
+    usage_available: false;
+    stream_mode: 'buffered';
+    /** Present when the UI exposed a conversation; pass it back to continue the thread. */
+    conversation_id?: string;
+  };
 }
 
-export function mapChatCompletion(text: string, now = Date.now()): ChatCompletionResponse {
+export function mapChatCompletion(
+  text: string,
+  now = Date.now(),
+  conversationId?: string,
+): ChatCompletionResponse {
   return {
     id: `chatcmpl_${randomUUID().replaceAll('-', '')}`,
     object: 'chat.completion',
@@ -32,7 +41,11 @@ export function mapChatCompletion(text: string, now = Date.now()): ChatCompletio
       },
     ],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-    tab2api: { usage_available: false, stream_mode: 'buffered' },
+    tab2api: {
+      usage_available: false,
+      stream_mode: 'buffered',
+      ...(conversationId !== undefined && { conversation_id: conversationId }),
+    },
   };
 }
 
@@ -57,10 +70,18 @@ export interface ResponsesResponse {
   tool_choice: 'none';
   tools: [];
   usage: null;
-  metadata: { tab2api_stream_mode: 'buffered'; tab2api_usage_available: 'false' };
+  metadata: {
+    tab2api_stream_mode: 'buffered';
+    tab2api_usage_available: 'false';
+    tab2api_conversation_id?: string;
+  };
 }
 
-export function mapResponse(text: string, now = Date.now()): ResponsesResponse {
+export function mapResponse(
+  text: string,
+  now = Date.now(),
+  conversationId?: string,
+): ResponsesResponse {
   const compactId = randomUUID().replaceAll('-', '');
   return {
     id: `resp_${compactId}`,
@@ -85,7 +106,11 @@ export function mapResponse(text: string, now = Date.now()): ResponsesResponse {
     tool_choice: 'none',
     tools: [],
     usage: null,
-    metadata: { tab2api_stream_mode: 'buffered', tab2api_usage_available: 'false' },
+    metadata: {
+      tab2api_stream_mode: 'buffered',
+      tab2api_usage_available: 'false',
+      ...(conversationId !== undefined && { tab2api_conversation_id: conversationId }),
+    },
   };
 }
 

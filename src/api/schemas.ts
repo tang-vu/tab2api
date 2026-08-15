@@ -31,12 +31,22 @@ export const chatMessageSchema = z
   })
   .strict();
 
+/**
+ * Both identifiers are interpolated into a chatgpt.com URL, so they are anchored and
+ * charset-restricted here as well as in the adapter.
+ */
+export const projectIdSchema = z.string().regex(/^g-p-[0-9a-f]{16,64}$/);
+export const conversationIdSchema = z
+  .string()
+  .regex(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/);
+
 export const chatCompletionRequestSchema = z
   .object({
     model: z.string().min(1),
     messages: z.array(chatMessageSchema).min(1).max(200),
     stream: z.boolean().default(false),
     user: z.string().optional(),
+    conversation_id: conversationIdSchema.optional(),
   })
   .strict();
 
@@ -54,6 +64,7 @@ export const responsesRequestSchema = z
     instructions: z.string().min(1).optional(),
     stream: z.boolean().default(false),
     user: z.string().optional(),
+    conversation_id: conversationIdSchema.optional(),
   })
   .strict();
 
@@ -82,3 +93,9 @@ export const speechRequestSchema = z
     speed: z.number().min(0.5).max(2).default(1),
   })
   .strict();
+
+export const createProjectRequestSchema = z.object({ name: z.string().min(1).max(120) }).strict();
+
+export const projectParamsSchema = z.object({ projectId: projectIdSchema }).strict();
+
+export type CreateProjectBody = z.infer<typeof createProjectRequestSchema>;

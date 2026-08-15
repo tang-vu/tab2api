@@ -119,6 +119,24 @@ curl.exe http://127.0.0.1:3210/v1/images/generations `
 
 Speech dùng `/v1/audio/speech` với JSON và trả WAV. Transcription dùng multipart tại `/v1/audio/transcriptions`. Xem [tài liệu API](docs/api.md) để biết schema và giới hạn media chính xác.
 
+Làm việc với codebase lớn thì dùng ChatGPT project: upload nguồn một lần thay vì gửi lại theo từng request.
+
+```powershell
+$project = (curl.exe http://127.0.0.1:3210/v1/projects `
+  -H "Authorization: Bearer $token" -H "Content-Type: application/json" `
+  -d '{"name":"codebase cua toi"}' | ConvertFrom-Json).id
+
+curl.exe "http://127.0.0.1:3210/v1/projects/$project/files" `
+  -H "Authorization: Bearer $token" `
+  -F "file=@src/index.ts;type=text/plain"
+
+curl.exe "http://127.0.0.1:3210/v1/projects/$project/chat/completions" `
+  -H "Authorization: Bearer $token" -H "Content-Type: application/json" `
+  -d '{"model":"chatgpt-web","messages":[{"role":"user","content":"Dự án này làm gì?"}]}'
+```
+
+Response trả kèm `tab2api.conversation_id`; gửi lại giá trị đó qua `conversation_id` để tiếp tục đúng hội thoại thay vì mở hội thoại mới.
+
 Cấu hình client JavaScript tương thích OpenAI:
 
 ```ts
@@ -151,6 +169,8 @@ npm run autostart:status
 Task chạy nền khi user đăng nhập Windows và dùng watchdog có giới hạn cùng cơ chế restart của Task Scheduler khi process lỗi. Log đã redact nằm tại `.tab2api/service.log` và được gitignore. Đây là availability best-effort trên desktop, không phải bảo đảm uptime production: logout, sleep/mất điện, CAPTCHA, rate limit, UI đổi hoặc browser không chạy đều có thể làm generation ngừng. Gỡ task bằng `npm run autostart:remove`; profile và dữ liệu runtime được giữ lại.
 
 - Hỗ trợ text với role `system`, `developer`, `user`, `assistant`; vision nhận data URL PNG/JPEG/WebP có giới hạn và từ chối URL ảnh từ xa.
+- Nhóm endpoint project (`/v1/projects`, `/v1/projects/:projectId/files`, `/v1/projects/:projectId/chat/completions`, `/v1/projects/:projectId/responses`) điều khiển chính UI công khai của ChatGPT. `GET /v1/projects` đọc trạng thái thật của trình duyệt chứ không phải database của tab2api, và `DELETE` tác động lên đúng id client gửi lên nên có thể xoá cả project bạn tự tạo tay. Xoá là không hoàn tác được.
+- Project giữ file và instructions đã upload, nhưng ChatGPT vẫn quyết định dùng bao nhiêu trong đó cho mỗi câu trả lời. Project không thay thế được context window lớn, và memory ở cấp tài khoản không bị cô lập theo project.
 - Model trả về luôn là `chatgpt-web`; tên model client gửi không điều khiển model picker trên UI.
 - Không hỗ trợ tool calling, sửa ảnh, voice realtime, MP3 TTS, structured output hoặc logprobs.
 - Ảnh output là PNG lossless được render từ phần tử UI ở đúng kích thước pixel nội tại, không phải preview nhỏ trong chat. Pixel do UI cung cấp được giữ nguyên, nhưng file không giống byte-for-byte với asset nguồn và có thể thiếu metadata. Chỉ hỗ trợ `n=1`, `size=auto`, `quality=auto`, `b64_json`.

@@ -3,19 +3,32 @@ import type { Locator, Page } from 'playwright';
 import type { Logger } from 'pino';
 import { AppError, abortError, asSafeAppError } from '../../errors.js';
 import type {
+  CreateProjectRequest,
+  DeleteProjectRequest,
   GenerateImageRequest,
   GenerateImageResult,
   GenerateRequest,
   GenerateResult,
+  ListProjectsRequest,
+  ProjectSummary,
   SessionState,
+  UploadProjectFilesRequest,
+  UploadProjectFilesResult,
   WebChatProvider,
 } from '../../provider.js';
 import type { AppConfig } from '../../config/index.js';
 import type { BrowserController } from '../../browser/controller.js';
 import { CompletionStateMachine } from './completion-state.js';
+import {
+  CHATGPT_URL,
+  PROJECTS_URL,
+  conversationIdFromUrl,
+  conversationUrl,
+  projectIdFromHref,
+  projectUrl,
+} from './identifiers.js';
 import { UI_SELECTORS } from './selectors.js';
 
-const CHATGPT_URL = 'https://chatgpt.com/';
 const POLL_MS = 300;
 const INITIAL_STATE_ATTEMPTS = 20;
 const INITIAL_STATE_POLL_MS = 250;
@@ -23,6 +36,18 @@ const MAX_CAPTURE_DIMENSION = 4_096;
 const MAX_CAPTURE_PIXELS = 16_777_216;
 /** Padding around the isolated element so the clip never sits flush against the viewport. */
 const CAPTURE_MARGIN_PX = 256;
+const PROJECT_SETTLE_MS = 1_500;
+const PROJECT_ATTACHMENT_SETTLE_MS = 2_000;
+
+/**
+ * Continuing a conversation wins over the project it belongs to: the conversation URL
+ * already carries the project's files and instructions.
+ */
+function navigationTarget(request: GenerateRequest): string {
+  if (request.conversationId !== undefined) return conversationUrl(request.conversationId);
+  if (request.projectId !== undefined) return projectUrl(request.projectId);
+  return CHATGPT_URL;
+}
 
 async function firstVisible(
   page: Page,
@@ -120,9 +145,11 @@ export class ChatGptAdapter implements WebChatProvider {
     let submitted = false;
     try {
       if (request.signal.aborted) throw abortError(request.signal);
+      // Resolve the target before opening a tab so a rejected identifier never navigates.
+      const target = navigationTarget(request);
       page = await this.browser.getPage();
       if (request.signal.aborted) throw abortError(request.signal);
-      await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       const state = await this.waitForInitialState(page);
       this.assertReady(state);
       const composer = await firstVisible(page, UI_SELECTORS.composer);
@@ -152,7 +179,13 @@ export class ChatGptAdapter implements WebChatProvider {
         baselineCompletionActions,
         request.signal,
       );
-      return { text, providerModel: this.id };
+      // A new conversation only gets its URL once the turn is under way, so read it here.
+      const conversationId = conversationIdFromUrl(page.url());
+      return {
+        text,
+        providerModel: this.id,
+        ...(conversationId !== undefined && { conversationId }),
+      };
     } catch (error) {
       if (request.signal.aborted) throw abortError(request.signal);
       if (error instanceof AppError) {
@@ -221,6 +254,169 @@ export class ChatGptAdapter implements WebChatProvider {
     } finally {
       await page?.close().catch(() => undefined);
     }
+  }
+
+  async createProject(request: CreateProjectRequest): Promise<ProjectSummary> {
+    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
+      const knownBefore = new Set((await this.readProjectLinks(page)).map((entry) => entry.id));
+      const newProject = await firstVisible(page, UI_SELECTORS.newProjectButton);
+      if (newProject === undefined) throw this.uiChanged();
+      await newProject.click();
+      const nameInput = await this.waitForVisible(
+        page,
+        UI_SELECTORS.projectNameInput,
+        request.signal,
+      );
+      await nameInput.fill(request.name);
+      const confirm = await firstVisible(page, UI_SELECTORS.projectCreateConfirm);
+      if (confirm === undefined) throw this.uiChanged();
+      await confirm.click();
+
+      // ChatGPT either navigates into the new project or adds it to the list in place.
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (request.signal.aborted) throw abortError(request.signal);
+        const current = projectIdFromHref(page.url());
+        if (current !== undefined && !knownBefore.has(current))
+          return { id: current, name: request.name };
+        const added = (await this.readProjectLinks(page)).find(
+          (entry) => !knownBefore.has(entry.id),
+        );
+        if (added !== undefined) return { id: added.id, name: added.name || request.name };
+        await page.waitForTimeout(POLL_MS);
+      }
+      throw this.uiChanged();
+    });
+  }
+
+  async listProjects(request: ListProjectsRequest): Promise<readonly ProjectSummary[]> {
+    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
+      await page.waitForTimeout(PROJECT_SETTLE_MS);
+      return this.readProjectLinks(page);
+    });
+  }
+
+  async deleteProject(request: DeleteProjectRequest): Promise<void> {
+    const target = projectUrl(request.projectId);
+    await this.withProjectPage(target, request.signal, request.requestId, async (page) => {
+      const options = await firstVisible(page, UI_SELECTORS.projectOptionsButton);
+      if (options === undefined) throw this.uiChanged();
+      await options.click();
+      const remove = await this.waitForVisible(
+        page,
+        UI_SELECTORS.projectDeleteMenuItem,
+        request.signal,
+      );
+      await remove.click();
+      const confirm = await this.waitForVisible(
+        page,
+        UI_SELECTORS.projectDeleteConfirm,
+        request.signal,
+      );
+      await confirm.click();
+      await page.waitForTimeout(PROJECT_SETTLE_MS);
+    });
+  }
+
+  async uploadProjectFiles(request: UploadProjectFilesRequest): Promise<UploadProjectFilesResult> {
+    const target = projectUrl(request.projectId);
+    return this.withProjectPage(target, request.signal, request.requestId, async (page) => {
+      const fileInput = page.locator(UI_SELECTORS.fileInput[0]).first();
+      if ((await fileInput.count()) === 0)
+        throw new AppError('ui_changed', 'The ChatGPT project file input is unavailable.');
+      await fileInput.setInputFiles(
+        request.attachments.map((attachment) => ({
+          name: attachment.filename,
+          mimeType: attachment.mimeType,
+          buffer: attachment.data,
+        })),
+      );
+      // Uploads are asynchronous; give the UI time to accept them before closing the tab.
+      await page.waitForTimeout(PROJECT_ATTACHMENT_SETTLE_MS);
+      return { projectId: request.projectId, uploaded: request.attachments.length };
+    });
+  }
+
+  /** Opens a tab on a project surface, asserts it is usable, and always closes it. */
+  private async withProjectPage<T>(
+    url: string,
+    signal: AbortSignal,
+    requestId: string,
+    action: (page: Page) => Promise<T>,
+  ): Promise<T> {
+    let page: Page | undefined;
+    try {
+      if (signal.aborted) throw abortError(signal);
+      page = await this.browser.getPage();
+      if (signal.aborted) throw abortError(signal);
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      const state = await this.waitForProjectState(page);
+      if (state !== 'ready') this.assertReady(state);
+      return await action(page);
+    } catch (error) {
+      if (signal.aborted) throw abortError(signal);
+      if (error instanceof AppError) throw error;
+      this.logger.warn(
+        { errorType: error instanceof Error ? error.name : 'unknown', requestId },
+        'browser project request failed',
+      );
+      throw asSafeAppError(error);
+    } finally {
+      await page?.close().catch(() => undefined);
+    }
+  }
+
+  private async readProjectLinks(page: Page): Promise<ProjectSummary[]> {
+    const summaries = new Map<string, string>();
+    for (const selector of UI_SELECTORS.projectLink) {
+      const links = page.locator(selector);
+      const count = await links.count();
+      for (let index = 0; index < count; index += 1) {
+        const link = links.nth(index);
+        const href = await link.getAttribute('href').catch(() => null);
+        if (href === null) continue;
+        const id = projectIdFromHref(href);
+        if (id === undefined) continue;
+        const label = (await link.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
+        // Later selectors are fallbacks; keep the first non-empty name we saw for an id.
+        if (!summaries.has(id) || (summaries.get(id) === '' && label !== ''))
+          summaries.set(id, label);
+      }
+    }
+    return [...summaries].map(([id, name]) => ({ id, name }));
+  }
+
+  /**
+   * The projects surface has no composer, so `classifyPage` would report `ui_changed`.
+   * Treat "a project link or the new-project control is present" as ready instead, while
+   * still surfacing login, challenge, and rate-limit states.
+   */
+  private async waitForProjectState(page: Page): Promise<SessionState> {
+    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+      const state = await this.classifyPage(page);
+      if (state !== 'ui_changed') return state;
+      if (
+        (await firstVisible(page, UI_SELECTORS.newProjectButton)) !== undefined ||
+        (await countAll(page, UI_SELECTORS.projectLink)) > 0
+      ) {
+        return 'ready';
+      }
+      if (attempt < INITIAL_STATE_ATTEMPTS - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    }
+    return 'ui_changed';
+  }
+
+  private async waitForVisible(
+    page: Page,
+    selectors: readonly string[],
+    signal: AbortSignal,
+  ): Promise<Locator> {
+    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+      if (signal.aborted) throw abortError(signal);
+      const locator = await firstVisible(page, selectors);
+      if (locator !== undefined) return locator;
+      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    }
+    throw this.uiChanged();
   }
 
   async waitForManualLogin(onState: (state: SessionState) => void): Promise<void> {

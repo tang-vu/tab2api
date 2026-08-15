@@ -65,6 +65,39 @@ export const UI_SELECTORS = {
     '[class*="aria-busy"]',
     '[aria-busy="true"]',
   ],
+  newProjectButton: [
+    'button[aria-label="Dự án mới"]',
+    'button[aria-label*="New project" i]',
+    'button[data-testid*="new-project"]',
+  ],
+  projectNameInput: [
+    '[role="dialog"] input[type="text"]',
+    '[role="dialog"] input:not([type="hidden"])',
+    '[role="dialog"] textarea',
+  ],
+  projectCreateConfirm: [
+    '[role="dialog"] button[type="submit"]',
+    '[role="dialog"] button:has-text("Tạo dự án")',
+    '[role="dialog"] button:has-text("Create project")',
+    '[role="dialog"] button:has-text("Tạo")',
+    '[role="dialog"] button:has-text("Create")',
+  ],
+  projectLink: ['a[href*="/g/g-p-"]'],
+  projectOptionsButton: [
+    'button[aria-label*="tùy chọn" i]',
+    'button[aria-label*="options" i]',
+    'button[aria-label*="More" i]',
+  ],
+  projectDeleteMenuItem: [
+    '[role="menuitem"]:has-text("Xóa")',
+    '[role="menuitem"]:has-text("Xoá")',
+    '[role="menuitem"]:has-text("Delete")',
+  ],
+  projectDeleteConfirm: [
+    '[role="dialog"] button:has-text("Xóa")',
+    '[role="dialog"] button:has-text("Xoá")',
+    '[role="dialog"] button:has-text("Delete")',
+  ],
 } as const;
 
 export const DOM_MARKERS = {
