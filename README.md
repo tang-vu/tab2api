@@ -158,6 +158,8 @@ npm run desktop:smoke:windows
 
 The preparation step stages production dependencies and downloads only the Playwright-matched headed Chromium revision. Generated resources, installers, runtime data, and profiles are ignored by Git. The output under `desktop/target/release/bundle/nsis/` is a developer preview; public releases still require code signing and clean-machine installation tests. See [the desktop guide](docs/desktop.md).
 
+The desktop controller includes localized settings and a complete Cloudflare Tunnel onboarding guide in English, Vietnamese, Chinese, Japanese, Korean, Spanish, French, and German. It chooses the initial language from the operating-system locale locally—never from IP geolocation—and lets the user change the saved language at any time.
+
 ### Per-device keys, usage, and private remote access
 
 The original `.tab2api/api-token` is the administrator key. Create revocable non-admin keys for other personal devices with `npm run keys -- create "personal laptop"`; the plaintext is printed once and only its SHA-256 digest is persisted. `npm run keys -- list`, `npm run keys -- revoke <id>`, and `npm run usage` manage keys and inspect content-free counters.

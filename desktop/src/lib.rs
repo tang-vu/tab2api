@@ -146,6 +146,15 @@ async fn disable_tunnel(state: State<'_, DesktopState>) -> Result<TunnelStatus, 
 }
 
 #[cfg(not(test))]
+#[tauri::command]
+async fn open_tunnel_folder(state: State<'_, DesktopState>) -> Result<TunnelStatus, String> {
+    let tunnel = Arc::clone(&state.tunnel);
+    tauri::async_runtime::spawn_blocking(move || tunnel.open_setup_folder())
+        .await
+        .map_err(|error| format!("tunnel folder task failed: {error}"))?
+}
+
+#[cfg(not(test))]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -220,7 +229,8 @@ pub fn run() {
             install_cloudflared,
             enable_access_tunnel,
             enable_bearer_tunnel,
-            disable_tunnel
+            disable_tunnel,
+            open_tunnel_folder
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tab2api desktop");
@@ -244,6 +254,7 @@ mod tests {
             "enable_access_tunnel",
             "enable_bearer_tunnel",
             "disable_tunnel",
+            "open_tunnel_folder",
         ] {
             assert!(script.contains(command));
         }

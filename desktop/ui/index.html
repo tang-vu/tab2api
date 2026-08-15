@@ -12,51 +12,98 @@
       <div class="control-column">
         <header>
           <div class="mark">T2</div>
-          <div>
-            <h1>tab2api</h1>
-            <p>Local browser bridge controller</p>
+          <div class="brand-copy">
+            <h1 data-i18n="appTitle">tab2api</h1>
+            <p data-i18n="appSubtitle">Local browser bridge controller</p>
           </div>
+          <button id="open-settings" class="icon-button" data-i18n="settings">Settings</button>
         </header>
 
         <section class="status-card" aria-live="polite">
           <div class="status-heading">
             <span id="status-dot" class="dot stopped"></span>
-            <strong id="status-label">Checking…</strong>
+            <strong id="status-label" data-i18n="checking">Checking...</strong>
           </div>
-          <p id="status-detail">Inspecting the local sidecar.</p>
+          <p id="status-detail" data-i18n="inspectingService">Inspecting the local sidecar.</p>
           <code id="endpoint">http://127.0.0.1:3210</code>
         </section>
 
         <section class="actions" aria-label="Service controls">
-          <button id="start" class="primary">Start service</button>
-          <button id="stop">Stop service</button>
-          <button id="login">Open login browser</button>
-          <button id="refresh">Refresh status</button>
-          <button id="undock">Open externally</button>
-          <button id="redock">Dock browser</button>
+          <button id="start" class="primary" data-i18n="startService">Start service</button>
+          <button id="stop" data-i18n="stopService">Stop service</button>
+          <button id="login" data-i18n="openLogin">Open login browser</button>
+          <button id="refresh" data-i18n="refreshStatus">Refresh status</button>
+          <button id="undock" data-i18n="openExternally">Open externally</button>
+          <button id="redock" data-i18n="dockBrowser">Dock browser</button>
         </section>
 
         <section class="tunnel-card" aria-live="polite">
           <div class="tunnel-heading">
-            <strong>Personal Cloudflare Tunnel</strong>
-            <span id="tunnel-mode">Checking...</span>
+            <strong data-i18n="tunnelTitle">Personal Cloudflare Tunnel</strong>
+            <span id="tunnel-mode" data-i18n="checking">Checking...</span>
           </div>
-          <p id="tunnel-detail">Inspecting optional remote access.</p>
+          <p id="tunnel-detail" data-i18n="inspectingTunnel">Inspecting optional remote access.</p>
           <div class="tunnel-actions" aria-label="Cloudflare Tunnel controls">
-            <button id="install-cloudflared">Install cloudflared</button>
-            <button id="enable-access" class="primary">Enable with Access</button>
-            <button id="enable-bearer">Enable bearer-only...</button>
-            <button id="disable-tunnel">Disable tunnel</button>
+            <button id="install-cloudflared" data-i18n="installCloudflared">
+              Install cloudflared
+            </button>
+            <button id="enable-access" class="primary" data-i18n="enableAccess">
+              Enable with Access
+            </button>
+            <button id="enable-bearer" data-i18n="enableBearer">Enable bearer-only...</button>
+            <button id="disable-tunnel" data-i18n="disableTunnel">Disable tunnel</button>
+            <button id="open-tunnel-folder" class="wide" data-i18n="openSetupFolder">
+              Open setup folder
+            </button>
           </div>
           <small id="tunnel-prerequisites"></small>
+
+          <details class="setup-guide">
+            <summary data-i18n="guideTitle">Cloudflare setup guide</summary>
+            <p data-i18n="guideIntro">
+              Remote access remains optional and single-owner. The local origin and browser control
+              always stay on loopback.
+            </p>
+            <ol>
+              <li>
+                <strong data-i18n="guideInstallTitle">1. Install cloudflared</strong
+                ><span data-i18n="guideInstallBody"></span>
+              </li>
+              <li>
+                <strong data-i18n="guideTunnelTitle"
+                  >2. Create a dedicated tunnel and DNS route</strong
+                ><span data-i18n="guideTunnelBody"></span>
+              </li>
+              <li>
+                <strong data-i18n="guideFilesTitle">3. Place the private runtime files</strong
+                ><span data-i18n="guideFilesBody"></span>
+              </li>
+              <li>
+                <strong data-i18n="guideAccessTitle"
+                  >4. Protect the entire hostname with Access</strong
+                ><span data-i18n="guideAccessBody"></span>
+              </li>
+              <li>
+                <strong data-i18n="guideKeyTitle">5. Keep independent tab2api authentication</strong
+                ><span data-i18n="guideKeyBody"></span>
+              </li>
+              <li>
+                <strong data-i18n="guideActivateTitle">6. Verify and enable</strong
+                ><span data-i18n="guideActivateBody"></span>
+              </li>
+            </ol>
+            <div class="warning-note">
+              <strong data-i18n="guideBearerTitle">Bearer-only alternative</strong>
+              <span data-i18n="guideBearerBody"></span>
+            </div>
+          </details>
         </section>
 
         <aside>
-          <strong>Private by design</strong>
-          <p>
+          <strong data-i18n="privateTitle">Private by design</strong>
+          <p data-i18n="privateBody">
             The API and browser control stay on loopback. Login happens manually in a dedicated
-            Chromium window. On Windows, its owned app window can be docked into the native pane;
-            the system WebView never loads ChatGPT.
+            Chromium profile. The system WebView never loads ChatGPT.
           </p>
         </aside>
 
@@ -64,16 +111,50 @@
       </div>
       <section class="browser-column" aria-label="Dedicated ChatGPT browser">
         <div class="browser-toolbar">
-          <div><strong>Dedicated browser</strong><span id="browser-mode">Not running</span></div>
-          <p>Manual profile · loopback control · external fallback</p>
+          <div>
+            <strong data-i18n="browserTitle">Dedicated browser</strong
+            ><span id="browser-mode" data-i18n="browserNotRunning">Not running</span>
+          </div>
+          <p data-i18n="browserMeta">Manual profile · loopback control · external fallback</p>
         </div>
         <div id="browser-host" aria-label="Native Chromium host">
           <div class="browser-placeholder">
-            <strong>Browser pane</strong
-            ><span>Start the service to launch the dedicated ChatGPT window.</span>
+            <strong data-i18n="browserPane">Browser pane</strong
+            ><span data-i18n="browserPlaceholder"
+              >Start the service to launch the dedicated ChatGPT window.</span
+            >
           </div>
         </div>
       </section>
     </main>
+
+    <dialog id="settings-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <strong data-i18n="settingsTitle">Settings</strong>
+          <button class="dialog-close" value="close" aria-label="Close">×</button>
+        </div>
+        <label for="language-select" data-i18n="language">Language</label>
+        <select id="language-select"></select>
+        <small data-i18n="automaticLocale"
+          >On first launch, language is selected from the operating-system locale.</small
+        >
+        <section>
+          <strong data-i18n="localePrivacyTitle">Locale privacy</strong>
+          <p data-i18n="localePrivacyBody">
+            Language detection is local. tab2api never sends your IP address or locale to a
+            geolocation service.
+          </p>
+        </section>
+        <section>
+          <strong data-i18n="remoteSafetyTitle">Remote-access safety</strong>
+          <p data-i18n="remoteSafetyBody">
+            Cloudflare Access is recommended. Bearer-only remains a separate explicit single-owner
+            choice.
+          </p>
+        </section>
+        <button class="primary dialog-action" value="close" data-i18n="close">Close</button>
+      </form>
+    </dialog>
   </body>
 </html>

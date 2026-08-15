@@ -53,6 +53,12 @@ remove its Scheduled Task. Bearer-only activation is deliberately separate and r
 single-owner risk confirmation. Cloudflare account, tunnel, DNS, Access policy, and credential setup
 remain prerequisites rather than being created or imported by the desktop shell.
 
+The card contains the complete prerequisite and Access-policy walkthrough and opens the private
+setup folder without revealing its path to frontend JavaScript. The Settings dialog supports
+English, Vietnamese, Chinese, Japanese, Korean, Spanish, French, and German. Initial language
+selection uses only the operating-system locale; no IP geolocation or locale network request is
+made. The only persisted WebView preference is the selected language code.
+
 ## Validation
 
 ```powershell

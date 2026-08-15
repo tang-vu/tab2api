@@ -1,6 +1,7 @@
-/* global document, window */
-const invoke = window.__TAURI__?.core?.invoke;
+/* global document, navigator, window */
+import { languageOptions, loadLanguage, saveLanguage, translate } from './i18n.js';
 
+const invoke = window.__TAURI__?.core?.invoke;
 const elements = {
   dot: document.querySelector('#status-dot'),
   label: document.querySelector('#status-label'),
@@ -22,23 +23,74 @@ const elements = {
   enableAccess: document.querySelector('#enable-access'),
   enableBearer: document.querySelector('#enable-bearer'),
   disableTunnel: document.querySelector('#disable-tunnel'),
+  openTunnelFolder: document.querySelector('#open-tunnel-folder'),
+  openSettings: document.querySelector('#open-settings'),
+  settingsDialog: document.querySelector('#settings-dialog'),
+  languageSelect: document.querySelector('#language-select'),
 };
 
-const labels = {
-  stopped: 'Stopped',
-  starting: 'Starting',
-  ready: 'Ready',
-  unhealthy: 'Needs attention',
-  login_open: 'Login browser open',
-};
+function localSettingsStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+const settingsStorage = localSettingsStorage();
+let language = loadLanguage(settingsStorage, navigator.languages ?? [navigator.language]);
+let lastServiceStatus;
+let lastTunnelStatus;
+const t = (key) => translate(language, key);
+
+for (const [code, label] of languageOptions) {
+  const option = document.createElement('option');
+  option.value = code;
+  option.textContent = label;
+  elements.languageSelect.append(option);
+}
+
+function applyLanguage() {
+  document.documentElement.lang = language;
+  document.title = t('appTitle');
+  elements.languageSelect.value = language;
+  for (const element of document.querySelectorAll('[data-i18n]')) {
+    element.textContent = t(element.dataset.i18n);
+  }
+  if (lastServiceStatus) render(lastServiceStatus);
+  if (lastTunnelStatus) renderTunnel(lastTunnelStatus);
+}
+
+function serviceDetail(status) {
+  const keys = {
+    stopped: 'serviceStopped',
+    starting: 'serviceStarting',
+    ready: 'serviceReady',
+    unhealthy: 'serviceUnhealthy',
+    login_open: 'serviceLoginOpen',
+  };
+  return keys[status.phase] ? t(keys[status.phase]) : status.detail;
+}
 
 function render(status) {
+  lastServiceStatus = status;
+  const labelKeys = {
+    stopped: 'stopped',
+    starting: 'starting',
+    ready: 'ready',
+    unhealthy: 'unhealthy',
+    login_open: 'loginOpen',
+  };
   elements.dot.className = `dot ${status.phase}`;
-  elements.label.textContent = labels[status.phase] ?? status.phase;
-  elements.detail.textContent = status.detail;
+  elements.label.textContent = labelKeys[status.phase] ? t(labelKeys[status.phase]) : status.phase;
+  elements.detail.textContent = serviceDetail(status);
   elements.endpoint.textContent = status.endpoint;
-  const modeLabels = { none: 'Not running', external: 'External window', docked: 'Docked' };
-  elements.browserMode.textContent = modeLabels[status.browser_mode] ?? 'Unavailable';
+  const modeKeys = {
+    none: 'browserNotRunning',
+    external: 'browserExternal',
+    docked: 'browserDocked',
+  };
+  elements.browserMode.textContent = t(modeKeys[status.browser_mode] ?? 'browserNotRunning');
   elements.browserHost.classList.toggle('active', status.browser_mode === 'docked');
   const busy = status.phase === 'starting' || status.phase === 'login_open';
   elements.start.disabled = status.phase !== 'stopped';
@@ -50,22 +102,35 @@ function render(status) {
   if (status.browser_mode === 'docked') queueBrowserBounds();
 }
 
+function tunnelDetail(status) {
+  if (status.running) {
+    if (status.mode === 'access') return t('tunnelRunningAccess');
+    if (status.mode === 'bearer_only') return t('tunnelRunningBearer');
+    return t('tunnelRunningUnknown');
+  }
+  if (status.task_installed) return t('tunnelInstalledStopped');
+  if (!status.cloudflared_installed) return t('tunnelNeedsInstall');
+  if (!status.config_ready) return t('tunnelNeedsConfig');
+  return t('tunnelReady');
+}
+
 function renderTunnel(status) {
-  const modeLabels = {
-    none: status.running ? 'Unknown mode' : 'Disabled',
-    access: 'Access protected',
-    bearer_only: 'Bearer-only',
+  lastTunnelStatus = status;
+  const modeKeys = {
+    none: status.running ? 'tunnelUnknown' : 'tunnelDisabled',
+    access: 'tunnelAccess',
+    bearer_only: 'tunnelBearer',
   };
   elements.tunnelMode.textContent = status.supported
-    ? (modeLabels[status.mode] ?? 'Unavailable')
-    : 'Unsupported';
-  elements.tunnelDetail.textContent = status.detail;
-  const prerequisites = [
-    `cloudflared: ${status.cloudflared_installed ? 'ready' : 'missing'}`,
-    `tunnel config: ${status.config_ready ? 'ready' : 'missing'}`,
-    `Access probe: ${status.access_probe_ready ? 'ready' : 'missing'}`,
-  ];
-  elements.tunnelPrerequisites.textContent = prerequisites.join(' / ');
+    ? t(modeKeys[status.mode] ?? 'tunnelUnknown')
+    : t('tunnelUnsupported');
+  elements.tunnelDetail.textContent = tunnelDetail(status);
+  const ready = (value) => t(value ? 'prerequisiteReady' : 'prerequisiteMissing');
+  elements.tunnelPrerequisites.textContent = [
+    `${t('cloudflared')}: ${ready(status.cloudflared_installed)}`,
+    `${t('tunnelConfig')}: ${ready(status.config_ready)}`,
+    `${t('accessProbe')}: ${ready(status.access_probe_ready)}`,
+  ].join(' / ');
   elements.installCloudflared.disabled = !status.supported || status.cloudflared_installed;
   elements.enableAccess.disabled =
     !status.supported ||
@@ -76,6 +141,20 @@ function renderTunnel(status) {
   elements.enableBearer.disabled =
     !status.supported || !status.cloudflared_installed || !status.config_ready || status.running;
   elements.disableTunnel.disabled = !status.supported || !status.task_installed;
+  elements.openTunnelFolder.disabled = !status.supported;
+}
+
+function localizedError(error) {
+  const message = String(error);
+  if (message.includes('Cloudflare Access verification or tunnel activation failed')) {
+    return t('accessActivationError');
+  }
+  return message;
+}
+
+function showError(error) {
+  elements.error.textContent = localizedError(error);
+  elements.error.hidden = false;
 }
 
 let boundsQueued = false;
@@ -91,8 +170,7 @@ function queueBrowserBounds() {
         bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       });
     } catch (error) {
-      elements.error.textContent = String(error);
-      elements.error.hidden = false;
+      showError(error);
     }
   });
 }
@@ -103,8 +181,7 @@ async function perform(command) {
   try {
     render(await invoke(command));
   } catch (error) {
-    elements.error.textContent = String(error);
-    elements.error.hidden = false;
+    showError(error);
     await refresh();
   }
 }
@@ -113,8 +190,7 @@ async function refresh() {
   try {
     render(await invoke('sidecar_status'));
   } catch (error) {
-    elements.error.textContent = String(error);
-    elements.error.hidden = false;
+    showError(error);
   }
 }
 
@@ -123,10 +199,7 @@ function refreshTunnel() {
   if (tunnelRefreshInFlight) return tunnelRefreshInFlight;
   tunnelRefreshInFlight = invoke('tunnel_status')
     .then(renderTunnel)
-    .catch((error) => {
-      elements.error.textContent = String(error);
-      elements.error.hidden = false;
-    })
+    .catch(showError)
     .finally(() => {
       tunnelRefreshInFlight = undefined;
     });
@@ -139,19 +212,19 @@ async function performTunnel(command, args) {
   try {
     renderTunnel(await invoke(command, args));
   } catch (error) {
-    elements.error.textContent = String(error);
-    elements.error.hidden = false;
+    showError(error);
   } finally {
     await Promise.all([refresh(), refreshTunnel()]);
   }
 }
 
+applyLanguage();
+
 if (typeof invoke !== 'function') {
-  elements.error.textContent =
-    'Native bridge initialization failed. Restart tab2api; reinstall the desktop app if this persists.';
+  elements.error.textContent = t('nativeBridgeError');
   elements.error.hidden = false;
-  elements.label.textContent = 'Desktop bridge unavailable';
-  elements.detail.textContent = 'The native command API was not injected into this window.';
+  elements.label.textContent = t('bridgeUnavailable');
+  elements.detail.textContent = t('bridgeUnavailableDetail');
   for (const button of document.querySelectorAll('button')) button.disabled = true;
 } else {
   elements.start.addEventListener('click', () => perform('start_sidecar'));
@@ -166,12 +239,18 @@ if (typeof invoke !== 'function') {
   elements.installCloudflared.addEventListener('click', () => performTunnel('install_cloudflared'));
   elements.enableAccess.addEventListener('click', () => performTunnel('enable_access_tunnel'));
   elements.enableBearer.addEventListener('click', () => {
-    const accepted = window.confirm(
-      'Bearer-only makes the hostname publicly reachable. Continue only for one owner, with an independent revocable tab2api client key. Cloudflare Access is safer. Enable bearer-only mode?',
-    );
-    if (accepted) performTunnel('enable_bearer_tunnel', { accepted: true });
+    if (window.confirm(t('confirmBearer'))) {
+      performTunnel('enable_bearer_tunnel', { accepted: true });
+    }
   });
   elements.disableTunnel.addEventListener('click', () => performTunnel('disable_tunnel'));
+  elements.openTunnelFolder.addEventListener('click', () => performTunnel('open_tunnel_folder'));
+  elements.openSettings.addEventListener('click', () => elements.settingsDialog.showModal());
+  elements.languageSelect.addEventListener('change', () => {
+    language = elements.languageSelect.value;
+    saveLanguage(settingsStorage, language);
+    applyLanguage();
+  });
   new ResizeObserver(queueBrowserBounds).observe(elements.browserHost);
   window.addEventListener('resize', queueBrowserBounds);
   window.addEventListener('scroll', queueBrowserBounds, { passive: true });

@@ -79,6 +79,8 @@ npm run desktop:smoke:windows
 
 Pipeline chỉ stage production dependencies và tải đúng Chromium headed revision khớp Playwright. Resource sinh ra, installer, runtime và profile đều được gitignore. File trong `desktop/target/release/bundle/nsis/` là developer preview; bản public vẫn cần code signing và clean-machine install test. Xem [hướng dẫn desktop](docs/desktop.md).
 
+App desktop có Settings đa ngôn ngữ và hướng dẫn Cloudflare Tunnel đầy đủ bằng tiếng Anh, Việt, Trung, Nhật, Hàn, Tây Ban Nha, Pháp và Đức. Lần chạy đầu app chọn ngôn ngữ hoàn toàn cục bộ theo locale hệ điều hành—không định vị bằng IP—và người dùng có thể đổi ngôn ngữ đã lưu bất cứ lúc nào.
+
 ## Bắt đầu trên macOS/Linux
 
 ```bash

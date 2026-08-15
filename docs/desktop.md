@@ -28,6 +28,8 @@ The Rust layer owns both child-process boundaries and forces `TAB2API_HOST=127.0
 
 The Windows controller also exposes bounded Cloudflare Tunnel lifecycle controls. It can install the exact `Cloudflare.cloudflared` winget package, inspect prerequisites, install/start the existing dedicated tunnel as a per-user Scheduled Task, or stop/remove that task. Access-protected activation remains the default and runs the fixed-response Access probe. Bearer-only activation is a separate UI action with explicit single-owner risk confirmation. The frontend receives booleans, mode, and content-free status text only; configuration paths, tunnel credentials, command output, and authorization material never cross the native bridge. The desktop controller does not create a Cloudflare account, tunnel, DNS route, Access policy, or credential file.
 
+The tunnel card includes an in-app, localized setup guide and can open the exact private runtime folder in File Explorer without returning its path to the WebView. Settings support English, Vietnamese, Simplified Chinese, Japanese, Korean, Spanish, French, and German. On first launch the WebView selects from the operating-system locale; it never performs IP geolocation or sends locale data over the network. A user-selected language is the only value stored in the controller WebView's local settings storage. If that storage is unavailable, the app continues with local locale detection and does not fail startup.
+
 Current lifecycle behavior is intentionally small:
 
 - start waits up to 15 seconds for `GET /healthz` on IPv4 loopback;

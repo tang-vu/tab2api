@@ -178,6 +178,23 @@ impl TunnelManager {
             self.status()
         }
     }
+
+    pub fn open_setup_folder(&self) -> Result<TunnelStatus, String> {
+        #[cfg(not(windows))]
+        return Err("Cloudflare Tunnel setup is currently available only on Windows".into());
+
+        #[cfg(windows)]
+        {
+            Command::new("explorer.exe")
+                .arg(&self.runtime_dir)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|_| "could not open the private tunnel setup folder")?;
+            self.status()
+        }
+    }
 }
 
 fn public_status(status: ScriptStatus) -> TunnelStatus {

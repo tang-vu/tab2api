@@ -38,6 +38,15 @@ header {
   gap: 16px;
   margin-bottom: 22px;
 }
+.brand-copy {
+  min-width: 0;
+  flex: 1;
+}
+.icon-button {
+  min-height: 38px;
+  padding: 0 13px;
+  font-size: 13px;
+}
 .mark {
   display: grid;
   place-items: center;
@@ -94,11 +103,61 @@ aside {
   min-height: 40px;
   font-size: 13px;
 }
+.tunnel-actions .wide {
+  grid-column: 1 / -1;
+}
 .tunnel-card small {
   display: block;
   margin-top: 12px;
   color: #77859b;
   line-height: 1.4;
+}
+.setup-guide {
+  margin-top: 16px;
+  border-top: 1px solid #263246;
+  padding-top: 14px;
+}
+.setup-guide summary {
+  color: #cbd5e1;
+  font-weight: 700;
+  cursor: pointer;
+}
+.setup-guide > p,
+.setup-guide li span,
+.warning-note span {
+  color: #95a2b7;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.setup-guide ol {
+  margin: 14px 0 0;
+  padding-left: 22px;
+}
+.setup-guide li {
+  margin-bottom: 13px;
+}
+.setup-guide li strong,
+.setup-guide li span {
+  display: block;
+}
+.setup-guide li strong {
+  margin-bottom: 3px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+.warning-note {
+  border: 1px solid #664d24;
+  border-radius: 10px;
+  background: #2b2113;
+  padding: 12px;
+}
+.warning-note strong,
+.warning-note span {
+  display: block;
+}
+.warning-note strong {
+  color: #f6c85f;
+  margin-bottom: 4px;
 }
 .status-heading {
   display: flex;
@@ -230,6 +289,71 @@ aside p {
   border-radius: 10px;
   padding: 12px 14px;
 }
+dialog {
+  width: min(520px, calc(100% - 32px));
+  border: 1px solid #324057;
+  border-radius: 18px;
+  background: #111722;
+  color: #edf2f7;
+  padding: 0;
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.55);
+}
+dialog::backdrop {
+  background: rgba(3, 6, 12, 0.76);
+}
+dialog form {
+  padding: 22px;
+}
+.dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  font-size: 20px;
+}
+.dialog-close {
+  width: 38px;
+  min-height: 38px;
+  font-size: 24px;
+  line-height: 1;
+}
+dialog label,
+dialog small {
+  display: block;
+}
+dialog label {
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+dialog select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #324057;
+  border-radius: 10px;
+  background: #090c11;
+  color: #edf2f7;
+  padding: 0 12px;
+  font: inherit;
+}
+dialog small {
+  color: #77859b;
+  margin-top: 8px;
+  line-height: 1.45;
+}
+dialog section {
+  border-top: 1px solid #263246;
+  margin-top: 18px;
+  padding-top: 16px;
+}
+dialog section p {
+  color: #95a2b7;
+  line-height: 1.55;
+  margin: 6px 0 0;
+}
+.dialog-action {
+  width: 100%;
+  margin-top: 20px;
+}
 @media (max-width: 920px) {
   main.shell {
     width: min(100% - 28px, 620px);
@@ -241,5 +365,11 @@ aside p {
   }
   .actions {
     grid-template-columns: 1fr;
+  }
+  .tunnel-actions {
+    grid-template-columns: 1fr;
+  }
+  .tunnel-actions .wide {
+    grid-column: auto;
   }
 }
