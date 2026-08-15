@@ -1,0 +1,18 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1024 1024"
+  role="img"
+  aria-label="tab2api T2 mark"
+>
+  <rect width="1024" height="1024" rx="224" fill="#0a0d12" />
+  <rect x="72" y="72" width="880" height="880" rx="190" fill="#58d9ae" />
+  <path fill="#09241d" d="M208 266h300v104H410v392H306V370h-98z" />
+  <path
+    d="M566 380c20-92 188-98 214-6 36 128-172 170-214 358h228"
+    fill="none"
+    stroke="#09241d"
+    stroke-width="96"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

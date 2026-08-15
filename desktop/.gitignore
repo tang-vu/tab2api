@@ -1,0 +1,7 @@
+/generated/*
+!/generated/sidecar/
+/generated/sidecar/*
+!/generated/sidecar/.gitkeep
+/target/
+/gen/
+/icons/android/

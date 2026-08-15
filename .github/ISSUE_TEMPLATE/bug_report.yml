@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible tab2api defect without sensitive session data
+title: '[Bug]: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 'Never attach browser profiles, credentials, cookies, tokens, prompts, responses, or unsanitized screenshots/logs.'
+  - type: input
+    id: version
+    attributes:
+      label: Version/commit
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Sanitized reproduction
+      description: Include commands, machine-readable error code, and expected/actual behavior. Remove all content and secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Sanitized doctor output
+      description: Confirm it contains no paths/account data you consider sensitive.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I did not include credentials, tokens, cookies, browser storage/profile data, prompts, responses, or sensitive screenshots.
+          required: true

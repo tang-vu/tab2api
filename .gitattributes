@@ -1,0 +1,6 @@
+# Keep source and documentation byte-identical across Windows, macOS, Linux, and CI.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary

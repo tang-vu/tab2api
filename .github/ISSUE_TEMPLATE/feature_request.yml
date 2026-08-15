@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a feature within tab2api's local-only safety boundaries
+title: '[Feature]: '
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and privacy impact
+      description: Explain effects on loopback binding, profile/session data, logs, queue limits, and browser tabs.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: This does not require private endpoints, credential/token extraction, challenge bypass, stealth, account rotation, quota circumvention, or public hosting.
+          required: true
