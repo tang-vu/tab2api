@@ -3,6 +3,12 @@ export interface CompletionObservation {
   text: string;
   generating: boolean;
   completionActionAvailable?: boolean;
+  /**
+   * The turn still carries a working marker. ChatGPT renders the copy action before the
+   * answer exists, so without this a status line such as "Analyzing image" is stable enough
+   * to be mistaken for the final answer and returned to the client.
+   */
+  pending?: boolean;
 }
 
 export type CompletionDecision = 'waiting' | 'complete';
@@ -18,7 +24,7 @@ export class CompletionStateMachine {
 
   observe(observation: CompletionObservation): CompletionDecision {
     const isNew = observation.assistantCount > this.baselineAssistantCount;
-    if (!isNew || observation.text.length === 0) {
+    if (!isNew || observation.text.length === 0 || observation.pending === true) {
       this.lastText = '';
       this.stableObservations = 0;
       return 'waiting';
