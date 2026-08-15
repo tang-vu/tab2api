@@ -4,6 +4,10 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+### Fixed
+
+- A desktop development build ran whatever was last staged under `desktop/generated/sidecar/` instead of the service just compiled by `npm run build`, so changes appeared to have no effect. Development builds now take the service entrypoint from the repository while still using the staged Node runtime and Chromium. Packaged builds are unchanged and continue to resolve only their own resources.
+
 ## [0.1.0] - 2026-08-15
 
 ### Added

@@ -54,6 +54,8 @@ npx playwright install chromium
 npm run desktop:dev
 ```
 
+`desktop:dev` rebuilds `dist/` and runs it. It does not refresh `desktop/generated/sidecar/`, which only `desktop:prepare:*` stages, so the shell deliberately prefers the repository build in a development build; otherwise `npm run build` would appear to have no effect. The staged Node runtime and Chromium are still used when they exist, so a development machine does not need its own working Playwright installation. Packaged builds are unaffected and resolve only their own resources.
+
 Use only your own dedicated profile and log in manually. Development and CI commands must not contact ChatGPT.com automatically.
 
 Validate the desktop code:
