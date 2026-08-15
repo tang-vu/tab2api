@@ -15,6 +15,13 @@ const elements = {
   redock: document.querySelector('#redock'),
   browserHost: document.querySelector('#browser-host'),
   browserMode: document.querySelector('#browser-mode'),
+  tunnelMode: document.querySelector('#tunnel-mode'),
+  tunnelDetail: document.querySelector('#tunnel-detail'),
+  tunnelPrerequisites: document.querySelector('#tunnel-prerequisites'),
+  installCloudflared: document.querySelector('#install-cloudflared'),
+  enableAccess: document.querySelector('#enable-access'),
+  enableBearer: document.querySelector('#enable-bearer'),
+  disableTunnel: document.querySelector('#disable-tunnel'),
 };
 
 const labels = {
@@ -41,6 +48,34 @@ function render(status) {
   elements.undock.disabled = status.browser_mode !== 'docked';
   elements.redock.disabled = status.browser_mode !== 'external';
   if (status.browser_mode === 'docked') queueBrowserBounds();
+}
+
+function renderTunnel(status) {
+  const modeLabels = {
+    none: status.running ? 'Unknown mode' : 'Disabled',
+    access: 'Access protected',
+    bearer_only: 'Bearer-only',
+  };
+  elements.tunnelMode.textContent = status.supported
+    ? (modeLabels[status.mode] ?? 'Unavailable')
+    : 'Unsupported';
+  elements.tunnelDetail.textContent = status.detail;
+  const prerequisites = [
+    `cloudflared: ${status.cloudflared_installed ? 'ready' : 'missing'}`,
+    `tunnel config: ${status.config_ready ? 'ready' : 'missing'}`,
+    `Access probe: ${status.access_probe_ready ? 'ready' : 'missing'}`,
+  ];
+  elements.tunnelPrerequisites.textContent = prerequisites.join(' / ');
+  elements.installCloudflared.disabled = !status.supported || status.cloudflared_installed;
+  elements.enableAccess.disabled =
+    !status.supported ||
+    !status.cloudflared_installed ||
+    !status.config_ready ||
+    !status.access_probe_ready ||
+    status.running;
+  elements.enableBearer.disabled =
+    !status.supported || !status.cloudflared_installed || !status.config_ready || status.running;
+  elements.disableTunnel.disabled = !status.supported || !status.task_installed;
 }
 
 let boundsQueued = false;
@@ -83,6 +118,34 @@ async function refresh() {
   }
 }
 
+let tunnelRefreshInFlight;
+function refreshTunnel() {
+  if (tunnelRefreshInFlight) return tunnelRefreshInFlight;
+  tunnelRefreshInFlight = invoke('tunnel_status')
+    .then(renderTunnel)
+    .catch((error) => {
+      elements.error.textContent = String(error);
+      elements.error.hidden = false;
+    })
+    .finally(() => {
+      tunnelRefreshInFlight = undefined;
+    });
+  return tunnelRefreshInFlight;
+}
+
+async function performTunnel(command, args) {
+  elements.error.hidden = true;
+  for (const button of document.querySelectorAll('button')) button.disabled = true;
+  try {
+    renderTunnel(await invoke(command, args));
+  } catch (error) {
+    elements.error.textContent = String(error);
+    elements.error.hidden = false;
+  } finally {
+    await Promise.all([refresh(), refreshTunnel()]);
+  }
+}
+
 if (typeof invoke !== 'function') {
   elements.error.textContent =
     'Native bridge initialization failed. Restart tab2api; reinstall the desktop app if this persists.';
@@ -100,10 +163,20 @@ if (typeof invoke !== 'function') {
     await perform('redock_browser');
     queueBrowserBounds();
   });
+  elements.installCloudflared.addEventListener('click', () => performTunnel('install_cloudflared'));
+  elements.enableAccess.addEventListener('click', () => performTunnel('enable_access_tunnel'));
+  elements.enableBearer.addEventListener('click', () => {
+    const accepted = window.confirm(
+      'Bearer-only makes the hostname publicly reachable. Continue only for one owner, with an independent revocable tab2api client key. Cloudflare Access is safer. Enable bearer-only mode?',
+    );
+    if (accepted) performTunnel('enable_bearer_tunnel', { accepted: true });
+  });
+  elements.disableTunnel.addEventListener('click', () => performTunnel('disable_tunnel'));
   new ResizeObserver(queueBrowserBounds).observe(elements.browserHost);
   window.addEventListener('resize', queueBrowserBounds);
   window.addEventListener('scroll', queueBrowserBounds, { passive: true });
 
-  await refresh();
+  await Promise.all([refresh(), refreshTunnel()]);
   window.setInterval(refresh, 3000);
+  window.setInterval(refreshTunnel, 5000);
 }

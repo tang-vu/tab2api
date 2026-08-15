@@ -23,7 +23,9 @@ Many OpenAI-compatible clients support custom/default headers. If yours cannot s
 
 ## Windows activation
 
-The local runtime files `.tab2api/cloudflared-tab2api.yml` and `.tab2api/cloudflared-access-probe.yml` are deliberately gitignored because they contain tunnel identifiers and credential paths. After creating the Access application, run:
+The local runtime files `.tab2api/cloudflared-tab2api.yml` and `.tab2api/cloudflared-access-probe.yml` are deliberately gitignored because they contain tunnel identifiers and credential paths. The Windows desktop controller provides install, activation, status, and removal controls in its **Personal Cloudflare Tunnel** card. In a source checkout it uses the ignored `.tab2api` directory; a packaged application uses its private app-local runtime directory. Tunnel/DNS/Access creation and credential files remain explicit Cloudflare prerequisites; the app never displays or copies those secrets.
+
+The equivalent CLI commands are:
 
 ```powershell
 npm run tunnel:install

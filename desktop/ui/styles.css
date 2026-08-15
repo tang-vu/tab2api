@@ -58,12 +58,47 @@ header p {
   color: #95a2b7;
 }
 .status-card,
+.tunnel-card,
 aside {
   border: 1px solid #263246;
   border-radius: 18px;
   background: rgba(17, 23, 34, 0.86);
   padding: 24px;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.2);
+}
+.tunnel-card {
+  margin-top: 18px;
+  padding: 18px 20px;
+}
+.tunnel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tunnel-heading span,
+.tunnel-card small {
+  color: #87e8ca;
+  font-size: 12px;
+}
+.tunnel-card p {
+  color: #95a2b7;
+  line-height: 1.45;
+  margin: 9px 0 14px;
+}
+.tunnel-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.tunnel-actions button {
+  min-height: 40px;
+  font-size: 13px;
+}
+.tunnel-card small {
+  display: block;
+  margin-top: 12px;
+  color: #77859b;
+  line-height: 1.4;
 }
 .status-heading {
   display: flex;

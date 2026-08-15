@@ -35,7 +35,10 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "generated/sidecar": "sidecar"
+      "generated/sidecar": "sidecar",
+      "../scripts/windows/install-cloudflare-autostart.ps1": "scripts/windows/install-cloudflare-autostart.ps1",
+      "../scripts/windows/status-cloudflare-autostart.ps1": "scripts/windows/status-cloudflare-autostart.ps1",
+      "../scripts/windows/remove-cloudflare-autostart.ps1": "scripts/windows/remove-cloudflare-autostart.ps1"
     }
   }
 }

@@ -46,6 +46,13 @@ uses the sidecar's versioned JSON stdin protocol, waits up to eight seconds for 
 then falls back to terminating an unresponsive child. Windows Chromium cleanup targets the exact
 launched PID and its process tree with a bounded wait so a loopback debugging listener is not left behind.
 
+On Windows, the **Personal Cloudflare Tunnel** card manages the optional tunnel without exposing
+configuration or credentials to the WebView. It can install the exact cloudflared winget package,
+verify prerequisites, activate the existing dedicated tunnel with the Access-protected path, and
+remove its Scheduled Task. Bearer-only activation is deliberately separate and requires an explicit
+single-owner risk confirmation. Cloudflare account, tunnel, DNS, Access policy, and credential setup
+remain prerequisites rather than being created or imported by the desktop shell.
+
 ## Validation
 
 ```powershell

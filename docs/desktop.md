@@ -26,6 +26,8 @@ The Windows shell can best-effort make Chromium's owned top-level window a direc
 
 The Rust layer owns both child-process boundaries and forces `TAB2API_HOST=127.0.0.1` and `TAB2API_BROWSER_BACKEND=playwright`. On Windows it supplies `TAB2API_BROWSER_CDP_ENDPOINT` only to the sidecar process. Its frontend receives only a phase, the local API endpoint, a content-free status message, and `none`, `external`, or `docked` browser mode. It never receives an API key, CDP endpoint, sidecar output, profile data, process/window identifiers, cookies, authorization headers, prompts, or responses. The WebView content security policy denies network connections.
 
+The Windows controller also exposes bounded Cloudflare Tunnel lifecycle controls. It can install the exact `Cloudflare.cloudflared` winget package, inspect prerequisites, install/start the existing dedicated tunnel as a per-user Scheduled Task, or stop/remove that task. Access-protected activation remains the default and runs the fixed-response Access probe. Bearer-only activation is a separate UI action with explicit single-owner risk confirmation. The frontend receives booleans, mode, and content-free status text only; configuration paths, tunnel credentials, command output, and authorization material never cross the native bridge. The desktop controller does not create a Cloudflare account, tunnel, DNS route, Access policy, or credential file.
+
 Current lifecycle behavior is intentionally small:
 
 - start waits up to 15 seconds for `GET /healthz` on IPv4 loopback;

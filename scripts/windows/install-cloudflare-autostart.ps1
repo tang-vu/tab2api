@@ -1,9 +1,16 @@
-param([switch]$AllowBearerOnly)
+param(
+    [string]$RuntimeDirectory,
+    [string]$WorkingDirectory,
+    [switch]$AllowBearerOnly
+)
 
 $ErrorActionPreference = 'Stop'
 $taskName = 'tab2api-cloudflared'
 $repository = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$runtimeDirectory = Join-Path $repository '.tab2api'
+if ([string]::IsNullOrWhiteSpace($RuntimeDirectory)) { $RuntimeDirectory = Join-Path $repository '.tab2api' }
+if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { $WorkingDirectory = $repository }
+$runtimeDirectory = (Resolve-Path -LiteralPath $RuntimeDirectory).Path
+$workingDirectory = (Resolve-Path -LiteralPath $WorkingDirectory).Path
 $configPath = Join-Path $runtimeDirectory 'cloudflared-tab2api.yml'
 $probePath = Join-Path $runtimeDirectory 'cloudflared-access-probe.yml'
 $cloudflaredPath = (Get-Command cloudflared.exe -ErrorAction Stop).Source
@@ -55,7 +62,7 @@ else {
 }
 
 $arguments = '--config "{0}" tunnel run' -f $configPath
-$action = New-ScheduledTaskAction -Execute $cloudflaredPath -Argument $arguments -WorkingDirectory $repository
+$action = New-ScheduledTaskAction -Execute $cloudflaredPath -Argument $arguments -WorkingDirectory $workingDirectory
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 $settings = New-ScheduledTaskSettingsSet -RestartCount 99 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited

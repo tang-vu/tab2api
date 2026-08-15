@@ -1,5 +1,6 @@
 mod browser_host;
 mod lifecycle;
+mod tunnel;
 
 #[cfg(not(test))]
 use browser_host::BrowserBounds;
@@ -13,10 +14,13 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 #[cfg(not(test))]
 use tauri::{Manager, State};
+#[cfg(not(test))]
+use tunnel::{TunnelManager, TunnelStatus};
 
 #[cfg(not(test))]
 struct DesktopState {
     lifecycle: Arc<SidecarLifecycle>,
+    tunnel: Arc<TunnelManager>,
 }
 
 #[cfg(not(test))]
@@ -94,6 +98,54 @@ async fn redock_browser(state: State<'_, DesktopState>) -> Result<ServiceStatus,
 }
 
 #[cfg(not(test))]
+#[tauri::command]
+async fn tunnel_status(state: State<'_, DesktopState>) -> Result<TunnelStatus, String> {
+    let tunnel = Arc::clone(&state.tunnel);
+    tauri::async_runtime::spawn_blocking(move || tunnel.status())
+        .await
+        .map_err(|error| format!("tunnel status task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn install_cloudflared(state: State<'_, DesktopState>) -> Result<TunnelStatus, String> {
+    let tunnel = Arc::clone(&state.tunnel);
+    tauri::async_runtime::spawn_blocking(move || tunnel.install_cloudflared())
+        .await
+        .map_err(|error| format!("cloudflared install task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn enable_access_tunnel(state: State<'_, DesktopState>) -> Result<TunnelStatus, String> {
+    let tunnel = Arc::clone(&state.tunnel);
+    tauri::async_runtime::spawn_blocking(move || tunnel.enable_access())
+        .await
+        .map_err(|error| format!("tunnel activation task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn enable_bearer_tunnel(
+    state: State<'_, DesktopState>,
+    accepted: bool,
+) -> Result<TunnelStatus, String> {
+    let tunnel = Arc::clone(&state.tunnel);
+    tauri::async_runtime::spawn_blocking(move || tunnel.enable_bearer_only(accepted))
+        .await
+        .map_err(|error| format!("bearer-only activation task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn disable_tunnel(state: State<'_, DesktopState>) -> Result<TunnelStatus, String> {
+    let tunnel = Arc::clone(&state.tunnel);
+    tauri::async_runtime::spawn_blocking(move || tunnel.disable())
+        .await
+        .map_err(|error| format!("tunnel removal task failed: {error}"))?
+}
+
+#[cfg(not(test))]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -106,10 +158,13 @@ pub fn run() {
                 .map(|hwnd| hwnd.0 as isize);
             #[cfg(not(windows))]
             let parent_window = None;
+            let tunnel = TunnelManager::new(&resource_dir, &app_local_data_dir)
+                .map_err(std::io::Error::other)?;
             let lifecycle = SidecarLifecycle::new(resource_dir, app_local_data_dir, parent_window)
                 .map_err(std::io::Error::other)?;
             app.manage(DesktopState {
                 lifecycle: Arc::new(lifecycle),
+                tunnel: Arc::new(tunnel),
             });
             let show = MenuItem::with_id(app, "show", "Show tab2api", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -160,7 +215,12 @@ pub fn run() {
             open_login,
             set_browser_bounds,
             undock_browser,
-            redock_browser
+            redock_browser,
+            tunnel_status,
+            install_cloudflared,
+            enable_access_tunnel,
+            enable_bearer_tunnel,
+            disable_tunnel
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tab2api desktop");
@@ -178,5 +238,15 @@ mod tests {
 
         let script = include_str!("../ui/app.js");
         assert!(script.contains("typeof invoke !== 'function'"));
+        for command in [
+            "tunnel_status",
+            "install_cloudflared",
+            "enable_access_tunnel",
+            "enable_bearer_tunnel",
+            "disable_tunnel",
+        ] {
+            assert!(script.contains(command));
+        }
+        assert!(script.contains("window.confirm"));
     }
 }

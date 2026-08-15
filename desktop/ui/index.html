@@ -36,6 +36,21 @@
           <button id="redock">Dock browser</button>
         </section>
 
+        <section class="tunnel-card" aria-live="polite">
+          <div class="tunnel-heading">
+            <strong>Personal Cloudflare Tunnel</strong>
+            <span id="tunnel-mode">Checking...</span>
+          </div>
+          <p id="tunnel-detail">Inspecting optional remote access.</p>
+          <div class="tunnel-actions" aria-label="Cloudflare Tunnel controls">
+            <button id="install-cloudflared">Install cloudflared</button>
+            <button id="enable-access" class="primary">Enable with Access</button>
+            <button id="enable-bearer">Enable bearer-only...</button>
+            <button id="disable-tunnel">Disable tunnel</button>
+          </div>
+          <small id="tunnel-prerequisites"></small>
+        </section>
+
         <aside>
           <strong>Private by design</strong>
           <p>
