@@ -151,7 +151,17 @@ export class ChatGptAdapter implements WebChatProvider {
       return { data, mimeType: 'image/png' };
     } catch (error) {
       if (request.signal.aborted) throw abortError(request.signal);
-      if (error instanceof AppError) throw error;
+      if (error instanceof AppError) {
+        if (error.code === 'ui_changed' && this.config.debug && page !== undefined) {
+          await page
+            .screenshot({
+              path: path.join(this.config.artifactDir, `ui-changed-${request.requestId}.png`),
+              fullPage: false,
+            })
+            .catch(() => undefined);
+        }
+        throw error;
+      }
       this.logger.warn(
         {
           errorType: error instanceof Error ? error.name : 'unknown',
@@ -317,10 +327,18 @@ export class ChatGptAdapter implements WebChatProvider {
     }
 
     // Render the already-loaded UI image at its intrinsic pixel dimensions. This avoids
-    // both the downscaled chat preview and reading/fetching the private image URL.
-    await page.setViewportSize({
-      width: dimensions.width + 256,
-      height: dimensions.height + 256,
+    // both the downscaled chat preview and reading/fetching the private image URL. A page
+    // attached over CDP (desktop app) inherits the host display's real device scale factor;
+    // at a fractional value the clip-based screenshot below rounds to a size that no longer
+    // matches the element's natural dimensions, so device metrics are pinned to a 1:1 ratio.
+    const deviceMetrics = await page.context().newCDPSession(page);
+    let overrideWidth = dimensions.width + 256;
+    let overrideHeight = dimensions.height + 256;
+    await deviceMetrics.send('Emulation.setDeviceMetricsOverride', {
+      width: overrideWidth,
+      height: overrideHeight,
+      deviceScaleFactor: 1,
+      mobile: false,
     });
     await image.evaluate((element) => {
       const candidate = element as HTMLImageElement;
@@ -347,8 +365,27 @@ export class ChatGptAdapter implements WebChatProvider {
       for (const [property, value] of declarations)
         candidate.style.setProperty(property, value, 'important');
     });
-    const box = await image.boundingBox();
+    let box = await image.boundingBox();
     if (box === null) throw this.uiChanged();
+    // `position: fixed` is only viewport-relative when no ancestor establishes its own
+    // containing block (e.g. via CSS transform, which ChatGPT's message list uses for
+    // animation). When an ancestor does, the element can land far enough from the origin
+    // that the +256 margin above does not fully contain it, truncating the clipped capture.
+    // Re-measure against reality and grow the device metrics to fit before capturing.
+    const requiredWidth = Math.ceil(box.x + dimensions.width) + 64;
+    const requiredHeight = Math.ceil(box.y + dimensions.height) + 64;
+    if (requiredWidth > overrideWidth || requiredHeight > overrideHeight) {
+      overrideWidth = Math.max(overrideWidth, requiredWidth);
+      overrideHeight = Math.max(overrideHeight, requiredHeight);
+      await deviceMetrics.send('Emulation.setDeviceMetricsOverride', {
+        width: overrideWidth,
+        height: overrideHeight,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      box = await image.boundingBox();
+      if (box === null) throw this.uiChanged();
+    }
     const data = await page.screenshot({
       type: 'png',
       animations: 'disabled',

@@ -1,10 +1,67 @@
 import type { Locator, Page } from 'playwright';
 import { describe, expect, it } from 'vitest';
 import { ChatGptAdapter } from '../src/adapters/chatgpt/adapter.js';
+import { UI_SELECTORS } from '../src/adapters/chatgpt/selectors.js';
 import type { BrowserController } from '../src/browser/controller.js';
 import { AppError } from '../src/errors.js';
 import { createLogger } from '../src/observability/logger.js';
 import { testConfig } from './helpers.js';
+
+function fakePng(width: number, height: number): Buffer {
+  const buffer = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(buffer, 0);
+  buffer.writeUInt32BE(13, 8);
+  buffer.write('IHDR', 12, 'ascii');
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  return buffer;
+}
+
+class FakeCdpSession {
+  readonly calls: Array<{ method: string; params: unknown }> = [];
+  async send(method: string, params?: unknown): Promise<unknown> {
+    this.calls.push({ method, params });
+    return {};
+  }
+}
+
+// Models the generated <img> locator's call sequence in generateImage(): the readiness
+// poll calls evaluate() to check `complete`/naturalWidth/naturalHeight three times before
+// captureIntrinsicImage() reads natural dimensions (4th call) then injects capture styles
+// (5th call). count() reports no image for the baseline check and first poll, then one
+// newly appeared image from the following poll onward.
+class FakeGeneratedImageLocator {
+  private countCalls = 0;
+  private evaluateCalls = 0;
+  boundingBoxCalls = 0;
+  constructor(
+    private readonly naturalWidth: number,
+    private readonly naturalHeight: number,
+    private readonly boxOrigin: { x: number; y: number } = { x: 8, y: 8 },
+  ) {}
+  nth(): this {
+    return this;
+  }
+  async count(): Promise<number> {
+    this.countCalls += 1;
+    return this.countCalls <= 2 ? 0 : 1;
+  }
+  async evaluate(_fn: unknown): Promise<unknown> {
+    this.evaluateCalls += 1;
+    if (this.evaluateCalls <= 3) return true;
+    if (this.evaluateCalls === 4) return { width: this.naturalWidth, height: this.naturalHeight };
+    return undefined;
+  }
+  async boundingBox(): Promise<{ x: number; y: number; width: number; height: number }> {
+    this.boundingBoxCalls += 1;
+    return {
+      x: this.boxOrigin.x,
+      y: this.boxOrigin.y,
+      width: this.naturalWidth,
+      height: this.naturalHeight,
+    };
+  }
+}
 
 class FakeLocator {
   constructor(
@@ -39,8 +96,13 @@ class FakePage {
   navigations = 0;
   currentUrl = 'https://chatgpt.com/';
   waits = 0;
+  screenshotPng: Buffer | undefined;
+  readonly cdpSession = new FakeCdpSession();
 
-  constructor(private readonly mode: 'ready' | 'delayed' | 'login' | 'unknown') {}
+  constructor(
+    private readonly mode: 'ready' | 'delayed' | 'login' | 'unknown',
+    private readonly imageLocator?: FakeGeneratedImageLocator,
+  ) {}
   async goto(): Promise<void> {
     this.navigations += 1;
   }
@@ -55,24 +117,34 @@ class FakePage {
     return this.closed;
   }
   locator(selector: string): Locator {
+    if (selector === UI_SELECTORS.generatedImage[0] && this.imageLocator !== undefined) {
+      return this.imageLocator as unknown as Locator;
+    }
     const ready = this.mode === 'ready' || (this.mode === 'delayed' && this.waits > 0);
     const composer = selector === '#prompt-textarea' && ready;
     const send = selector === 'button[data-testid="send-button"]' && ready;
     const login = selector === 'button[data-testid="login-button"]' && this.mode === 'login';
     return new FakeLocator(composer || send || login) as unknown as Locator;
   }
+  context(): { newCDPSession: (page?: unknown) => Promise<FakeCdpSession> } {
+    return { newCDPSession: async () => this.cdpSession };
+  }
   async close(): Promise<void> {
     this.closed = true;
   }
-  async screenshot(): Promise<Buffer> {
+  async screenshot(options?: { clip?: unknown }): Promise<Buffer> {
+    if (options?.clip !== undefined && this.screenshotPng !== undefined) return this.screenshotPng;
     return Buffer.from('');
   }
 }
 
 class FakeBrowser implements BrowserController {
   readonly page: FakePage;
-  constructor(mode: 'ready' | 'delayed' | 'login' | 'unknown') {
-    this.page = new FakePage(mode);
+  constructor(
+    mode: 'ready' | 'delayed' | 'login' | 'unknown',
+    imageLocator?: FakeGeneratedImageLocator,
+  ) {
+    this.page = new FakePage(mode, imageLocator);
   }
   async getPage(): Promise<Page> {
     return this.page as unknown as Page;
@@ -177,6 +249,65 @@ describe('ChatGPT adapter failure cleanup', () => {
         requestId: 'state-test',
       }),
     ).rejects.toMatchObject({ code });
+    expect(browser.page.closed).toBe(true);
+  });
+});
+
+describe('generated image capture', () => {
+  it('pins device scale factor to 1 before clipping and returns the intrinsic PNG', async () => {
+    const width = 400;
+    const height = 300;
+    const imageLocator = new FakeGeneratedImageLocator(width, height);
+    const browser = new FakeBrowser('ready', imageLocator);
+    browser.page.screenshotPng = fakePng(width, height);
+    const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
+
+    const result = await adapter.generateImage({
+      prompt: 'a landscape',
+      signal: new AbortController().signal,
+      requestId: 'image-scale-test',
+    });
+
+    expect(result.mimeType).toBe('image/png');
+    expect(result.data.equals(fakePng(width, height))).toBe(true);
+    expect(browser.page.cdpSession.calls).toEqual([
+      {
+        method: 'Emulation.setDeviceMetricsOverride',
+        params: { width: width + 256, height: height + 256, deviceScaleFactor: 1, mobile: false },
+      },
+    ]);
+    expect(browser.page.closed).toBe(true);
+  });
+
+  it('grows the device metrics to fit an element positioned away from the origin', async () => {
+    // `position: fixed` is only viewport-relative without a transformed ancestor; when
+    // ChatGPT's layout provides one, the element can land far from (0,0) and the default
+    // +256 margin no longer contains it. Regression test for that truncation.
+    const width = 400;
+    const height = 300;
+    const imageLocator = new FakeGeneratedImageLocator(width, height, { x: 500, y: 500 });
+    const browser = new FakeBrowser('ready', imageLocator);
+    browser.page.screenshotPng = fakePng(width, height);
+    const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
+
+    const result = await adapter.generateImage({
+      prompt: 'a landscape',
+      signal: new AbortController().signal,
+      requestId: 'image-grow-test',
+    });
+
+    expect(result.mimeType).toBe('image/png');
+    expect(browser.page.cdpSession.calls).toEqual([
+      {
+        method: 'Emulation.setDeviceMetricsOverride',
+        params: { width: width + 256, height: height + 256, deviceScaleFactor: 1, mobile: false },
+      },
+      {
+        method: 'Emulation.setDeviceMetricsOverride',
+        params: { width: 964, height: 864, deviceScaleFactor: 1, mobile: false },
+      },
+    ]);
+    expect(imageLocator.boundingBoxCalls).toBe(2);
     expect(browser.page.closed).toBe(true);
   });
 });
