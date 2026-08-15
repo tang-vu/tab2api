@@ -107,6 +107,8 @@ const en = {
   bridgeUnavailableDetail: 'The native command API was not injected into this window.',
   accessActivationError:
     'Cloudflare Access did not intercept the fixed probe. Configure a Self-hosted Access application for the entire hostname, then retry.',
+  bearerActivationError:
+    'Windows could not start the bearer-only Scheduled Task after a bounded retry. Confirm Task Scheduler is available, then retry.',
 };
 
 const vi = {
@@ -206,6 +208,8 @@ const vi = {
   bridgeUnavailableDetail: 'Native command API chưa được đưa vào cửa sổ này.',
   accessActivationError:
     'Cloudflare Access chưa chặn probe cố định. Hãy tạo ứng dụng Access loại Self-hosted cho toàn bộ hostname rồi thử lại.',
+  bearerActivationError:
+    'Windows chưa thể bật Scheduled Task bearer-only sau một lần thử lại có giới hạn. Hãy kiểm tra Task Scheduler rồi thử lại.',
 };
 
 const zh = {
@@ -645,6 +649,8 @@ Object.assign(zh, {
   bridgeUnavailableDetail: '此窗口未注入本地命令 API。',
   accessActivationError:
     'Cloudflare Access 未拦截固定探针。请为整个主机名配置 Self-hosted Access 应用后重试。',
+  bearerActivationError:
+    'Windows 在一次有限重试后仍无法启动仅 Bearer 计划任务。请检查任务计划程序后重试。',
 });
 
 Object.assign(ja, {
@@ -678,6 +684,8 @@ Object.assign(ja, {
   bridgeUnavailableDetail: 'このウィンドウにネイティブコマンド API が注入されていません。',
   accessActivationError:
     'Cloudflare Access が固定プローブを遮断しませんでした。ホスト名全体に Self-hosted Access アプリを設定して再試行してください。',
+  bearerActivationError:
+    'Windows は限定再試行後も Bearer 専用タスクを開始できませんでした。タスクスケジューラを確認して再試行してください。',
 });
 
 Object.assign(ko, {
@@ -711,6 +719,8 @@ Object.assign(ko, {
   bridgeUnavailableDetail: '이 창에 네이티브 명령 API가 주입되지 않았습니다.',
   accessActivationError:
     'Cloudflare Access가 고정 프로브를 차단하지 않았습니다. 전체 호스트 이름에 Self-hosted Access 앱을 설정한 후 다시 시도하세요.',
+  bearerActivationError:
+    'Windows가 제한된 재시도 후에도 Bearer 전용 예약 작업을 시작하지 못했습니다. 작업 스케줄러를 확인하고 다시 시도하세요.',
 });
 
 Object.assign(es, {
@@ -744,6 +754,8 @@ Object.assign(es, {
   bridgeUnavailableDetail: 'La API de comandos nativos no se inyectó en esta ventana.',
   accessActivationError:
     'Cloudflare Access no interceptó la sonda fija. Configura una aplicación Access Self-hosted para todo el hostname y vuelve a intentarlo.',
+  bearerActivationError:
+    'Windows no pudo iniciar la tarea programada solo bearer tras un reintento limitado. Comprueba el Programador de tareas y reintenta.',
 });
 
 Object.assign(fr, {
@@ -778,6 +790,8 @@ Object.assign(fr, {
   bridgeUnavailableDetail: "L'API de commandes natives n'a pas été injectée dans cette fenêtre.",
   accessActivationError:
     "Cloudflare Access n'a pas intercepté la sonde fixe. Configurez une application Access Self-hosted pour tout le nom d'hôte puis réessayez.",
+  bearerActivationError:
+    "Windows n'a pas pu démarrer la tâche planifiée bearer après une nouvelle tentative limitée. Vérifiez le Planificateur de tâches puis réessayez.",
 });
 
 Object.assign(de, {
@@ -811,6 +825,8 @@ Object.assign(de, {
   bridgeUnavailableDetail: 'Die native Befehls-API wurde nicht in dieses Fenster eingebunden.',
   accessActivationError:
     'Cloudflare Access hat die feste Prüfung nicht abgefangen. Richten Sie eine Self-hosted Access-Anwendung für den gesamten Hostnamen ein und versuchen Sie es erneut.',
+  bearerActivationError:
+    'Windows konnte die geplante Bearer-Aufgabe nach einem begrenzten Wiederholungsversuch nicht starten. Prüfen Sie die Aufgabenplanung und versuchen Sie es erneut.',
 });
 
 export const messages = { en, vi, zh, ja, ko, es, fr, de };

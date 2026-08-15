@@ -155,14 +155,32 @@ impl TunnelManager {
                 &self.working_dir,
                 bearer_only,
             );
-            run_bounded_command("powershell.exe", &args, COMMAND_TIMEOUT).map_err(|_| {
-                if bearer_only {
-                    "could not install and start the bearer-only tunnel task"
-                } else {
-                    "Cloudflare Access verification or tunnel activation failed"
+            let first_attempt = run_bounded_command("powershell.exe", &args, COMMAND_TIMEOUT);
+            if first_attempt.is_err() && bearer_only {
+                if let Ok(observed) = self.status()
+                    && activation_matches(&observed, true)
+                {
+                    return Ok(observed);
                 }
-            })?;
-            self.status()
+                // Scheduled Task registration can fail transiently while its prior state is being
+                // removed. Bearer-only activation is idempotent and has no network Access probe,
+                // so permit exactly one bounded retry after observing that it is not already live.
+                run_bounded_command("powershell.exe", &args, COMMAND_TIMEOUT)
+                    .map_err(|_| "could not install and start the bearer-only tunnel task")?;
+            } else {
+                first_attempt
+                    .map_err(|_| "Cloudflare Access verification or tunnel activation failed")?;
+            }
+            let activated = self.status()?;
+            if !activation_matches(&activated, bearer_only) {
+                return Err(if bearer_only {
+                    "the bearer-only tunnel task did not reach its running state"
+                } else {
+                    "the Access-protected tunnel task did not reach its running state"
+                }
+                .into());
+            }
+            Ok(activated)
         }
     }
 
@@ -195,6 +213,17 @@ impl TunnelManager {
             self.status()
         }
     }
+}
+
+fn activation_matches(status: &TunnelStatus, bearer_only: bool) -> bool {
+    status.task_installed
+        && status.running
+        && status.mode
+            == if bearer_only {
+                TunnelMode::BearerOnly
+            } else {
+                TunnelMode::Access
+            }
 }
 
 fn public_status(status: ScriptStatus) -> TunnelStatus {
@@ -425,6 +454,22 @@ mod tests {
             "Cloudflare Tunnel is running with Access protection"
         );
         assert!(!status.detail.contains('\\'));
+    }
+
+    #[test]
+    fn activation_requires_a_running_task_in_the_requested_mode() {
+        let mut status = public_status(ScriptStatus {
+            cloudflared_installed: true,
+            config_ready: true,
+            access_probe_ready: true,
+            task_installed: true,
+            running: true,
+            mode: TunnelMode::BearerOnly,
+        });
+        assert!(activation_matches(&status, true));
+        assert!(!activation_matches(&status, false));
+        status.running = false;
+        assert!(!activation_matches(&status, true));
     }
 
     #[cfg(windows)]

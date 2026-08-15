@@ -149,6 +149,7 @@ function localizedError(error) {
   if (message.includes('Cloudflare Access verification or tunnel activation failed')) {
     return t('accessActivationError');
   }
+  if (message.includes('bearer-only tunnel task')) return t('bearerActivationError');
   return message;
 }
 
