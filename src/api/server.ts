@@ -412,6 +412,11 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.delete('/v1/projects/:projectId', { preHandler: authenticated }, async (request, reply) => {
     const { projectId } = projectParamsSchema.parse(request.params);
+    if (request.headers['x-tab2api-confirm-delete'] !== projectId)
+      throw new AppError(
+        'invalid_request',
+        'Project deletion requires X-Tab2api-Confirm-Delete to exactly match the project id.',
+      );
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       await queue.enqueue(

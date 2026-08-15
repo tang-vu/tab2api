@@ -94,7 +94,9 @@ export const speechRequestSchema = z
   })
   .strict();
 
-export const createProjectRequestSchema = z.object({ name: z.string().min(1).max(120) }).strict();
+export const createProjectRequestSchema = z
+  .object({ name: z.string().trim().min(1).max(120) })
+  .strict();
 
 export const projectParamsSchema = z.object({ projectId: projectIdSchema }).strict();
 

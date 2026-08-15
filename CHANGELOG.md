@@ -31,7 +31,7 @@ All notable user-facing changes are documented here. This project follows semant
 ### Limitations
 
 - Listing and deleting projects cost roughly one navigation per project because the projects grid publishes no identifier; listing reports at most 25.
-- Deletion is irreversible, applies to whatever identifier the client supplies including projects tab2api did not create, and is refused when two projects share the resolved name.
+- Deletion is irreversible, requires an exact project-id confirmation header, applies to whatever identifier the client supplies including projects tab2api did not create, and is refused when two projects share the resolved name.
 
 ## [0.1.0] - 2026-08-15
 

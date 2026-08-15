@@ -75,11 +75,48 @@ describe('project routes', () => {
     const response = await app.inject({
       method: 'DELETE',
       url: `/v1/projects/${PROJECT_ID}`,
-      headers: auth,
+      headers: { ...auth, 'x-tab2api-confirm-delete': PROJECT_ID },
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ id: PROJECT_ID, object: 'project', deleted: true });
     expect(provider.deletedProjectIds).toEqual([PROJECT_ID]);
+    await app.close();
+  });
+
+  it('requires an exact project-id confirmation before deletion', async () => {
+    const provider = new FakeProvider();
+    const app = server(provider);
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/v1/projects/${PROJECT_ID}`,
+      headers: auth,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('invalid_request');
+    expect(provider.deletedProjectIds).toEqual([]);
+    await app.close();
+  });
+
+  it('trims project names and rejects whitespace-only names', async () => {
+    const provider = new FakeProvider();
+    const app = server(provider);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/projects',
+      headers: auth,
+      payload: { name: '  codebase  ' },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(provider.createdProjectNames).toEqual(['codebase']);
+
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/v1/projects',
+      headers: auth,
+      payload: { name: '   ' },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(provider.createdProjectNames).toEqual(['codebase']);
     await app.close();
   });
 

@@ -40,9 +40,9 @@ const MAX_CAPTURE_DIMENSION = 4_096;
 const MAX_CAPTURE_PIXELS = 16_777_216;
 /** Padding around the isolated element so the clip never sits flush against the viewport. */
 const CAPTURE_MARGIN_PX = 256;
-const PROJECT_SETTLE_MS = 1_500;
 const PROJECT_UPLOAD_TIMEOUT_MS = 120_000;
 const PROJECT_ID_ATTEMPTS = 40;
+const PROJECT_ROW_STABLE_OBSERVATIONS = 4;
 /**
  * Listing and deleting cost one navigation per row because the grid publishes no id, so the
  * work is bounded rather than proportional to an unbounded account.
@@ -293,17 +293,18 @@ export class ChatGptAdapter implements WebChatProvider {
 
   async listProjects(request: ListProjectsRequest): Promise<readonly ProjectSummary[]> {
     return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
-      await page.waitForTimeout(PROJECT_SETTLE_MS);
-      const rows = await this.projectRowSelector(page);
+      const rows = await this.waitForProjectRows(page, request.signal);
       if (rows === undefined) return [];
       const summaries = new Map<string, string>();
       const total = Math.min(rows.count, MAX_LISTED_PROJECTS);
-      for (let index = 0; index < total; index += 1) {
+      for (let visited = 0; visited < total; visited += 1) {
         if (request.signal.aborted) throw abortError(request.signal);
-        const opened = await this.openProjectRow(page, rows.selector, index, request.signal);
-        if (opened !== undefined && !summaries.has(opened.id))
-          summaries.set(opened.id, opened.name);
-        await this.returnToProjects(page);
+        // Opening a project moves it to the front of ChatGPT's modified-time-sorted grid.
+        // Repeatedly opening the last row in the bounded prefix walks that prefix backwards
+        // without skipping the row shifted into the previous index.
+        const opened = await this.openProjectRow(page, rows.selector, total - 1, request.signal);
+        summaries.set(opened.id, opened.name);
+        await this.returnToProjects(page, request.signal);
       }
       return [...summaries].map(([id, name]) => ({ id, name }));
     });
@@ -317,21 +318,21 @@ export class ChatGptAdapter implements WebChatProvider {
       // and re-sorts the grid, so an index captured beforehand can point at a different
       // project by the time the delete runs.
       const name = await this.readProjectName(page, request.signal);
-      await this.returnToProjects(page);
-      const options = page.locator(this.projectOptionsSelectorFor(name));
-      const matches = await options.count();
-      if (matches === 0)
+      await this.returnToProjects(page, request.signal);
+      const options = await this.projectOptionsForName(page, name);
+      if (options.length === 0)
         throw new AppError(
           'invalid_request',
           'No project with that id is listed for this account.',
         );
-      if (matches > 1)
+      if (options.length > 1)
         throw new AppError(
           'invalid_request',
           `More than one project is named "${name}". Rename them so deletion is unambiguous.`,
         );
       // The per-row options control is only revealed while its row is hovered.
-      const optionsButton = options.first();
+      const optionsButton = options[0];
+      if (optionsButton === undefined) throw this.uiChanged();
       await optionsButton.locator('xpath=ancestor::*[@role="row"][1]').hover();
       await optionsButton.click();
       const remove = await this.waitForVisible(
@@ -350,10 +351,21 @@ export class ChatGptAdapter implements WebChatProvider {
     });
   }
 
-  /** Escapes the name for a CSS attribute selector so quotes in a title cannot break out. */
-  private projectOptionsSelectorFor(name: string): string {
-    const escaped = name.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
-    return `button[aria-label$="${escaped}"]`;
+  /** Finds the options control without interpolating an account-controlled title into CSS. */
+  private async projectOptionsForName(page: Page, name: string): Promise<Locator[]> {
+    for (const selector of UI_SELECTORS.projectOptionsButton) {
+      const candidates = page.locator(selector);
+      const count = await candidates.count();
+      if (count === 0) continue;
+      const matches: Locator[] = [];
+      for (let index = 0; index < count; index += 1) {
+        const candidate = candidates.nth(index);
+        const label = await candidate.getAttribute('aria-label');
+        if (label?.endsWith(name) === true) matches.push(candidate);
+      }
+      return matches;
+    }
+    return [];
   }
 
   private async readProjectName(page: Page, signal: AbortSignal): Promise<string> {
@@ -366,10 +378,9 @@ export class ChatGptAdapter implements WebChatProvider {
 
   /** A destructive step is only reported as done once the row is actually gone. */
   private async waitForProjectGone(page: Page, name: string, signal: AbortSignal): Promise<void> {
-    const selector = this.projectOptionsSelectorFor(name);
     for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
-      if ((await page.locator(selector).count()) === 0) return;
+      if ((await this.projectOptionsForName(page, name)).length === 0) return;
       await page.waitForTimeout(INITIAL_STATE_POLL_MS);
     }
     throw new AppError('ui_changed', 'ChatGPT still lists the project after the delete action.');
@@ -454,19 +465,20 @@ export class ChatGptAdapter implements WebChatProvider {
     selector: string,
     index: number,
     signal: AbortSignal,
-  ): Promise<ProjectSummary | undefined> {
+  ): Promise<ProjectSummary> {
     const row = this.projectRowAt(page, selector, index);
-    if ((await row.count()) === 0) return undefined;
+    if ((await row.count()) === 0) throw this.uiChanged();
     const name = (await row.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
+    if (name.length === 0) throw this.uiChanged();
     await row.click();
-    const id = await this.waitForProjectId(page, signal).catch(() => undefined);
-    return id === undefined ? undefined : { id, name };
+    const id = await this.waitForProjectId(page, signal);
+    return { id, name };
   }
 
-  private async returnToProjects(page: Page): Promise<void> {
+  private async returnToProjects(page: Page, signal: AbortSignal): Promise<void> {
     await page.goto(PROJECTS_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    await this.waitForProjectState(page);
-    await page.waitForTimeout(PROJECT_SETTLE_MS);
+    await this.waitForProjectState(page, signal);
+    await this.waitForProjectRows(page, signal);
   }
 
   /**
@@ -482,6 +494,26 @@ export class ChatGptAdapter implements WebChatProvider {
       if (count > 0) return { selector, count };
     }
     return undefined;
+  }
+
+  /** Waits for the dynamically rendered project grid to stop changing without a fixed sleep. */
+  private async waitForProjectRows(
+    page: Page,
+    signal: AbortSignal,
+  ): Promise<{ selector: string; count: number } | undefined> {
+    let previousKey: string | undefined;
+    let stableObservations = 0;
+    let current: { selector: string; count: number } | undefined;
+    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+      if (signal.aborted) throw abortError(signal);
+      current = await this.projectRowSelector(page);
+      const key = current === undefined ? 'empty' : `${current.selector}\0${current.count}`;
+      stableObservations = key === previousKey ? stableObservations + 1 : 1;
+      previousKey = key;
+      if (stableObservations >= PROJECT_ROW_STABLE_OBSERVATIONS) return current;
+      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    }
+    throw this.uiChanged();
   }
 
   private projectRowAt(page: Page, selector: string, index: number): Locator {
@@ -511,7 +543,7 @@ export class ChatGptAdapter implements WebChatProvider {
       page = await this.browser.getPage();
       if (signal.aborted) throw abortError(signal);
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      const state = await this.waitForProjectState(page);
+      const state = await this.waitForProjectState(page, signal);
       if (state !== 'ready') this.assertReady(state);
       return await action(page);
     } catch (error) {
@@ -532,8 +564,9 @@ export class ChatGptAdapter implements WebChatProvider {
    * Treat "a project row or the create control is present" as ready instead, while still
    * surfacing login, challenge, and rate-limit states.
    */
-  private async waitForProjectState(page: Page): Promise<SessionState> {
+  private async waitForProjectState(page: Page, signal: AbortSignal): Promise<SessionState> {
     for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+      if (signal.aborted) throw abortError(signal);
       const state = await this.classifyPage(page);
       if (state !== 'ui_changed') return state;
       if (

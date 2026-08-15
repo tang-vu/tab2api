@@ -133,6 +133,37 @@ describe('ChatGPT adapter failure cleanup', () => {
     expect(browser.page.closed).toBe(true);
   });
 
+  it.each([
+    ['cancelled', undefined],
+    ['timeout', new AppError('timeout', 'timed out')],
+  ] as const)(
+    'preserves %s while waiting for the projects UI and closes its tab',
+    async (code, reason) => {
+      const browser = new FakeBrowser('unknown');
+      const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
+      const controller = new AbortController();
+      const listing = adapter.listProjects({
+        signal: controller.signal,
+        requestId: `project-${code}-test`,
+      });
+      setTimeout(() => controller.abort(reason), 10);
+      await expect(listing).rejects.toMatchObject({ code });
+      expect(browser.page.closed).toBe(true);
+    },
+  );
+
+  it('returns a typed login failure from the projects UI and closes its tab', async () => {
+    const browser = new FakeBrowser('login');
+    const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
+    await expect(
+      adapter.listProjects({
+        signal: new AbortController().signal,
+        requestId: 'project-login-test',
+      }),
+    ).rejects.toMatchObject({ code: 'login_required' });
+    expect(browser.page.closed).toBe(true);
+  });
+
   it('cancels image generation and closes its tab', async () => {
     const browser = new FakeBrowser('ready');
     const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
