@@ -21,6 +21,8 @@ const INITIAL_STATE_ATTEMPTS = 20;
 const INITIAL_STATE_POLL_MS = 250;
 const MAX_CAPTURE_DIMENSION = 4_096;
 const MAX_CAPTURE_PIXELS = 16_777_216;
+/** Padding around the isolated element so the clip never sits flush against the viewport. */
+const CAPTURE_MARGIN_PX = 256;
 
 async function firstVisible(
   page: Page,
@@ -353,13 +355,13 @@ export class ChatGptAdapter implements WebChatProvider {
         stableObservations >= 3 &&
         (!generating || completionActionAvailable)
       ) {
-        return this.captureIntrinsicImage(image);
+        return this.captureIntrinsicImage(page, image);
       }
       await page.waitForTimeout(POLL_MS);
     }
   }
 
-  private async captureIntrinsicImage(image: Locator): Promise<Buffer> {
+  private async captureIntrinsicImage(page: Page, image: Locator): Promise<Buffer> {
     const dimensions = await image.evaluate((element) => {
       const candidate = element as HTMLImageElement;
       return { width: candidate.naturalWidth, height: candidate.naturalHeight };
@@ -377,12 +379,46 @@ export class ChatGptAdapter implements WebChatProvider {
       );
     }
 
-    // Resize the already-loaded element in place and capture it at CSS scale. Keeping the node in
-    // ChatGPT's managed tree prevents React from detaching the locator while the screenshot is in
-    // progress, and avoids reading, cloning, or fetching the private image URL.
+    // Enlarging the element in place is not enough on its own: an ancestor still clips it, so
+    // an element screenshot captures whatever the page renders across that box — the chat
+    // chrome and blank background rather than the picture. Everything except the capture
+    // target is therefore hidden, the target is lifted out of its clipping ancestor, and the
+    // viewport is clipped to exactly its box. The node stays in ChatGPT's tree so React does
+    // not detach the locator mid-capture, and the private image URL is never read or fetched.
+    //
+    // Device metrics are also pinned to a 1:1 ratio, because a page attached over CDP
+    // inherits the host display's real scale factor and a fractional value rounds the clip to
+    // a size that no longer matches the element's natural pixels.
+    const deviceMetrics = await page.context().newCDPSession(page);
+    // Playwright re-applies its own viewport when it screenshots, so the size must go through
+    // setViewportSize; the CDP override is what pins the scale factor to 1:1 afterwards.
+    const applyMetrics = async (width: number, height: number): Promise<void> => {
+      await page.setViewportSize({ width, height });
+      await deviceMetrics.send('Emulation.setDeviceMetricsOverride', {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+    };
+    let overrideWidth = dimensions.width + CAPTURE_MARGIN_PX;
+    let overrideHeight = dimensions.height + CAPTURE_MARGIN_PX;
+    await applyMetrics(overrideWidth, overrideHeight);
     await image.evaluate((element) => {
       const candidate = element as HTMLImageElement;
+      candidate.dataset.tab2apiCapture = 'true';
+      const isolationStyle = document.createElement('style');
+      isolationStyle.textContent = `
+        body *:not([data-tab2api-capture="true"]),
+        body *::before,
+        body *::after { visibility: hidden !important; }
+        [data-tab2api-capture="true"] { visibility: visible !important; }
+      `;
+      document.head.append(isolationStyle);
       const declarations: ReadonlyArray<readonly [string, string]> = [
+        ['position', 'fixed'],
+        ['left', '64px'],
+        ['top', '64px'],
         ['width', `${candidate.naturalWidth}px`],
         ['height', `${candidate.naturalHeight}px`],
         ['max-width', 'none'],
@@ -392,14 +428,32 @@ export class ChatGptAdapter implements WebChatProvider {
         ['border-radius', '0'],
         ['clip-path', 'none'],
         ['transform', 'none'],
+        ['z-index', '2147483647'],
       ];
       for (const [property, value] of declarations)
         candidate.style.setProperty(property, value, 'important');
     });
-    const data = await image.screenshot({
+
+    // `position: fixed` is only viewport-relative when no ancestor establishes a containing
+    // block, and ChatGPT's message list uses a transform. Measure where the element really
+    // landed and grow the viewport to contain it before clipping.
+    let box = await image.boundingBox();
+    if (box === null) throw this.uiChanged();
+    const requiredWidth = Math.ceil(box.x + dimensions.width) + CAPTURE_MARGIN_PX;
+    const requiredHeight = Math.ceil(box.y + dimensions.height) + CAPTURE_MARGIN_PX;
+    if (requiredWidth > overrideWidth || requiredHeight > overrideHeight) {
+      overrideWidth = Math.max(overrideWidth, requiredWidth);
+      overrideHeight = Math.max(overrideHeight, requiredHeight);
+      await applyMetrics(overrideWidth, overrideHeight);
+      box = await image.boundingBox();
+      if (box === null) throw this.uiChanged();
+    }
+
+    const data = await page.screenshot({
       type: 'png',
       animations: 'disabled',
       scale: 'css',
+      clip: { x: box.x, y: box.y, width: dimensions.width, height: dimensions.height },
     });
     return validateIntrinsicPng(data, dimensions, this.config.mediaLimitBytes);
   }
