@@ -40,6 +40,36 @@ async function countAll(page: Page, selectors: readonly string[]): Promise<numbe
   return maximum;
 }
 
+async function countEach(page: Page, selectors: readonly string[]): Promise<number[]> {
+  return Promise.all(selectors.map(async (selector) => page.locator(selector).count()));
+}
+
+export function validateIntrinsicPng(
+  data: Buffer,
+  dimensions: { width: number; height: number },
+  mediaLimitBytes: number,
+): Buffer {
+  const captureError = (reason: string): AppError =>
+    new AppError(
+      'ui_changed',
+      `ChatGPT displayed an image that could not be captured safely at intrinsic resolution (${reason}).`,
+    );
+  if (!data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
+    throw captureError('invalid PNG output');
+  }
+  const pngWidth = data.length >= 24 ? data.readUInt32BE(16) : 0;
+  const pngHeight = data.length >= 24 ? data.readUInt32BE(20) : 0;
+  if (pngWidth !== dimensions.width || pngHeight !== dimensions.height) {
+    throw captureError(
+      `expected ${dimensions.width}x${dimensions.height}, captured ${pngWidth}x${pngHeight}`,
+    );
+  }
+  if (data.length > mediaLimitBytes) {
+    throw captureError(`PNG exceeds the configured ${mediaLimitBytes}-byte media limit`);
+  }
+  return data;
+}
+
 async function lastAssistantText(page: Page): Promise<string> {
   for (const selector of UI_SELECTORS.assistantMessage) {
     const locator = page.locator(selector);
@@ -135,7 +165,7 @@ export class ChatGptAdapter implements WebChatProvider {
       this.assertReady(await this.waitForInitialState(page));
       const composer = await firstVisible(page, UI_SELECTORS.composer);
       if (composer === undefined) throw this.uiChanged();
-      const baselineImages = await countAll(page, UI_SELECTORS.generatedImage);
+      const baselineImages = await countEach(page, UI_SELECTORS.generatedImage);
       const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
       await composer.fill(`Create exactly one image from this request:\n\n${request.prompt}`);
       const send = await firstVisible(page, UI_SELECTORS.sendButton);
@@ -256,7 +286,7 @@ export class ChatGptAdapter implements WebChatProvider {
 
   private async waitForGeneratedImage(
     page: Page,
-    baselineImages: number,
+    baselineImages: readonly number[],
     baselineCompletionActions: number,
     signal: AbortSignal,
   ): Promise<Buffer> {
@@ -267,10 +297,10 @@ export class ChatGptAdapter implements WebChatProvider {
       if (state === 'rate_limited' || state === 'security_challenge' || state === 'login_required')
         this.assertReady(state);
       let image: Locator | undefined;
-      for (const selector of UI_SELECTORS.generatedImage) {
+      for (const [index, selector] of UI_SELECTORS.generatedImage.entries()) {
         const candidates = page.locator(selector);
         const count = await candidates.count();
-        if (count > baselineImages) {
+        if (count > (baselineImages[index] ?? 0)) {
           image = candidates.nth(count - 1);
           break;
         }
@@ -292,13 +322,13 @@ export class ChatGptAdapter implements WebChatProvider {
         stableObservations >= 3 &&
         (!generating || completionActionAvailable)
       ) {
-        return this.captureIntrinsicImage(page, image);
+        return this.captureIntrinsicImage(image);
       }
       await page.waitForTimeout(POLL_MS);
     }
   }
 
-  private async captureIntrinsicImage(page: Page, image: Locator): Promise<Buffer> {
+  private async captureIntrinsicImage(image: Locator): Promise<Buffer> {
     const dimensions = await image.evaluate((element) => {
       const candidate = element as HTMLImageElement;
       return { width: candidate.naturalWidth, height: candidate.naturalHeight };
@@ -316,64 +346,31 @@ export class ChatGptAdapter implements WebChatProvider {
       );
     }
 
-    // Render the already-loaded UI image at its intrinsic pixel dimensions. This avoids
-    // both the downscaled chat preview and reading/fetching the private image URL.
-    await page.setViewportSize({
-      width: dimensions.width + 256,
-      height: dimensions.height + 256,
-    });
+    // Resize the already-loaded element in place and capture it at CSS scale. Keeping the node in
+    // ChatGPT's managed tree prevents React from detaching the locator while the screenshot is in
+    // progress, and avoids reading, cloning, or fetching the private image URL.
     await image.evaluate((element) => {
       const candidate = element as HTMLImageElement;
-      candidate.dataset.tab2apiCapture = 'true';
-      const isolationStyle = document.createElement('style');
-      isolationStyle.textContent = `
-        body *:not([data-tab2api-capture="true"]),
-        body *::before,
-        body *::after { visibility: hidden !important; }
-        [data-tab2api-capture="true"] { visibility: visible !important; }
-      `;
-      document.head.append(isolationStyle);
       const declarations: ReadonlyArray<readonly [string, string]> = [
-        ['position', 'fixed'],
-        ['left', '64px'],
-        ['top', '64px'],
         ['width', `${candidate.naturalWidth}px`],
         ['height', `${candidate.naturalHeight}px`],
         ['max-width', 'none'],
         ['max-height', 'none'],
         ['object-fit', 'fill'],
-        ['z-index', '2147483647'],
+        ['display', 'block'],
+        ['border-radius', '0'],
+        ['clip-path', 'none'],
+        ['transform', 'none'],
       ];
       for (const [property, value] of declarations)
         candidate.style.setProperty(property, value, 'important');
     });
-    const box = await image.boundingBox();
-    if (box === null) throw this.uiChanged();
-    const data = await page.screenshot({
+    const data = await image.screenshot({
       type: 'png',
       animations: 'disabled',
       scale: 'css',
-      clip: {
-        x: box.x,
-        y: box.y,
-        width: dimensions.width,
-        height: dimensions.height,
-      },
     });
-    const pngWidth = data.length >= 24 ? data.readUInt32BE(16) : 0;
-    const pngHeight = data.length >= 24 ? data.readUInt32BE(20) : 0;
-    if (
-      !data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) ||
-      pngWidth !== dimensions.width ||
-      pngHeight !== dimensions.height ||
-      data.length > this.config.mediaLimitBytes
-    ) {
-      throw new AppError(
-        'ui_changed',
-        'ChatGPT displayed an image that could not be captured safely at intrinsic resolution.',
-      );
-    }
-    return data;
+    return validateIntrinsicPng(data, dimensions, this.config.mediaLimitBytes);
   }
 
   private async classifyPage(page: Page, duringGeneration = false): Promise<SessionState> {
