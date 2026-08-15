@@ -4,6 +4,10 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+### Fixed
+
+- A question about an attached image could return ChatGPT's working status line, such as "Analyzing image", as if it were the answer. The completed-turn action is rendered before the answer exists and the status line does not change, so it satisfied the stability check. A turn marked as still working is now never treated as complete.
+
 ## [0.1.0] - 2026-08-15
 
 ### Added
