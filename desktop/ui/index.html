@@ -41,6 +41,16 @@
           >
             API Docs
           </button>
+          <button
+            id="show-admin-view"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="admin-column"
+            data-i18n="adminTab"
+          >
+            Keys &amp; Usage
+          </button>
         </nav>
 
         <section class="status-card" aria-live="polite">
@@ -173,8 +183,14 @@
             <strong id="api-docs-title" data-i18n="apiDocsTitle">API documentation</strong>
             <span data-i18n="apiDocsSubtitle">OpenAI-compatible routes available in this app</span>
           </div>
-          <code>http://127.0.0.1:3210</code>
+          <div class="docs-toolbar-actions">
+            <code>http://127.0.0.1:3210</code>
+            <button id="export-api-docs" type="button" data-i18n="exportMarkdown">
+              Export .md
+            </button>
+          </div>
         </div>
+        <p id="docs-export-status" class="inline-status" aria-live="polite" hidden></p>
         <div class="api-docs-content">
           <section class="docs-callout">
             <h2 data-i18n="authenticationTitle">Authentication</h2>
@@ -344,7 +360,128 @@
           </section>
         </div>
       </section>
+      <section id="admin-column" class="admin-column" aria-labelledby="admin-title" hidden>
+        <div class="admin-toolbar">
+          <div>
+            <strong id="admin-title" data-i18n="keyManagementTitle">API keys &amp; usage</strong>
+            <span data-i18n="keyManagementSubtitle"
+              >Create revocable client keys and inspect content-free usage.</span
+            >
+          </div>
+          <button id="refresh-admin" type="button" data-i18n="refreshAdmin">Refresh</button>
+        </div>
+        <div class="admin-content">
+          <p id="admin-status" class="admin-status" aria-live="polite"></p>
+
+          <section class="admin-card">
+            <div class="admin-card-heading">
+              <div>
+                <h2 data-i18n="clientKeysTitle">Client API keys</h2>
+                <p data-i18n="clientKeysBody">
+                  Use one revocable key per personal device. Plaintext is shown only once.
+                </p>
+              </div>
+            </div>
+            <form id="create-key-form" class="create-key-form">
+              <label for="key-label" data-i18n="keyLabel">Key label</label>
+              <div>
+                <input
+                  id="key-label"
+                  type="text"
+                  maxlength="80"
+                  autocomplete="off"
+                  data-i18n-placeholder="keyLabelPlaceholder"
+                  placeholder="Personal laptop"
+                  required
+                />
+                <button id="create-key" class="primary" type="submit" data-i18n="createKey">
+                  Create key
+                </button>
+              </div>
+            </form>
+            <div id="key-list" class="key-list"></div>
+          </section>
+
+          <section class="admin-card">
+            <div class="admin-card-heading">
+              <div>
+                <h2 data-i18n="usageTitle">Usage</h2>
+                <p data-i18n="usageBody">
+                  Content-free counters by key and endpoint. Token counts are estimates, not billing
+                  data.
+                </p>
+              </div>
+              <button
+                id="show-reset-usage"
+                class="danger-button"
+                type="button"
+                data-i18n="resetUsage"
+              >
+                Reset usage
+              </button>
+            </div>
+            <div id="usage-list" class="usage-list"></div>
+          </section>
+        </div>
+      </section>
     </main>
+
+    <dialog id="created-key-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <strong data-i18n="createdKeyTitle">Copy this key now</strong>
+        </div>
+        <p data-i18n="createdKeyBody">
+          This plaintext client key is shown once. It is not stored by the desktop UI and cannot be
+          recovered later.
+        </p>
+        <code id="created-key-value" class="secret-value"></code>
+        <p id="copy-key-status" class="inline-status" aria-live="polite" hidden></p>
+        <div class="dialog-buttons">
+          <button id="copy-created-key" type="button" data-i18n="copyKey">Copy key</button>
+          <button id="close-created-key" class="primary" value="close" data-i18n="done">
+            Done
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="revoke-key-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <strong data-i18n="revokeKeyTitle">Revoke this key?</strong>
+        </div>
+        <p id="revoke-key-message"></p>
+        <div class="dialog-buttons">
+          <button value="cancel" data-i18n="cancel">Cancel</button>
+          <button id="confirm-revoke-key" type="button" class="danger-button" data-i18n="revokeKey">
+            Revoke key
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="reset-usage-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <strong data-i18n="resetUsageTitle">Reset all usage counters?</strong>
+        </div>
+        <p data-i18n="resetUsageBody">
+          This permanently clears all content-free usage counters. API keys are not affected.
+        </p>
+        <div class="dialog-buttons">
+          <button value="cancel" data-i18n="cancel">Cancel</button>
+          <button
+            id="confirm-reset-usage"
+            type="button"
+            class="danger-button"
+            data-i18n="resetUsage"
+          >
+            Reset usage
+          </button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="bearer-dialog">
       <form method="dialog">

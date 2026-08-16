@@ -1,4 +1,5 @@
 /* global document, navigator, window */
+import { administrationControls, usageTotals, validKeyLabel } from './admin-view.js';
 import { languageOptions, loadLanguage, saveLanguage, translate } from './i18n.js';
 import { tunnelControlState, tunnelOperationDetail } from './tunnel-controls.js';
 import { viewState } from './view-tabs.js';
@@ -18,8 +19,29 @@ const elements = {
   redock: document.querySelector('#redock'),
   showBrowserView: document.querySelector('#show-browser-view'),
   showApiDocs: document.querySelector('#show-api-docs'),
+  showAdminView: document.querySelector('#show-admin-view'),
   browserColumn: document.querySelector('#browser-column'),
   apiDocsColumn: document.querySelector('#api-docs-column'),
+  adminColumn: document.querySelector('#admin-column'),
+  exportApiDocs: document.querySelector('#export-api-docs'),
+  docsExportStatus: document.querySelector('#docs-export-status'),
+  refreshAdmin: document.querySelector('#refresh-admin'),
+  adminStatus: document.querySelector('#admin-status'),
+  createKeyForm: document.querySelector('#create-key-form'),
+  keyLabel: document.querySelector('#key-label'),
+  createKey: document.querySelector('#create-key'),
+  keyList: document.querySelector('#key-list'),
+  usageList: document.querySelector('#usage-list'),
+  showResetUsage: document.querySelector('#show-reset-usage'),
+  createdKeyDialog: document.querySelector('#created-key-dialog'),
+  createdKeyValue: document.querySelector('#created-key-value'),
+  copyCreatedKey: document.querySelector('#copy-created-key'),
+  copyKeyStatus: document.querySelector('#copy-key-status'),
+  revokeKeyDialog: document.querySelector('#revoke-key-dialog'),
+  revokeKeyMessage: document.querySelector('#revoke-key-message'),
+  confirmRevokeKey: document.querySelector('#confirm-revoke-key'),
+  resetUsageDialog: document.querySelector('#reset-usage-dialog'),
+  confirmResetUsage: document.querySelector('#confirm-reset-usage'),
   browserHost: document.querySelector('#browser-host'),
   browserMode: document.querySelector('#browser-mode'),
   tunnelCard: document.querySelector('#tunnel-card'),
@@ -57,6 +79,10 @@ let activeView = 'browser';
 let requestedNativeBrowserVisibility;
 let appliedNativeBrowserVisibility;
 let nativeBrowserVisibilityQueue = Promise.resolve();
+let adminOperation;
+let lastApiKeys;
+let lastUsage;
+let pendingRevokeKey;
 const t = (key) => translate(language, key);
 
 try {
@@ -89,6 +115,11 @@ function applyLanguage() {
   for (const element of document.querySelectorAll('[data-i18n]')) {
     element.textContent = t(element.dataset.i18n);
   }
+  for (const element of document.querySelectorAll('[data-i18n-placeholder]')) {
+    element.placeholder = t(element.dataset.i18nPlaceholder);
+  }
+  if (lastApiKeys) renderApiKeys(lastApiKeys);
+  if (lastUsage) renderUsage(lastUsage);
   if (lastServiceStatus) render(lastServiceStatus);
   if (lastTunnelStatus) renderTunnel(lastTunnelStatus);
 }
@@ -105,6 +136,7 @@ function serviceDetail(status) {
 }
 
 function render(status) {
+  const previousPhase = lastServiceStatus?.phase;
   lastServiceStatus = status;
   const labelKeys = {
     stopped: 'stopped',
@@ -133,6 +165,12 @@ function render(status) {
   elements.redock.disabled = status.browser_mode !== 'external';
   if (status.browser_mode === 'docked' && activeView === 'browser') queueBrowserBounds();
   queueNativeBrowserVisibility();
+  renderAdministrationControls();
+  if (status.phase !== 'ready' && activeView === 'admin') {
+    setAdminStatus('adminStartRequired');
+  } else if (status.phase === 'ready' && previousPhase !== 'ready' && activeView === 'admin') {
+    void refreshAdminData();
+  }
 }
 
 function queueNativeBrowserVisibility() {
@@ -161,12 +199,242 @@ function showView(view) {
   activeView = state.activeView;
   elements.browserColumn.hidden = state.browserHidden;
   elements.apiDocsColumn.hidden = state.docsHidden;
+  elements.adminColumn.hidden = state.adminHidden;
   elements.showBrowserView.classList.toggle('active', activeView === 'browser');
   elements.showApiDocs.classList.toggle('active', activeView === 'docs');
+  elements.showAdminView.classList.toggle('active', activeView === 'admin');
   elements.showBrowserView.setAttribute('aria-selected', String(activeView === 'browser'));
   elements.showApiDocs.setAttribute('aria-selected', String(activeView === 'docs'));
+  elements.showAdminView.setAttribute('aria-selected', String(activeView === 'admin'));
   queueNativeBrowserVisibility();
   if (activeView === 'browser') queueBrowserBounds();
+}
+
+function setAdminStatus(key, isError = false) {
+  elements.adminStatus.textContent = t(key);
+  elements.adminStatus.classList.toggle('error', isError);
+}
+
+function renderAdministrationControls() {
+  const controls = administrationControls(lastServiceStatus?.phase, Boolean(adminOperation));
+  elements.refreshAdmin.disabled = controls.refreshDisabled;
+  elements.createKey.disabled = controls.createDisabled || !validKeyLabel(elements.keyLabel.value);
+  elements.keyLabel.disabled = controls.createDisabled;
+  elements.showResetUsage.disabled = controls.resetDisabled;
+  elements.adminColumn.setAttribute('aria-busy', String(Boolean(adminOperation)));
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat(language).format(Number(value));
+}
+
+function formatDate(value) {
+  if (value === 'runtime') return t('runtime');
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? value : new Intl.DateTimeFormat(language).format(date);
+}
+
+function renderApiKeys(result) {
+  lastApiKeys = result;
+  elements.keyList.replaceChildren();
+  const clientKeys = result.data.filter((key) => key.role === 'client');
+  if (clientKeys.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = t('keyListEmpty');
+    elements.keyList.append(empty);
+  }
+  for (const key of result.data) {
+    const row = document.createElement('article');
+    row.className = `key-row${key.revokedAt ? ' revoked' : ''}`;
+    const copy = document.createElement('div');
+    const label = document.createElement('strong');
+    label.textContent = key.label;
+    const id = document.createElement('code');
+    id.textContent = key.id;
+    const metadata = document.createElement('span');
+    const role = key.role === 'admin' ? t('administrator') : t('client');
+    const state = key.revokedAt ? t('revoked') : t('active');
+    metadata.textContent = `${role} · ${state} · ${t('created')}: ${formatDate(key.createdAt)}`;
+    copy.append(label, id, metadata);
+    row.append(copy);
+    if (key.role === 'client' && !key.revokedAt) {
+      const revoke = document.createElement('button');
+      revoke.type = 'button';
+      revoke.className = 'danger-button compact';
+      revoke.textContent = t('revokeKey');
+      revoke.addEventListener('click', () => {
+        pendingRevokeKey = { id: key.id, label: key.label };
+        elements.revokeKeyMessage.textContent = `${t('revokeKeyMessage')} “${key.label}”?`;
+        elements.revokeKeyDialog.showModal();
+      });
+      row.append(revoke);
+    }
+    elements.keyList.append(row);
+  }
+}
+
+function metric(label, value) {
+  const item = document.createElement('span');
+  const name = document.createElement('small');
+  const number = document.createElement('strong');
+  name.textContent = label;
+  number.textContent = formatNumber(value);
+  item.append(name, number);
+  return item;
+}
+
+function renderUsage(result) {
+  lastUsage = result;
+  elements.usageList.replaceChildren();
+  if (result.keys.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = t('noUsage');
+    elements.usageList.append(empty);
+    return;
+  }
+  for (const entry of result.keys) {
+    const totals = usageTotals(entry);
+    const details = document.createElement('details');
+    details.className = 'usage-entry';
+    const summary = document.createElement('summary');
+    const identity = document.createElement('span');
+    const label = document.createElement('strong');
+    const lastUsed = document.createElement('small');
+    label.textContent = entry.label;
+    lastUsed.textContent = `${t('lastUsed')}: ${formatDate(entry.lastUsedAt)}`;
+    identity.append(label, lastUsed);
+    const headline = document.createElement('span');
+    headline.textContent = `${formatNumber(totals.requests)} ${t('requests')}`;
+    summary.append(identity, headline);
+    const metrics = document.createElement('div');
+    metrics.className = 'usage-metrics';
+    metrics.append(
+      metric(t('requests'), totals.requests),
+      metric(t('successful'), totals.successful),
+      metric(t('failed'), totals.failed),
+      metric(t('estimatedTokens'), totals.estimatedTokens),
+      metric(t('bytes'), totals.bytes),
+    );
+    const endpointTitle = document.createElement('h3');
+    endpointTitle.textContent = t('endpoints');
+    const endpointList = document.createElement('div');
+    endpointList.className = 'usage-endpoints';
+    for (const [endpoint, endpointUsage] of Object.entries(entry.endpoints)) {
+      const endpointRow = document.createElement('div');
+      const path = document.createElement('code');
+      const count = document.createElement('span');
+      path.textContent = endpoint;
+      count.textContent = `${formatNumber(endpointUsage.requests)} ${t('requests')}`;
+      endpointRow.append(path, count);
+      endpointList.append(endpointRow);
+    }
+    details.append(summary, metrics, endpointTitle, endpointList);
+    elements.usageList.append(details);
+  }
+}
+
+async function refreshAdminData() {
+  const controls = administrationControls(lastServiceStatus?.phase, Boolean(adminOperation));
+  if (!controls.canLoad) {
+    setAdminStatus(lastServiceStatus?.phase === 'ready' ? 'adminBusy' : 'adminStartRequired');
+    return;
+  }
+  adminOperation = 'refresh';
+  renderAdministrationControls();
+  setAdminStatus('adminLoading');
+  try {
+    const [keys, usage] = await Promise.all([invoke('list_api_keys'), invoke('usage_status')]);
+    renderApiKeys(keys);
+    renderUsage(usage);
+    setAdminStatus('adminReady');
+  } catch (error) {
+    elements.adminStatus.textContent = localizedError(error);
+    elements.adminStatus.classList.add('error');
+    showError(error);
+  } finally {
+    adminOperation = undefined;
+    renderAdministrationControls();
+  }
+}
+
+async function createApiKey() {
+  const label = elements.keyLabel.value.trim();
+  if (!validKeyLabel(label) || adminOperation) return;
+  adminOperation = 'create';
+  renderAdministrationControls();
+  try {
+    const created = await invoke('create_api_key', { label });
+    elements.createdKeyValue.textContent = created.token;
+    created.token = '';
+    elements.copyKeyStatus.hidden = true;
+    elements.keyLabel.value = '';
+    setAdminStatus('keyCreated');
+    elements.createdKeyDialog.showModal();
+    await refreshAdminDataAfterMutation();
+  } catch (error) {
+    showError(error);
+  } finally {
+    adminOperation = undefined;
+    renderAdministrationControls();
+  }
+}
+
+async function refreshAdminDataAfterMutation() {
+  const [keys, usage] = await Promise.all([invoke('list_api_keys'), invoke('usage_status')]);
+  renderApiKeys(keys);
+  renderUsage(usage);
+}
+
+async function revokeApiKey() {
+  if (!pendingRevokeKey || adminOperation) return;
+  const { id } = pendingRevokeKey;
+  elements.revokeKeyDialog.close();
+  pendingRevokeKey = undefined;
+  adminOperation = 'revoke';
+  renderAdministrationControls();
+  try {
+    await invoke('revoke_api_key', { id });
+    await refreshAdminDataAfterMutation();
+    setAdminStatus('keyRevoked');
+  } catch (error) {
+    showError(error);
+  } finally {
+    adminOperation = undefined;
+    renderAdministrationControls();
+  }
+}
+
+async function resetUsage() {
+  if (adminOperation) return;
+  elements.resetUsageDialog.close();
+  adminOperation = 'reset';
+  renderAdministrationControls();
+  try {
+    await invoke('reset_usage');
+    await refreshAdminDataAfterMutation();
+    setAdminStatus('usageReset');
+  } catch (error) {
+    showError(error);
+  } finally {
+    adminOperation = undefined;
+    renderAdministrationControls();
+  }
+}
+
+async function exportApiDocs() {
+  elements.docsExportStatus.hidden = true;
+  elements.exportApiDocs.disabled = true;
+  try {
+    const result = await invoke('export_api_docs');
+    elements.docsExportStatus.textContent = `${t('exportSaved')} ${result.fileName}`;
+    elements.docsExportStatus.hidden = false;
+  } catch (error) {
+    showError(error);
+  } finally {
+    elements.exportApiDocs.disabled = false;
+  }
 }
 
 function tunnelDetail(status) {
@@ -329,6 +597,37 @@ if (typeof invoke !== 'function') {
   });
   elements.showBrowserView.addEventListener('click', () => showView('browser'));
   elements.showApiDocs.addEventListener('click', () => showView('docs'));
+  elements.showAdminView.addEventListener('click', () => {
+    showView('admin');
+    void refreshAdminData();
+  });
+  elements.exportApiDocs.addEventListener('click', () => void exportApiDocs());
+  elements.refreshAdmin.addEventListener('click', () => void refreshAdminData());
+  elements.keyLabel.addEventListener('input', renderAdministrationControls);
+  elements.createKeyForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void createApiKey();
+  });
+  elements.confirmRevokeKey.addEventListener('click', () => void revokeApiKey());
+  elements.revokeKeyDialog.addEventListener('close', () => {
+    pendingRevokeKey = undefined;
+  });
+  elements.showResetUsage.addEventListener('click', () => elements.resetUsageDialog.showModal());
+  elements.confirmResetUsage.addEventListener('click', () => void resetUsage());
+  elements.copyCreatedKey.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(elements.createdKeyValue.textContent);
+      elements.copyKeyStatus.textContent = t('copied');
+    } catch {
+      elements.copyKeyStatus.textContent = t('copyFailed');
+    }
+    elements.copyKeyStatus.hidden = false;
+  });
+  elements.createdKeyDialog.addEventListener('close', () => {
+    elements.createdKeyValue.textContent = '';
+    elements.copyKeyStatus.textContent = '';
+    elements.copyKeyStatus.hidden = true;
+  });
   elements.installCloudflared.addEventListener('click', () => performTunnel('install_cloudflared'));
   elements.enableAccess.addEventListener('click', () =>
     performTunnel('enable_access_tunnel', { hostname: tunnelHostname() }),
@@ -363,6 +662,7 @@ if (typeof invoke !== 'function') {
   window.addEventListener('resize', queueBrowserBounds);
   window.addEventListener('scroll', queueBrowserBounds, { passive: true });
 
+  renderAdministrationControls();
   await Promise.all([refresh(), refreshTunnel()]);
   window.setInterval(refresh, 3000);
   window.setInterval(refreshTunnel, 5000);

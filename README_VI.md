@@ -154,6 +154,8 @@ Mỗi request mở một hội thoại mới. `TAB2API_CONCURRENCY` cho phép 1�
 
 Token trong `.tab2api/api-token` là key administrator. Tạo key client có thể revoke cho từng máy bằng `npm run keys -- create "laptop cá nhân"`; plaintext chỉ hiện một lần và runtime chỉ lưu SHA-256 digest. Dùng `npm run keys -- list`, `npm run keys -- revoke <id>` và `npm run usage` để quản lý/xem thống kê.
 
+App desktop có cùng luồng trong tab **Key & Usage** khi dịch vụ cục bộ đang chạy: liệt kê metadata, tạo client key và chỉ hiện plaintext một lần, xác nhận trước khi thu hồi, xem/reset usage không chứa nội dung, đồng thời không bao giờ đưa administrator key ra UI. Tab **Tài liệu API** có thể xuất tài liệu canonical thành một file Markdown mới trong Downloads để làm context cho LLM; file xuất không chứa credential.
+
 Số request, thành công/thất bại, latency và bytes là số đo thực. Token chỉ là ước tính vì ChatGPT Web không cung cấp usage chính xác; không dùng cho billing. Với hostname tùy chọn do chính chủ máy cấu hình, làm theo [docs/cloudflare.md](docs/cloudflare.md). Installer mặc định kiểm tra Access; lệnh bearer-only riêng yêu cầu chủ máy chủ động lựa chọn.
 
 ### Tự chạy trên Windows

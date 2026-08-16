@@ -1,7 +1,10 @@
+mod admin;
 mod browser_host;
 mod lifecycle;
 mod tunnel;
 
+#[cfg(not(test))]
+use admin::{ApiKeyList, CreatedApiKey, ExportedApiDocs, UsageSnapshot};
 #[cfg(not(test))]
 use browser_host::BrowserBounds;
 #[cfg(not(test))]
@@ -107,6 +110,66 @@ async fn redock_browser(state: State<'_, DesktopState>) -> Result<ServiceStatus,
     tauri::async_runtime::spawn_blocking(move || lifecycle.redock_browser())
         .await
         .map_err(|e| format!("dock task failed: {e}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn list_api_keys(state: State<'_, DesktopState>) -> Result<ApiKeyList, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.list_api_keys())
+        .await
+        .map_err(|error| format!("API-key list task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn create_api_key(
+    state: State<'_, DesktopState>,
+    label: String,
+) -> Result<CreatedApiKey, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.create_api_key(&label))
+        .await
+        .map_err(|error| format!("API-key creation task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn revoke_api_key(state: State<'_, DesktopState>, id: String) -> Result<(), String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.revoke_api_key(&id))
+        .await
+        .map_err(|error| format!("API-key revocation task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn usage_status(state: State<'_, DesktopState>) -> Result<UsageSnapshot, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.usage())
+        .await
+        .map_err(|error| format!("usage task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn reset_usage(state: State<'_, DesktopState>) -> Result<(), String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.reset_usage())
+        .await
+        .map_err(|error| format!("usage reset task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn export_api_docs(app: tauri::AppHandle) -> Result<ExportedApiDocs, String> {
+    let download_dir = app
+        .path()
+        .download_dir()
+        .map_err(|_| "the Downloads directory is unavailable")?;
+    tauri::async_runtime::spawn_blocking(move || admin::export_api_docs(&download_dir))
+        .await
+        .map_err(|error| format!("API documentation export task failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -242,6 +305,12 @@ pub fn run() {
             set_browser_visibility,
             undock_browser,
             redock_browser,
+            list_api_keys,
+            create_api_key,
+            revoke_api_key,
+            usage_status,
+            reset_usage,
+            export_api_docs,
             tunnel_status,
             install_cloudflared,
             enable_access_tunnel,
@@ -267,6 +336,12 @@ mod tests {
         assert!(script.contains("typeof invoke !== 'function'"));
         for command in [
             "set_browser_visibility",
+            "list_api_keys",
+            "create_api_key",
+            "revoke_api_key",
+            "usage_status",
+            "reset_usage",
+            "export_api_docs",
             "tunnel_status",
             "install_cloudflared",
             "enable_access_tunnel",

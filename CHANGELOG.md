@@ -8,6 +8,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 - A localized in-app API Docs tab covering authentication, examples, core routes, projects, media,
   administrator routes, and current limitations.
+- In-app API-key and content-free usage management, including one-time client-key display,
+  revocation/reset confirmations, and a canonical Markdown API-document export to Downloads.
 - ChatGPT project routes so a large codebase is uploaded once instead of resent with every request: `POST/GET /v1/projects`, `DELETE /v1/projects/:projectId`, `POST /v1/projects/:projectId/files`, and project-scoped Chat Completions and Responses.
 - Optional `conversation_id` on Chat Completions and Responses, returned as `tab2api.conversation_id` and `metadata.tab2api_conversation_id`, so a client can continue a thread instead of always starting a new conversation.
 
@@ -30,6 +32,9 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Security
 
+- Desktop administration calls only the authenticated loopback API. The administrator key is read
+  inside the native layer for the bounded request and is never returned to the WebView; only a newly
+  created revocable client key crosses the bridge once and is cleared from the dialog on close.
 - Project and conversation identifiers are interpolated into a chatgpt.com URL, so both are validated against anchored, charset-restricted patterns in the API layer and again in the adapter, and upload filenames are reduced to a bare sanitised name before reaching the browser file chooser.
 
 ### Limitations

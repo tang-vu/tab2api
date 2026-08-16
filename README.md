@@ -177,6 +177,8 @@ The desktop controller includes localized settings and a complete Cloudflare Tun
 
 The original `.tab2api/api-token` is the administrator key. Create revocable non-admin keys for other personal devices with `npm run keys -- create "personal laptop"`; the plaintext is printed once and only its SHA-256 digest is persisted. `npm run keys -- list`, `npm run keys -- revoke <id>`, and `npm run usage` manage keys and inspect content-free counters.
 
+The desktop app provides the same workflow in its **Keys & Usage** tab while the local service is running. It lists metadata, creates a client key with one-time plaintext display, revokes with confirmation, shows/resets content-free usage, and never exposes the administrator key. **API Docs** can export the canonical documentation as a new Markdown file in Downloads for use as LLM context; exported files contain no credentials.
+
 Usage includes real request/success/failure, latency, and byte counters. Token totals are explicitly estimated because ChatGPT Web exposes no authoritative usage. They are not suitable for billing. For an optional owner-configured hostname, follow [docs/cloudflare.md](docs/cloudflare.md). The default installer verifies Access; the separate bearer-only command requires explicit operator selection.
 
 ## Supported API and limitations

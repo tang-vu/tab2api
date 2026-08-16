@@ -33,6 +33,10 @@ If `TAB2API_API_TOKEN` is absent, `.tab2api/api-token` is created with cryptogra
 
 The original token is the local administrator credential. Additional client keys are random, revocable, limited to non-admin routes, and stored only as SHA-256 digests. Use one per device. Cloudflare Access credentials and tunnel credential JSON files are separate secrets and must also remain outside Git.
 
+The desktop Keys & Usage tab performs administrator actions only through the authenticated IPv4-loopback API. The native layer reads the administrator credential for a bounded request but never returns it, an Authorization header, or an admin response body on error to the WebView. A newly created revocable client key is the explicit exception: it is returned once to a modal for copying, is never placed in WebView storage, and its DOM text is cleared when the modal closes. Key listings contain metadata only. Usage listings contain counters, endpoint names, labels, timestamps, byte totals, latency, and explicitly estimated token totals—never prompts or responses.
+
+The API Docs export is a compile-time copy of `docs/api.md`. It creates a new `tab2api-api*.md` file under the operating system Downloads directory, never overwrites an existing file, and never includes runtime credentials, configuration, usage, profile data, prompts, or responses.
+
 The repository ignores `.env`, `.tab2api/`, runtime/profile/artifact directories, logs, screenshots, HARs, traces, and archives. Test fixtures contain no real secrets.
 
 ## Operator rules

@@ -40,6 +40,9 @@ test('all advertised languages provide the complete English key set', () => {
       'apiDocsTab',
       'authenticationTitle',
       'limitsTitle',
+      'adminTab',
+      'keyManagementTitle',
+      'resetUsageTitle',
     ]) {
       assert.notEqual(messages[code][key], messages.en[key]);
     }
@@ -81,7 +84,10 @@ test('every translated DOM key exists and locale selection performs no network l
     readFile(new URL('./i18n.js', import.meta.url), 'utf8'),
     readFile(new URL('./styles.css', import.meta.url), 'utf8'),
   ]);
-  const keys = [...html.matchAll(/data-i18n="([^"]+)"/g)].map((match) => match[1]);
+  const keys = [
+    ...html.matchAll(/data-i18n="([^"]+)"/g),
+    ...html.matchAll(/data-i18n-placeholder="([^"]+)"/g),
+  ].map((match) => match[1]);
   assert.ok(keys.length > 30);
   for (const key of keys) assert.ok(Object.hasOwn(messages.en, key), `missing key: ${key}`);
   assert.doesNotMatch(
@@ -98,10 +104,20 @@ test('every translated DOM key exists and locale selection performs no network l
   assert.match(html, /id="confirm-bearer"[\s\S]*autofocus/);
   assert.match(html, /id="show-api-docs"/);
   assert.match(html, /id="api-docs-column"/);
+  assert.match(html, /id="admin-column"/);
+  assert.match(html, /id="export-api-docs"/);
+  assert.match(html, /id="created-key-dialog"/);
   assert.match(html, /class="method post">POST/);
   assert.match(html, /<code>\/v1\/projects/);
   assert.match(html, /X-Tab2api-Confirm-Delete/);
   assert.match(app, /set_browser_visibility/);
+  assert.match(app, /create_api_key/);
+  assert.match(app, /revoke_api_key/);
+  assert.match(app, /usage_status/);
+  assert.match(app, /reset_usage/);
+  assert.match(app, /export_api_docs/);
+  assert.match(app, /created\.token = ''/);
+  assert.equal(app.match(/settingsStorage\?\.setItem/g)?.length, 1);
   assert.match(styles, /dialog \{[\s\S]*width: min\(340px/);
   assert.match(styles, /left: max\(18px/);
 });

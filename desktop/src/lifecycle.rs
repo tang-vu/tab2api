@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(dead_code))]
 
+use crate::admin::{AdminClient, ApiKeyList, CreatedApiKey, UsageSnapshot};
 use crate::browser_host::{BrowserMode, BrowserSession, PhysicalBounds};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -654,6 +655,44 @@ impl SidecarLifecycle {
             browser.set_visible(visible)?;
         }
         self.status_locked(&mut inner)
+    }
+
+    pub fn list_api_keys(&self) -> Result<ApiKeyList, String> {
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).list_api_keys()
+    }
+
+    pub fn create_api_key(&self, label: &str) -> Result<CreatedApiKey, String> {
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).create_api_key(label)
+    }
+
+    pub fn revoke_api_key(&self, id: &str) -> Result<(), String> {
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).revoke_api_key(id)
+    }
+
+    pub fn usage(&self) -> Result<UsageSnapshot, String> {
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).usage()
+    }
+
+    pub fn reset_usage(&self) -> Result<(), String> {
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).reset_usage()
+    }
+
+    fn ensure_admin_ready(&self) -> Result<(), String> {
+        let mut inner = self.lock()?;
+        Self::refresh_process(&mut inner)?;
+        let service_running = matches!(
+            inner.process.as_ref().map(|process| process.kind),
+            Some(ProcessKind::Service)
+        );
+        if !service_running || !probe_health(self.port, Duration::from_millis(500)) {
+            return Err("start the local service before managing API keys or usage".into());
+        }
+        Ok(())
     }
 
     pub fn undock_browser(&self) -> Result<ServiceStatus, String> {

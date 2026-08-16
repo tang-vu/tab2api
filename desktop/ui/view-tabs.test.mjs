@@ -7,6 +7,7 @@ test('browser view shows the browser and its docked native window', () => {
     activeView: 'browser',
     browserHidden: false,
     docsHidden: true,
+    adminHidden: true,
     nativeBrowserVisible: true,
   });
 });
@@ -16,6 +17,17 @@ test('documentation view hides the docked native window', () => {
     activeView: 'docs',
     browserHidden: true,
     docsHidden: false,
+    adminHidden: true,
+    nativeBrowserVisible: false,
+  });
+});
+
+test('administration view hides both other panes and the docked native window', () => {
+  assert.deepEqual(viewState('admin', 'docked'), {
+    activeView: 'admin',
+    browserHidden: true,
+    docsHidden: true,
+    adminHidden: false,
     nativeBrowserVisible: false,
   });
 });

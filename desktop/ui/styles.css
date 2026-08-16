@@ -71,7 +71,7 @@ header p {
 }
 .view-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin: -8px 0 18px;
   padding: 5px;
@@ -83,7 +83,8 @@ header p {
   min-height: 38px;
   border-color: transparent;
   background: transparent;
-  font-size: 13px;
+  padding: 0 6px;
+  font-size: 12px;
 }
 .view-tabs button.active {
   border-color: #3a4b65;
@@ -308,6 +309,26 @@ code {
   white-space: nowrap;
   font-size: 12px;
 }
+.docs-toolbar-actions {
+  display: flex !important;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 9px !important;
+}
+.docs-toolbar-actions button {
+  min-height: 38px;
+  padding: 0 12px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.inline-status {
+  margin: 0;
+  padding: 10px 18px;
+  border-bottom: 1px solid #263246;
+  background: #10231e;
+  color: #87e8ca;
+  font-size: 13px;
+}
 .api-docs-content {
   height: calc(100vh - 122px);
   min-height: 500px;
@@ -418,6 +439,242 @@ pre code {
   color: #d5c29d;
   font-size: 13px;
   line-height: 1.5;
+}
+.admin-column {
+  min-height: calc(100vh - 48px);
+  border: 1px solid #263246;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #0b0f16;
+}
+.admin-toolbar {
+  min-height: 72px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #263246;
+  background: #111722;
+}
+.admin-toolbar > div {
+  display: grid;
+  gap: 5px;
+}
+.admin-toolbar span {
+  color: #77859b;
+  font-size: 13px;
+}
+.admin-toolbar button {
+  min-height: 40px;
+  padding: 0 15px;
+}
+.admin-content {
+  height: calc(100vh - 122px);
+  min-height: 500px;
+  overflow-y: auto;
+  padding: 24px;
+}
+.admin-status {
+  margin: 0 0 14px;
+  color: #87e8ca;
+  font-size: 13px;
+}
+.admin-status.error {
+  color: #ff9aaa;
+}
+.admin-column[aria-busy='true'] .admin-status::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border: 2px solid #385147;
+  border-top-color: #87e8ca;
+  border-radius: 50%;
+  animation: tunnel-spin 0.8s linear infinite;
+}
+.admin-card {
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid #263246;
+  border-radius: 14px;
+  background: rgba(17, 23, 34, 0.78);
+}
+.admin-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.admin-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.admin-card h3 {
+  margin: 18px 0 8px;
+  color: #aeb9ca;
+  font-size: 13px;
+}
+.admin-card p {
+  margin: 8px 0 0;
+  color: #95a2b7;
+  line-height: 1.5;
+}
+.create-key-form {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}
+.create-key-form > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+}
+.create-key-form input {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #324057;
+  border-radius: 10px;
+  background: #090c11;
+  color: #edf2f7;
+  font: inherit;
+}
+.create-key-form button {
+  min-height: 44px;
+  padding: 0 16px;
+}
+.key-list,
+.usage-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+}
+.key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid #263246;
+  border-radius: 10px;
+  background: #0a0e15;
+}
+.key-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.key-row code {
+  display: inline;
+  width: fit-content;
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+}
+.key-row span {
+  color: #77859b;
+  font-size: 12px;
+}
+.key-row.revoked {
+  opacity: 0.64;
+}
+.danger-button {
+  border-color: #70313c;
+  background: #3c1c23;
+  color: #ffabb7;
+}
+.danger-button.compact {
+  min-height: 36px;
+  padding: 0 11px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.empty-state {
+  padding: 16px;
+  border: 1px dashed #324057;
+  border-radius: 10px;
+  text-align: center;
+}
+.usage-entry {
+  border: 1px solid #263246;
+  border-radius: 10px;
+  background: #0a0e15;
+  padding: 12px;
+}
+.usage-entry summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  cursor: pointer;
+}
+.usage-entry summary > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+.usage-entry summary small,
+.usage-entry summary > span:last-child {
+  color: #77859b;
+  font-size: 12px;
+}
+.usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.usage-metrics > span {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border-radius: 8px;
+  background: #111722;
+}
+.usage-metrics small {
+  color: #77859b;
+  font-size: 10px;
+}
+.usage-endpoints {
+  display: grid;
+  gap: 6px;
+}
+.usage-endpoints > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 7px;
+  background: #111722;
+}
+.usage-endpoints code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 0;
+  background: transparent;
+  font-size: 11px;
+}
+.usage-endpoints span {
+  flex: none;
+  color: #77859b;
+  font-size: 11px;
+}
+#created-key-dialog {
+  width: min(620px, calc(100vw - 36px));
+}
+.secret-value {
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+  user-select: all;
+  line-height: 1.5;
+}
+#created-key-dialog .inline-status {
+  padding: 10px 0 0;
+  border: 0;
+  background: transparent;
 }
 .browser-toolbar {
   min-height: 72px;
@@ -587,6 +844,9 @@ dialog section p {
   .api-docs-column {
     min-height: 560px;
   }
+  .admin-column {
+    min-height: 560px;
+  }
   .api-docs-content {
     height: auto;
     min-height: 488px;
@@ -610,5 +870,28 @@ dialog section p {
   }
   .tunnel-actions .wide {
     grid-column: auto;
+  }
+  .admin-content {
+    height: auto;
+    min-height: 488px;
+  }
+  .usage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .api-docs-toolbar,
+  .admin-toolbar,
+  .admin-card-heading,
+  .key-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .docs-toolbar-actions,
+  .create-key-form > div {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    grid-auto-flow: row;
   }
 }
