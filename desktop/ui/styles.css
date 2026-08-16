@@ -88,40 +88,13 @@ header {
   width: 54px;
   height: 54px;
   overflow: hidden;
-  border: 1px solid rgba(200, 255, 61, 0.72);
-  border-radius: 17px 17px 17px 5px;
-  background: var(--acid);
-  color: var(--acid-ink);
-  font-weight: 900;
-  box-shadow:
-    0 0 0 5px rgba(200, 255, 61, 0.055),
-    0 16px 38px rgba(0, 0, 0, 0.36);
+  border-radius: 15px;
+  box-shadow: 0 0 0 5px rgba(200, 255, 61, 0.055);
 }
-.mark span {
-  transform: translate(-3px, -2px);
-  font-size: 27px;
-  font-weight: 950;
-  letter-spacing: -0.08em;
-}
-.mark i {
-  position: absolute;
-  right: 10px;
-  bottom: 11px;
-  width: 12px;
-  height: 2px;
-  background: currentColor;
-  transform: rotate(-45deg);
-}
-.mark i::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  bottom: 0;
-  width: 6px;
-  height: 6px;
-  border-top: 2px solid currentColor;
-  border-right: 2px solid currentColor;
-  transform: rotate(45deg) translate(1px, -4px);
+.mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .brand-kicker {
   display: block;

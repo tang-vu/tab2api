@@ -2,17 +2,28 @@
   xmlns="http://www.w3.org/2000/svg"
   viewBox="0 0 1024 1024"
   role="img"
-  aria-label="tab2api T2 mark"
+  aria-label="tab2api mark"
 >
-  <rect width="1024" height="1024" rx="224" fill="#0a0d12" />
-  <rect x="72" y="72" width="880" height="880" rx="190" fill="#58d9ae" />
-  <path fill="#09241d" d="M208 266h300v104H410v392H306V370h-98z" />
+  <rect width="1024" height="1024" rx="236" fill="#080a09" />
   <path
-    d="M566 380c20-92 188-98 214-6 36 128-172 170-214 358h228"
+    d="M82 282c0-110 90-200 200-200h460c110 0 200 90 200 200v460c0 110-90 200-200 200H282c-110 0-200-90-200-200V282Z"
+    fill="#c8ff3d"
+  />
+  <path d="M218 270h350v112H451v390H334V382H218V270Z" fill="#172000" />
+  <path
+    d="m548 704 224-224M636 480h136v136"
     fill="none"
-    stroke="#09241d"
-    stroke-width="96"
+    stroke="#172000"
+    stroke-width="72"
     stroke-linecap="round"
     stroke-linejoin="round"
+  />
+  <path
+    d="M282 82h460c110 0 200 90 200 200"
+    fill="none"
+    stroke="#e6ff9f"
+    stroke-width="18"
+    stroke-linecap="round"
+    opacity=".72"
   />
 </svg>
