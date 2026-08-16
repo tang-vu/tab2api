@@ -91,6 +91,38 @@ const en = {
   browserMeta: 'Manual profile · loopback control · external fallback',
   browserPane: 'Browser pane',
   browserPlaceholder: 'Start the service to launch the dedicated ChatGPT window.',
+  browserTab: 'Browser',
+  apiDocsTab: 'API Docs',
+  apiDocsTitle: 'API documentation',
+  apiDocsSubtitle: 'OpenAI-compatible routes available in this app',
+  authenticationTitle: 'Authentication',
+  authenticationBody:
+    'Only healthz is public. Every other route requires a revocable tab2api bearer key; administrator routes require the original administrator key.',
+  quickStartTitle: 'Quick start',
+  quickStartBody:
+    'Replace the placeholder key, then send an OpenAI-shaped Chat Completions request.',
+  coreEndpointsTitle: 'Core endpoints',
+  coreEndpointsBody:
+    'Check process/browser readiness, discover capabilities, and generate text through Chat Completions or Responses.',
+  publicAccess: 'Public',
+  bearerAccess: 'Bearer key',
+  projectEndpointsTitle: 'Projects and persistent sources',
+  projectEndpointsBody:
+    'Create or list projects, upload source files once, and continue project-scoped conversations with conversation_id.',
+  deleteConfirmAccess: 'Bearer + confirmation',
+  deleteWarningTitle: 'Irreversible deletion',
+  deleteWarningBody:
+    'DELETE also requires X-Tab2api-Confirm-Delete to exactly equal the project ID.',
+  mediaEndpointsTitle: 'Image and audio',
+  mediaEndpointsBody:
+    'Image generation and transcription use the public ChatGPT UI. Speech uses the local operating-system voice and returns WAV only.',
+  adminEndpointsTitle: 'Administrator endpoints',
+  adminEndpointsBody:
+    'Manage revocable client keys, inspect content-free usage counters, or reset the browser session. These routes reject client keys.',
+  adminAccess: 'Administrator key',
+  limitsTitle: 'Limits and behavior',
+  limitsBody:
+    'Requests enter a bounded FIFO queue. Streaming is buffered, UI selectors may change, and token counts are unknown estimates—not billing data.',
   settingsTitle: 'Settings',
   language: 'Language',
   automaticLocale: 'On first launch, language is selected from the operating-system locale.',
@@ -961,7 +993,245 @@ const tunnelProgressTranslations = {
   },
 };
 
+const documentationTranslations = {
+  vi: {
+    browserTab: 'Trình duyệt',
+    apiDocsTab: 'Tài liệu API',
+    apiDocsTitle: 'Tài liệu API',
+    apiDocsSubtitle: 'Các route tương thích OpenAI có trong ứng dụng',
+    authenticationTitle: 'Xác thực',
+    authenticationBody:
+      'Chỉ healthz là public. Mọi route khác cần tab2api bearer key có thể thu hồi; route quản trị cần administrator key gốc.',
+    quickStartTitle: 'Bắt đầu nhanh',
+    quickStartBody: 'Thay key mẫu rồi gửi request Chat Completions theo định dạng OpenAI.',
+    coreEndpointsTitle: 'Endpoint cốt lõi',
+    coreEndpointsBody:
+      'Kiểm tra tiến trình/trình duyệt, xem capability và tạo văn bản qua Chat Completions hoặc Responses.',
+    publicAccess: 'Public',
+    bearerAccess: 'Bearer key',
+    projectEndpointsTitle: 'Projects và nguồn lưu lâu dài',
+    projectEndpointsBody:
+      'Tạo hoặc liệt kê project, upload source một lần và tiếp tục hội thoại trong project bằng conversation_id.',
+    deleteConfirmAccess: 'Bearer + xác nhận',
+    deleteWarningTitle: 'Xóa không thể hoàn tác',
+    deleteWarningBody:
+      'DELETE còn yêu cầu X-Tab2api-Confirm-Delete phải khớp chính xác project ID.',
+    mediaEndpointsTitle: 'Ảnh và âm thanh',
+    mediaEndpointsBody:
+      'Tạo ảnh và transcription dùng UI ChatGPT công khai. Speech dùng giọng hệ điều hành cục bộ và chỉ trả WAV.',
+    adminEndpointsTitle: 'Endpoint quản trị',
+    adminEndpointsBody:
+      'Quản lý client key có thể thu hồi, xem bộ đếm usage không chứa nội dung hoặc reset phiên trình duyệt. Client key không gọi được các route này.',
+    adminAccess: 'Administrator key',
+    limitsTitle: 'Giới hạn và hành vi',
+    limitsBody:
+      'Request đi qua hàng đợi FIFO hữu hạn. Streaming được buffer, selector UI có thể đổi và số token chỉ là ước lượng, không phải dữ liệu tính phí.',
+  },
+  zh: {
+    browserTab: '浏览器',
+    apiDocsTab: 'API 文档',
+    apiDocsTitle: 'API 文档',
+    apiDocsSubtitle: '此应用提供的 OpenAI 兼容路由',
+    authenticationTitle: '身份验证',
+    authenticationBody:
+      '只有 healthz 是公开的。其他路由需要可撤销的 tab2api bearer key；管理路由需要原始管理员密钥。',
+    quickStartTitle: '快速开始',
+    quickStartBody: '替换示例密钥，然后发送 OpenAI 格式的 Chat Completions 请求。',
+    coreEndpointsTitle: '核心端点',
+    coreEndpointsBody:
+      '检查进程和浏览器状态、发现能力，并通过 Chat Completions 或 Responses 生成文本。',
+    publicAccess: '公开',
+    bearerAccess: 'Bearer 密钥',
+    projectEndpointsTitle: '项目与持久源文件',
+    projectEndpointsBody: '创建或列出项目，一次上传源文件，并使用 conversation_id 继续项目会话。',
+    deleteConfirmAccess: 'Bearer + 确认',
+    deleteWarningTitle: '不可撤销的删除',
+    deleteWarningBody: 'DELETE 还要求 X-Tab2api-Confirm-Delete 与项目 ID 完全一致。',
+    mediaEndpointsTitle: '图像与音频',
+    mediaEndpointsBody: '图像生成和转录使用公开 ChatGPT UI；语音使用本地系统声音且仅返回 WAV。',
+    adminEndpointsTitle: '管理员端点',
+    adminEndpointsBody:
+      '管理可撤销客户端密钥、查看无内容用量计数或重置浏览器会话。客户端密钥不能调用这些路由。',
+    adminAccess: '管理员密钥',
+    limitsTitle: '限制与行为',
+    limitsBody:
+      '请求进入有界 FIFO 队列。流式响应会缓冲，UI 选择器可能变化，token 数仅为估算而非计费数据。',
+  },
+  ja: {
+    browserTab: 'ブラウザー',
+    apiDocsTab: 'API ドキュメント',
+    apiDocsTitle: 'API ドキュメント',
+    apiDocsSubtitle: 'このアプリで利用できる OpenAI 互換ルート',
+    authenticationTitle: '認証',
+    authenticationBody:
+      '公開されるのは healthz だけです。その他は失効可能な tab2api bearer key、管理ルートは元の管理者キーが必要です。',
+    quickStartTitle: 'クイックスタート',
+    quickStartBody:
+      'プレースホルダーのキーを置き換え、OpenAI 形式の Chat Completions リクエストを送信します。',
+    coreEndpointsTitle: 'コアエンドポイント',
+    coreEndpointsBody:
+      'プロセスとブラウザーの状態、機能一覧を確認し、Chat Completions または Responses でテキストを生成します。',
+    publicAccess: '公開',
+    bearerAccess: 'Bearer キー',
+    projectEndpointsTitle: 'プロジェクトと永続ソース',
+    projectEndpointsBody:
+      'プロジェクトを作成・一覧表示し、ソースを一度アップロードして conversation_id で会話を継続します。',
+    deleteConfirmAccess: 'Bearer + 確認',
+    deleteWarningTitle: '元に戻せない削除',
+    deleteWarningBody:
+      'DELETE では X-Tab2api-Confirm-Delete がプロジェクト ID と完全一致する必要があります。',
+    mediaEndpointsTitle: '画像と音声',
+    mediaEndpointsBody:
+      '画像生成と文字起こしは公開 ChatGPT UI を使用します。音声はローカル OS の声で WAV のみ返します。',
+    adminEndpointsTitle: '管理者エンドポイント',
+    adminEndpointsBody:
+      '失効可能なクライアントキー、内容を含まない使用量、ブラウザーセッションを管理します。クライアントキーは拒否されます。',
+    adminAccess: '管理者キー',
+    limitsTitle: '制限と動作',
+    limitsBody:
+      'リクエストは有界 FIFO キューに入ります。ストリーミングはバッファされ、UI セレクターは変わる可能性があり、token 数は課金用ではない推定値です。',
+  },
+  ko: {
+    browserTab: '브라우저',
+    apiDocsTab: 'API 문서',
+    apiDocsTitle: 'API 문서',
+    apiDocsSubtitle: '이 앱에서 제공하는 OpenAI 호환 경로',
+    authenticationTitle: '인증',
+    authenticationBody:
+      'healthz만 공개됩니다. 다른 경로에는 폐기 가능한 tab2api bearer key가, 관리자 경로에는 원본 관리자 키가 필요합니다.',
+    quickStartTitle: '빠른 시작',
+    quickStartBody: '예시 키를 바꾸고 OpenAI 형식의 Chat Completions 요청을 보내세요.',
+    coreEndpointsTitle: '핵심 엔드포인트',
+    coreEndpointsBody:
+      '프로세스와 브라우저 상태, 기능을 확인하고 Chat Completions 또는 Responses로 텍스트를 생성합니다.',
+    publicAccess: '공개',
+    bearerAccess: 'Bearer 키',
+    projectEndpointsTitle: '프로젝트와 영구 소스',
+    projectEndpointsBody:
+      '프로젝트를 만들거나 조회하고 소스를 한 번 업로드한 뒤 conversation_id로 대화를 계속합니다.',
+    deleteConfirmAccess: 'Bearer + 확인',
+    deleteWarningTitle: '되돌릴 수 없는 삭제',
+    deleteWarningBody:
+      'DELETE에는 X-Tab2api-Confirm-Delete가 프로젝트 ID와 정확히 일치해야 합니다.',
+    mediaEndpointsTitle: '이미지와 오디오',
+    mediaEndpointsBody:
+      '이미지 생성과 전사는 공개 ChatGPT UI를 사용합니다. 음성은 로컬 OS 음성을 사용하며 WAV만 반환합니다.',
+    adminEndpointsTitle: '관리자 엔드포인트',
+    adminEndpointsBody:
+      '폐기 가능한 클라이언트 키, 내용 없는 사용량 카운터, 브라우저 세션을 관리합니다. 클라이언트 키는 거부됩니다.',
+    adminAccess: '관리자 키',
+    limitsTitle: '제한과 동작',
+    limitsBody:
+      '요청은 제한된 FIFO 큐에 들어갑니다. 스트리밍은 버퍼링되고 UI 선택자는 바뀔 수 있으며 token 수는 과금용이 아닌 추정치입니다.',
+  },
+  es: {
+    browserTab: 'Navegador',
+    apiDocsTab: 'Documentación API',
+    apiDocsTitle: 'Documentación de la API',
+    apiDocsSubtitle: 'Rutas compatibles con OpenAI disponibles en esta aplicación',
+    authenticationTitle: 'Autenticación',
+    authenticationBody:
+      'Solo healthz es público. Las demás rutas requieren una clave bearer revocable de tab2api; las rutas administrativas requieren la clave original.',
+    quickStartTitle: 'Inicio rápido',
+    quickStartBody:
+      'Sustituye la clave de ejemplo y envía una solicitud Chat Completions con formato OpenAI.',
+    coreEndpointsTitle: 'Endpoints principales',
+    coreEndpointsBody:
+      'Comprueba el proceso y navegador, consulta capacidades y genera texto mediante Chat Completions o Responses.',
+    publicAccess: 'Público',
+    bearerAccess: 'Clave bearer',
+    projectEndpointsTitle: 'Proyectos y fuentes persistentes',
+    projectEndpointsBody:
+      'Crea o lista proyectos, sube las fuentes una vez y continúa conversaciones con conversation_id.',
+    deleteConfirmAccess: 'Bearer + confirmación',
+    deleteWarningTitle: 'Eliminación irreversible',
+    deleteWarningBody:
+      'DELETE también exige que X-Tab2api-Confirm-Delete coincida exactamente con el ID del proyecto.',
+    mediaEndpointsTitle: 'Imagen y audio',
+    mediaEndpointsBody:
+      'La generación y transcripción usan la UI pública de ChatGPT. La voz usa el sistema operativo local y solo devuelve WAV.',
+    adminEndpointsTitle: 'Endpoints administrativos',
+    adminEndpointsBody:
+      'Gestiona claves revocables, contadores sin contenido o la sesión del navegador. Estas rutas rechazan claves de cliente.',
+    adminAccess: 'Clave de administrador',
+    limitsTitle: 'Límites y comportamiento',
+    limitsBody:
+      'Las solicitudes entran en una cola FIFO limitada. El streaming se almacena en búfer, los selectores pueden cambiar y los tokens son estimaciones, no datos de facturación.',
+  },
+  fr: {
+    browserTab: 'Navigateur',
+    apiDocsTab: 'Documentation API',
+    apiDocsTitle: "Documentation de l'API",
+    apiDocsSubtitle: 'Routes compatibles OpenAI disponibles dans cette application',
+    authenticationTitle: 'Authentification',
+    authenticationBody:
+      "Seul healthz est public. Les autres routes exigent une clé bearer tab2api révocable ; les routes d'administration exigent la clé administrateur d'origine.",
+    quickStartTitle: 'Démarrage rapide',
+    quickStartBody:
+      'Remplacez la clé exemple puis envoyez une requête Chat Completions au format OpenAI.',
+    coreEndpointsTitle: 'Endpoints principaux',
+    coreEndpointsBody:
+      'Vérifiez le processus et le navigateur, découvrez les capacités et générez du texte via Chat Completions ou Responses.',
+    publicAccess: 'Public',
+    bearerAccess: 'Clé bearer',
+    projectEndpointsTitle: 'Projets et sources persistantes',
+    projectEndpointsBody:
+      'Créez ou listez les projets, chargez les sources une fois et poursuivez les conversations avec conversation_id.',
+    deleteConfirmAccess: 'Bearer + confirmation',
+    deleteWarningTitle: 'Suppression irréversible',
+    deleteWarningBody:
+      "DELETE exige aussi que X-Tab2api-Confirm-Delete corresponde exactement à l'ID du projet.",
+    mediaEndpointsTitle: 'Image et audio',
+    mediaEndpointsBody:
+      "La génération d'images et la transcription utilisent l'UI publique ChatGPT. La voix utilise le système local et renvoie uniquement du WAV.",
+    adminEndpointsTitle: "Endpoints d'administration",
+    adminEndpointsBody:
+      'Gérez les clés révocables, les compteurs sans contenu ou la session du navigateur. Les clés client sont refusées.',
+    adminAccess: 'Clé administrateur',
+    limitsTitle: 'Limites et comportement',
+    limitsBody:
+      'Les requêtes entrent dans une file FIFO bornée. Le streaming est mis en mémoire tampon, les sélecteurs peuvent changer et les tokens sont des estimations, pas des données de facturation.',
+  },
+  de: {
+    browserTab: 'Browser',
+    apiDocsTab: 'API-Dokumentation',
+    apiDocsTitle: 'API-Dokumentation',
+    apiDocsSubtitle: 'In dieser App verfügbare OpenAI-kompatible Routen',
+    authenticationTitle: 'Authentifizierung',
+    authenticationBody:
+      'Nur healthz ist öffentlich. Alle anderen Routen benötigen einen widerrufbaren tab2api-Bearer-Key; Admin-Routen den ursprünglichen Administrator-Key.',
+    quickStartTitle: 'Schnellstart',
+    quickStartBody:
+      'Ersetzen Sie den Beispiel-Key und senden Sie eine OpenAI-formatierte Chat-Completions-Anfrage.',
+    coreEndpointsTitle: 'Kern-Endpunkte',
+    coreEndpointsBody:
+      'Prüfen Sie Prozess und Browser, entdecken Sie Funktionen und erzeugen Sie Text über Chat Completions oder Responses.',
+    publicAccess: 'Öffentlich',
+    bearerAccess: 'Bearer-Key',
+    projectEndpointsTitle: 'Projekte und persistente Quellen',
+    projectEndpointsBody:
+      'Erstellen oder listen Sie Projekte, laden Sie Quellen einmal hoch und setzen Sie Gespräche mit conversation_id fort.',
+    deleteConfirmAccess: 'Bearer + Bestätigung',
+    deleteWarningTitle: 'Unwiderrufliches Löschen',
+    deleteWarningBody:
+      'DELETE verlangt außerdem, dass X-Tab2api-Confirm-Delete exakt der Projekt-ID entspricht.',
+    mediaEndpointsTitle: 'Bild und Audio',
+    mediaEndpointsBody:
+      'Bilderzeugung und Transkription nutzen die öffentliche ChatGPT-UI. Sprache nutzt die lokale Systemstimme und liefert nur WAV.',
+    adminEndpointsTitle: 'Administrator-Endpunkte',
+    adminEndpointsBody:
+      'Verwalten Sie widerrufbare Client-Keys, inhaltsfreie Nutzungszähler oder die Browsersitzung. Client-Keys werden abgewiesen.',
+    adminAccess: 'Administrator-Key',
+    limitsTitle: 'Grenzen und Verhalten',
+    limitsBody:
+      'Anfragen gelangen in eine begrenzte FIFO-Warteschlange. Streaming wird gepuffert, UI-Selektoren können sich ändern und Tokenzahlen sind Schätzungen, keine Abrechnungsdaten.',
+  },
+};
+
 export const messages = { en, vi, zh, ja, ko, es, fr, de };
+for (const [code, translations] of Object.entries(documentationTranslations)) {
+  Object.assign(messages[code], translations);
+}
 for (const [code, translations] of Object.entries(tunnelProgressTranslations)) {
   Object.assign(messages[code], translations);
 }

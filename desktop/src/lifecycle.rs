@@ -648,6 +648,14 @@ impl SidecarLifecycle {
         self.status_locked(&mut inner)
     }
 
+    pub fn set_browser_visibility(&self, visible: bool) -> Result<ServiceStatus, String> {
+        let mut inner = self.lock()?;
+        if let Some(browser) = inner.browser.as_mut() {
+            browser.set_visible(visible)?;
+        }
+        self.status_locked(&mut inner)
+    }
+
     pub fn undock_browser(&self) -> Result<ServiceStatus, String> {
         let mut inner = self.lock()?;
         inner

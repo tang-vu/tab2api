@@ -171,6 +171,9 @@ impl BrowserSession {
     pub fn resize(&mut self, bounds: PhysicalBounds) -> Result<(), String> {
         self.native.resize(bounds)
     }
+    pub fn set_visible(&mut self, visible: bool) -> Result<(), String> {
+        self.native.set_visible(visible)
+    }
     pub fn undock(&mut self) -> Result<(), String> {
         self.native.undock()
     }
@@ -245,6 +248,9 @@ mod platform {
             BrowserMode::External
         }
         pub fn resize(&mut self, _: PhysicalBounds) -> Result<(), String> {
+            Ok(())
+        }
+        pub fn set_visible(&mut self, _: bool) -> Result<(), String> {
             Ok(())
         }
         pub fn undock(&mut self) -> Result<(), String> {

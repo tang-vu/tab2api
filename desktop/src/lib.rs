@@ -81,6 +81,18 @@ async fn set_browser_bounds(
 
 #[cfg(not(test))]
 #[tauri::command]
+async fn set_browser_visibility(
+    state: State<'_, DesktopState>,
+    visible: bool,
+) -> Result<ServiceStatus, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.set_browser_visibility(visible))
+        .await
+        .map_err(|e| format!("browser visibility task failed: {e}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 async fn undock_browser(state: State<'_, DesktopState>) -> Result<ServiceStatus, String> {
     let lifecycle = Arc::clone(&state.lifecycle);
     tauri::async_runtime::spawn_blocking(move || lifecycle.undock_browser())
@@ -227,6 +239,7 @@ pub fn run() {
             stop_sidecar,
             open_login,
             set_browser_bounds,
+            set_browser_visibility,
             undock_browser,
             redock_browser,
             tunnel_status,
@@ -253,6 +266,7 @@ mod tests {
         let script = include_str!("../ui/app.js");
         assert!(script.contains("typeof invoke !== 'function'"));
         for command in [
+            "set_browser_visibility",
             "tunnel_status",
             "install_cloudflared",
             "enable_access_tunnel",

@@ -6,11 +6,15 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Added
 
+- A localized in-app API Docs tab covering authentication, examples, core routes, projects, media,
+  administrator routes, and current limitations.
 - ChatGPT project routes so a large codebase is uploaded once instead of resent with every request: `POST/GET /v1/projects`, `DELETE /v1/projects/:projectId`, `POST /v1/projects/:projectId/files`, and project-scoped Chat Completions and Responses.
 - Optional `conversation_id` on Chat Completions and Responses, returned as `tab2api.conversation_id` and `metadata.tab2api_conversation_id`, so a client can continue a thread instead of always starting a new conversation.
 
 ### Fixed
 
+- Hide docked Chromium while API Docs is selected, then restore and resize it when returning to the
+  Browser tab, so the native child window cannot cover in-app documentation.
 - Upgrade the supported lint/test toolchain to ESLint 10, `globals` 17, and Vitest 4; the minimum
   development Node.js version is now 22.13 to match ESLint's runtime requirement.
 - Keep the desktop responsive during Cloudflare operations, serialize tunnel mutations, and make

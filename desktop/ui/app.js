@@ -1,6 +1,7 @@
 /* global document, navigator, window */
 import { languageOptions, loadLanguage, saveLanguage, translate } from './i18n.js';
 import { tunnelControlState, tunnelOperationDetail } from './tunnel-controls.js';
+import { viewState } from './view-tabs.js';
 
 const invoke = window.__TAURI__?.core?.invoke;
 const elements = {
@@ -15,6 +16,10 @@ const elements = {
   refresh: document.querySelector('#refresh'),
   undock: document.querySelector('#undock'),
   redock: document.querySelector('#redock'),
+  showBrowserView: document.querySelector('#show-browser-view'),
+  showApiDocs: document.querySelector('#show-api-docs'),
+  browserColumn: document.querySelector('#browser-column'),
+  apiDocsColumn: document.querySelector('#api-docs-column'),
   browserHost: document.querySelector('#browser-host'),
   browserMode: document.querySelector('#browser-mode'),
   tunnelCard: document.querySelector('#tunnel-card'),
@@ -48,6 +53,10 @@ let language = loadLanguage(settingsStorage, navigator.languages ?? [navigator.l
 let lastServiceStatus;
 let lastTunnelStatus;
 let tunnelOperation;
+let activeView = 'browser';
+let requestedNativeBrowserVisibility;
+let appliedNativeBrowserVisibility;
+let nativeBrowserVisibilityQueue = Promise.resolve();
 const t = (key) => translate(language, key);
 
 try {
@@ -122,7 +131,42 @@ function render(status) {
   elements.refresh.disabled = busy;
   elements.undock.disabled = status.browser_mode !== 'docked';
   elements.redock.disabled = status.browser_mode !== 'external';
-  if (status.browser_mode === 'docked') queueBrowserBounds();
+  if (status.browser_mode === 'docked' && activeView === 'browser') queueBrowserBounds();
+  queueNativeBrowserVisibility();
+}
+
+function queueNativeBrowserVisibility() {
+  const state = viewState(activeView, lastServiceStatus?.browser_mode);
+  requestedNativeBrowserVisibility = state.nativeBrowserVisible;
+  if (typeof requestedNativeBrowserVisibility !== 'boolean' || typeof invoke !== 'function') {
+    appliedNativeBrowserVisibility = undefined;
+    return;
+  }
+  nativeBrowserVisibilityQueue = nativeBrowserVisibilityQueue
+    .then(async () => {
+      const visible = requestedNativeBrowserVisibility;
+      if (typeof visible !== 'boolean' || visible === appliedNativeBrowserVisibility) return;
+      await invoke('set_browser_visibility', { visible });
+      appliedNativeBrowserVisibility = visible;
+      if (visible) queueBrowserBounds();
+    })
+    .catch((error) => {
+      appliedNativeBrowserVisibility = undefined;
+      showError(error);
+    });
+}
+
+function showView(view) {
+  const state = viewState(view, lastServiceStatus?.browser_mode);
+  activeView = state.activeView;
+  elements.browserColumn.hidden = state.browserHidden;
+  elements.apiDocsColumn.hidden = state.docsHidden;
+  elements.showBrowserView.classList.toggle('active', activeView === 'browser');
+  elements.showApiDocs.classList.toggle('active', activeView === 'docs');
+  elements.showBrowserView.setAttribute('aria-selected', String(activeView === 'browser'));
+  elements.showApiDocs.setAttribute('aria-selected', String(activeView === 'docs'));
+  queueNativeBrowserVisibility();
+  if (activeView === 'browser') queueBrowserBounds();
 }
 
 function tunnelDetail(status) {
@@ -283,6 +327,8 @@ if (typeof invoke !== 'function') {
     await perform('redock_browser');
     queueBrowserBounds();
   });
+  elements.showBrowserView.addEventListener('click', () => showView('browser'));
+  elements.showApiDocs.addEventListener('click', () => showView('docs'));
   elements.installCloudflared.addEventListener('click', () => performTunnel('install_cloudflared'));
   elements.enableAccess.addEventListener('click', () =>
     performTunnel('enable_access_tunnel', { hostname: tunnelHostname() }),

@@ -19,6 +19,30 @@
           <button id="open-settings" class="icon-button" data-i18n="settings">Settings</button>
         </header>
 
+        <nav class="view-tabs" aria-label="Workspace view">
+          <button
+            id="show-browser-view"
+            class="active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="browser-column"
+            data-i18n="browserTab"
+          >
+            Browser
+          </button>
+          <button
+            id="show-api-docs"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="api-docs-column"
+            data-i18n="apiDocsTab"
+          >
+            API Docs
+          </button>
+        </nav>
+
         <section class="status-card" aria-live="polite">
           <div class="status-heading">
             <span id="status-dot" class="dot stopped"></span>
@@ -126,7 +150,7 @@
 
         <p id="error" role="alert" hidden></p>
       </div>
-      <section class="browser-column" aria-label="Dedicated ChatGPT browser">
+      <section id="browser-column" class="browser-column" aria-label="Dedicated ChatGPT browser">
         <div class="browser-toolbar">
           <div>
             <strong data-i18n="browserTitle">Dedicated browser</strong
@@ -141,6 +165,183 @@
               >Start the service to launch the dedicated ChatGPT window.</span
             >
           </div>
+        </div>
+      </section>
+      <section id="api-docs-column" class="api-docs-column" aria-labelledby="api-docs-title" hidden>
+        <div class="api-docs-toolbar">
+          <div>
+            <strong id="api-docs-title" data-i18n="apiDocsTitle">API documentation</strong>
+            <span data-i18n="apiDocsSubtitle">OpenAI-compatible routes available in this app</span>
+          </div>
+          <code>http://127.0.0.1:3210</code>
+        </div>
+        <div class="api-docs-content">
+          <section class="docs-callout">
+            <h2 data-i18n="authenticationTitle">Authentication</h2>
+            <p data-i18n="authenticationBody">
+              Only healthz is public. Every other route requires a revocable tab2api bearer key;
+              administrator routes require the original administrator key.
+            </p>
+            <pre><code>Authorization: Bearer &lt;tab2api-key&gt;</code></pre>
+          </section>
+
+          <section class="docs-section">
+            <h2 data-i18n="quickStartTitle">Quick start</h2>
+            <p data-i18n="quickStartBody">
+              Replace the placeholder key, then send an OpenAI-shaped Chat Completions request.
+            </p>
+            <pre><code>curl.exe http://127.0.0.1:3210/v1/chat/completions `
+  -H "Authorization: Bearer &lt;tab2api-key&gt;" `
+  -H "Content-Type: application/json" `
+  -d '{"model":"chatgpt-web","messages":[{"role":"user","content":"Hello"}]}'</code></pre>
+            <pre><code>{
+  "id": "chatcmpl_...",
+  "object": "chat.completion",
+  "model": "chatgpt-web",
+  "choices": [{
+    "index": 0,
+    "message": { "role": "assistant", "content": "Hello!", "refusal": null },
+    "logprobs": null,
+    "finish_reason": "stop"
+  }],
+  "usage": { "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 },
+  "tab2api": { "usage_available": false, "stream_mode": "buffered" }
+}</code></pre>
+          </section>
+
+          <section class="docs-section">
+            <h2 data-i18n="coreEndpointsTitle">Core endpoints</h2>
+            <p data-i18n="coreEndpointsBody">
+              Check process/browser readiness, discover capabilities, and generate text through Chat
+              Completions or Responses.
+            </p>
+            <div class="endpoint-list">
+              <div>
+                <span class="method get">GET</span><code>/healthz</code
+                ><small data-i18n="publicAccess">Public</small>
+              </div>
+              <div>
+                <span class="method get">GET</span><code>/readyz</code
+                ><small data-i18n="bearerAccess">Bearer key</small>
+              </div>
+              <div>
+                <span class="method get">GET</span><code>/v1/models</code
+                ><small data-i18n="bearerAccess">Bearer key</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/v1/chat/completions</code
+                ><small data-i18n="bearerAccess">Bearer key</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/v1/responses</code
+                ><small data-i18n="bearerAccess">Bearer key</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="docs-section">
+            <h2 data-i18n="projectEndpointsTitle">Projects and persistent sources</h2>
+            <p data-i18n="projectEndpointsBody">
+              Create or list projects, upload source files once, and continue project-scoped
+              conversations with conversation_id.
+            </p>
+            <div class="endpoint-list">
+              <div>
+                <span class="method post">POST</span><code>/v1/projects</code
+                ><small data-i18n="bearerAccess">Bearer key</small>
+              </div>
+              <div>
+                <span class="method get">GET</span><code>/v1/projects</code
+                ><small data-i18n="bearerAccess">Bearer key</small>
+              </div>
+              <div>
+                <span class="method delete">DELETE</span><code>/v1/projects/:projectId</code
+                ><small data-i18n="deleteConfirmAccess">Bearer + confirmation</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/v1/projects/:projectId/files</code
+                ><small>multipart/form-data</small>
+              </div>
+              <div>
+                <span class="method post">POST</span
+                ><code>/v1/projects/:projectId/chat/completions</code><small>JSON</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/v1/projects/:projectId/responses</code
+                ><small>JSON</small>
+              </div>
+            </div>
+            <div class="docs-warning">
+              <strong data-i18n="deleteWarningTitle">Irreversible deletion</strong>
+              <span data-i18n="deleteWarningBody">
+                DELETE also requires X-Tab2api-Confirm-Delete to exactly equal the project ID.
+              </span>
+            </div>
+          </section>
+
+          <section class="docs-section">
+            <h2 data-i18n="mediaEndpointsTitle">Image and audio</h2>
+            <p data-i18n="mediaEndpointsBody">
+              Image generation and transcription use the public ChatGPT UI. Speech uses the local
+              operating-system voice and returns WAV only.
+            </p>
+            <div class="endpoint-list">
+              <div>
+                <span class="method post">POST</span><code>/v1/images/generations</code
+                ><small>JSON · PNG base64</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/v1/audio/transcriptions</code
+                ><small>multipart/form-data</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/v1/audio/speech</code
+                ><small>JSON · audio/wav</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="docs-section">
+            <h2 data-i18n="adminEndpointsTitle">Administrator endpoints</h2>
+            <p data-i18n="adminEndpointsBody">
+              Manage revocable client keys, inspect content-free usage counters, or reset the
+              browser session. These routes reject client keys.
+            </p>
+            <div class="endpoint-list">
+              <div>
+                <span class="method post">POST</span><code>/admin/session/reset</code
+                ><small data-i18n="adminAccess">Administrator key</small>
+              </div>
+              <div>
+                <span class="method get">GET</span><code>/admin/api-keys</code
+                ><small data-i18n="adminAccess">Administrator key</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/admin/api-keys</code
+                ><small data-i18n="adminAccess">Administrator key</small>
+              </div>
+              <div>
+                <span class="method delete">DELETE</span><code>/admin/api-keys/:id</code
+                ><small data-i18n="adminAccess">Administrator key</small>
+              </div>
+              <div>
+                <span class="method get">GET</span><code>/admin/usage</code
+                ><small data-i18n="adminAccess">Administrator key</small>
+              </div>
+              <div>
+                <span class="method delete">DELETE</span><code>/admin/usage</code
+                ><small data-i18n="adminAccess">Administrator key</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="docs-section">
+            <h2 data-i18n="limitsTitle">Limits and behavior</h2>
+            <p data-i18n="limitsBody">
+              Requests enter a bounded FIFO queue. Streaming is buffered, UI selectors may change,
+              and token counts are unknown estimates—not billing data.
+            </p>
+          </section>
         </div>
       </section>
     </main>

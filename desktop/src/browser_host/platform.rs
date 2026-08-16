@@ -16,7 +16,7 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::UI::HiDpi::{AreDpiAwarenessContextsEqual, GetWindowDpiAwarenessContext};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GWL_STYLE, GetClassNameW, GetWindowLongPtrW, GetWindowThreadProcessId,
-    IsWindowVisible, SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    IsWindowVisible, SW_HIDE, SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_SHOWWINDOW, SetParent, SetWindowLongPtrW, SetWindowPos, ShowWindow, WS_CAPTION, WS_CHILD,
     WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
@@ -36,6 +36,7 @@ pub struct NativeHost {
     original_parent: isize,
     original_style: isize,
     docked: bool,
+    visible: bool,
 }
 
 impl NativeHost {
@@ -95,6 +96,7 @@ impl NativeHost {
             original_parent: original_parent as isize,
             original_style,
             docked: true,
+            visible: true,
         })
     }
 
@@ -107,7 +109,7 @@ impl NativeHost {
     }
 
     pub fn resize(&mut self, b: PhysicalBounds) -> Result<(), String> {
-        if !self.docked {
+        if !self.docked || !self.visible {
             return Ok(());
         }
         // HWND_TOP (NULL) keeps Chromium above the WebView sibling. ASYNCWINDOWPOS prevents the
@@ -130,6 +132,20 @@ impl NativeHost {
         Ok(())
     }
 
+    pub fn set_visible(&mut self, visible: bool) -> Result<(), String> {
+        if !self.docked || self.visible == visible {
+            return Ok(());
+        }
+        unsafe {
+            ShowWindow(
+                self.browser as HWND,
+                if visible { SW_RESTORE } else { SW_HIDE },
+            );
+        }
+        self.visible = visible;
+        Ok(())
+    }
+
     pub fn undock(&mut self) -> Result<(), String> {
         if !self.docked {
             return Ok(());
@@ -149,6 +165,7 @@ impl NativeHost {
             ShowWindow(self.browser as HWND, SW_RESTORE);
         }
         self.docked = false;
+        self.visible = true;
         Ok(())
     }
 
@@ -169,6 +186,7 @@ impl NativeHost {
             SetWindowLongPtrW(self.browser as HWND, GWL_STYLE, style);
         }
         self.docked = true;
+        self.visible = true;
         Ok(())
     }
 }

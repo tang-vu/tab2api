@@ -37,6 +37,9 @@ test('all advertised languages provide the complete English key set', () => {
       'hostnameError',
       'tunnelDisabling',
       'confirmBearerTitle',
+      'apiDocsTab',
+      'authenticationTitle',
+      'limitsTitle',
     ]) {
       assert.notEqual(messages[code][key], messages.en[key]);
     }
@@ -93,6 +96,12 @@ test('every translated DOM key exists and locale selection performs no network l
   assert.doesNotMatch(app, /window\.confirm/);
   assert.match(html, /id="bearer-dialog"/);
   assert.match(html, /id="confirm-bearer"[\s\S]*autofocus/);
+  assert.match(html, /id="show-api-docs"/);
+  assert.match(html, /id="api-docs-column"/);
+  assert.match(html, /class="method post">POST/);
+  assert.match(html, /<code>\/v1\/projects/);
+  assert.match(html, /X-Tab2api-Confirm-Delete/);
+  assert.match(app, /set_browser_visibility/);
   assert.match(styles, /dialog \{[\s\S]*width: min\(340px/);
   assert.match(styles, /left: max\(18px/);
 });

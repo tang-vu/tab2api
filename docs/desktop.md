@@ -30,6 +30,8 @@ The Windows controller also exposes bounded Cloudflare Tunnel lifecycle controls
 
 The tunnel card includes an in-app, localized setup guide and can open the exact private runtime folder in File Explorer without returning its path to the WebView. Settings support English, Vietnamese, Simplified Chinese, Japanese, Korean, Spanish, French, and German. On first launch the WebView selects from the operating-system locale; it never performs IP geolocation or sends locale data over the network. A user-selected language is the only value stored in the controller WebView's local settings storage. If that storage is unavailable, the app continues with local locale detection and does not fail startup.
 
+The main window also has Browser and API Docs tabs. API Docs is fully local, follows the selected language, and documents authentication, core OpenAI-compatible routes, projects, media, administrator routes, examples, and current limitations. On Windows, switching to API Docs hides the docked native Chromium child; switching back restores and resizes it. An explicitly undocked external browser remains independent of the tab selection.
+
 Current lifecycle behavior is intentionally small:
 
 - start waits up to 15 seconds for `GET /healthz` on IPv4 loopback;
