@@ -1,12 +1,18 @@
 #![cfg_attr(any(test, not(windows)), allow(dead_code))]
 
 use serde::{Deserialize, Serialize};
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::{Mutex, MutexGuard};
+use std::time::Duration;
+
+#[cfg(windows)]
+use std::io::Read;
+#[cfg(windows)]
+use std::process::{Command, Stdio};
+#[cfg(windows)]
 use std::thread;
-use std::time::{Duration, Instant};
+#[cfg(windows)]
+use std::time::Instant;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(180);
@@ -148,12 +154,15 @@ impl TunnelManager {
     }
 
     fn enable(&self, bearer_only: bool, hostname: &str) -> Result<TunnelStatus, String> {
-        let hostname = validate_tunnel_hostname(hostname)?;
         #[cfg(not(windows))]
-        return Err("Cloudflare Tunnel setup is currently available only on Windows".into());
+        {
+            let _ = (bearer_only, hostname);
+            return Err("Cloudflare Tunnel setup is currently available only on Windows".into());
+        }
 
         #[cfg(windows)]
         {
+            let hostname = validate_tunnel_hostname(hostname)?;
             let _operation = self.begin_operation()?;
             let current = self.status()?;
             if !current.cloudflared_installed {
