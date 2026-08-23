@@ -14,14 +14,16 @@ import {
 const MAX_KEYS = 100;
 const MAX_KEY_FILE_BYTES = 524_288;
 const MAX_PENDING_KEY_MUTATIONS = 16;
-const keyLabelSchema = z
+export const apiKeyIdSchema = z.string().regex(/^[a-f0-9]{16}$/);
+export const apiKeyLabelSchema = z
   .string()
   .min(1)
   .max(80)
   .regex(/^[^\p{C}]+$/u);
+export const clientApiTokenSchema = z.string().regex(/^tab2api_[a-f0-9]{16}_[A-Za-z0-9_-]{43}$/);
 const keyRecordSchema = z.object({
-  id: z.string().regex(/^[a-f0-9]{16}$/),
-  label: keyLabelSchema,
+  id: apiKeyIdSchema,
+  label: apiKeyLabelSchema,
   role: z.literal('client'),
   digest: z.string().regex(/^[a-f0-9]{64}$/),
   createdAt: z.iso.datetime(),
@@ -115,7 +117,7 @@ export class ApiKeyStore {
 
   async create(label: string): Promise<CreatedApiKey> {
     const normalized = label.trim();
-    if (!keyLabelSchema.safeParse(normalized).success)
+    if (!apiKeyLabelSchema.safeParse(normalized).success)
       throw new Error('API key label must contain 1-80 visible characters.');
     return this.enqueue(async () => {
       const candidate = new Map(this.records);

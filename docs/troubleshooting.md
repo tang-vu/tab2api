@@ -34,6 +34,14 @@ Close other tab2api/Chromium processes using the dedicated profile, run `npm run
 
 Stop the existing tab2api process or select another loopback port with `TAB2API_PORT`. Public hosts are rejected by design.
 
+## CLI administration cannot reach or identify the service
+
+`npm run keys -- ...`, `npm run usage`, and `npm run reset-session` require the matching local
+service to be running. Start `npm start` (or start the service from the desktop app) with the same
+data directory, host, and port. An `unexpected_service` failure means another process or an
+incompatible tab2api build answered on that loopback port; stop it or select the correct port. The
+CLI fails before sending the administrator key when the public health identity does not match.
+
 ## 401 authentication error
 
 Read `.tab2api/api-token` without adding whitespace and send it as `Authorization: Bearer ...`. Do not put it in a committed `.env`, shell history, issue, or log. Restart the client after token rotation.

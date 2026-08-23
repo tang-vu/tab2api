@@ -10,6 +10,18 @@ All notable user-facing changes are documented here. This project follows semant
   package contents, emits a production CycloneDX SBOM and checksums, and creates GitHub build and
   SBOM attestations without receiving npm or GitHub release-publishing credentials.
 
+### Fixed
+
+- CLI key and usage administration now operates on the running service's live state instead of
+  loading a second mutable store that could become stale or be overwritten by a later service flush.
+
+### Security
+
+- CLI administration verifies the exact unauthenticated loopback service identity before sending
+  the administrator key, refuses redirects, bounds and schema-checks responses, and reports typed
+  cancellation, timeout, authentication, unexpected-service, and transport failures without
+  exposing response bodies.
+
 ## [0.2.0] - 2026-08-23
 
 ### Added

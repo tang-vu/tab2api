@@ -179,7 +179,7 @@ The desktop controller includes localized settings and a complete Cloudflare Tun
 
 ### Per-device keys, usage, and private remote access
 
-The original `.tab2api/api-token` is the administrator key. Create revocable non-admin keys for other personal devices with `npm run keys -- create "personal laptop"`; the plaintext is printed once and only its SHA-256 digest is persisted. `npm run keys -- list`, `npm run keys -- revoke <id>`, and `npm run usage` manage keys and inspect content-free counters.
+The original `.tab2api/api-token` is the administrator key. With the local service running, create revocable non-admin keys for other personal devices with `npm run keys -- create "personal laptop"`; the plaintext is printed once and only its SHA-256 digest is persisted. `npm run keys -- list`, `npm run keys -- revoke <id>`, and `npm run usage` manage keys and inspect content-free counters through the live authenticated loopback API. The CLI first verifies the exact unauthenticated `/healthz` identity, refuses redirects and unrelated services without sending the key, and bounds the complete operation to ten seconds. It no longer opens a second mutable copy of the key/usage stores while the service owns them.
 
 The desktop app provides the same workflow in its **Keys & Usage** tab while the local service is running. It lists metadata, creates a client key with one-time plaintext display, revokes with confirmation, shows/resets content-free usage, and never exposes the administrator key. Its service card separately reports local process health and authenticated ChatGPT UI readiness, with a bounded on-demand check and localized remediation instead of calling a live browser check on every status poll. **API Docs** can export the canonical documentation as a new Markdown file in Downloads for use as LLM context; exported files contain no credentials.
 
@@ -221,7 +221,7 @@ Run `npm run doctor` first. Common fixes include `npx playwright install chromiu
 ```text
 npm run dev          watch-mode server
 npm run build        production TypeScript build
-npm start            run built server
+npm start            run built server; keep it running for CLI administration
 npm test             offline unit/integration tests
 npm run check        typecheck, lint, formatting check
 npm run login        manual dedicated-profile login

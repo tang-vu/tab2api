@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import multipart from '@fastify/multipart';
 import Fastify, { LogController, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { Logger } from 'pino';
-import { z, ZodError } from 'zod';
+import { ZodError } from 'zod';
 import type { AppConfig } from '../config/index.js';
 import { AppError, asSafeAppError } from '../errors.js';
 import type { WebChatProvider } from '../provider.js';
@@ -28,6 +28,7 @@ import {
   serializeChatRequest,
   serializeResponsesRequest,
 } from './serializer.js';
+import { apiKeyCreateRequestSchema, apiKeyParamsSchema } from './admin-contract.js';
 
 interface ErrorEnvelope {
   error: { message: string; type: string; code: string; param: null; remediation?: string };
@@ -617,10 +618,7 @@ export function buildServer(dependencies: ServerDependencies) {
   app.get('/admin/api-keys', { preHandler: adminOnly }, async () => ({ data: apiKeys.list() }));
 
   app.post('/admin/api-keys', { preHandler: adminOnly }, async (request) => {
-    const body = z
-      .object({ label: z.string().trim().min(1).max(80) })
-      .strict()
-      .parse(request.body);
+    const body = apiKeyCreateRequestSchema.parse(request.body);
     try {
       return await apiKeys.create(body.label);
     } catch (error) {
@@ -633,7 +631,7 @@ export function buildServer(dependencies: ServerDependencies) {
   });
 
   app.delete('/admin/api-keys/:id', { preHandler: adminOnly }, async (request) => {
-    const { id } = z.object({ id: z.string().regex(/^[a-f0-9]{16}$/) }).parse(request.params);
+    const { id } = apiKeyParamsSchema.parse(request.params);
     if (!(await apiKeys.revoke(id)))
       throw new AppError('invalid_request', 'The API key does not exist or is already revoked.');
     return { status: 'revoked', id };

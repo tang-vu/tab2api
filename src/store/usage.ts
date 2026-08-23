@@ -33,7 +33,7 @@ const usageLabel = z
   .max(80)
   .regex(/^[^\p{C}]+$/u);
 
-const endpointUsageSchema = z
+export const endpointUsageSchema = z
   .object({
     requests: boundedCounter,
     successful: boundedCounter,
@@ -47,7 +47,7 @@ const endpointUsageSchema = z
   .refine(({ requests, successful, failed }) => requests === successful + failed, {
     message: 'Usage success and failure counters must equal total requests.',
   });
-const keyUsageSchema = endpointUsageSchema
+export const keyUsageSchema = endpointUsageSchema
   .safeExtend({
     keyId: usageKeyId,
     label: usageLabel,
@@ -98,6 +98,11 @@ const usageFileSchema = z
 
 export type EndpointUsage = z.infer<typeof endpointUsageSchema>;
 export type KeyUsage = z.infer<typeof keyUsageSchema>;
+export const usageSnapshotSchema = z.object({
+  tokenCounts: z.literal('estimated'),
+  keys: z.array(keyUsageSchema).max(MAX_USAGE_KEYS),
+});
+export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
 export interface UsageDelta {
   endpoint: string;
   successful: boolean;
@@ -221,7 +226,7 @@ export class UsageStore {
     });
   }
 
-  snapshot(): { tokenCounts: 'estimated'; keys: KeyUsage[] } {
+  snapshot(): UsageSnapshot {
     return {
       tokenCounts: 'estimated',
       keys: structuredClone([...this.entries.values()]),

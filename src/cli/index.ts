@@ -6,6 +6,7 @@ import process from 'node:process';
 import { chromium } from 'playwright';
 import { z } from 'zod';
 import { ChatGptAdapter } from '../adapters/chatgpt/adapter.js';
+import { LocalAdminClient, LocalAdminError } from '../api/local-admin-client.js';
 import { buildServer } from '../api/server.js';
 import { createBrowserController } from '../browser/factory.js';
 import { loadConfig, type AppConfig } from '../config/index.js';
@@ -182,35 +183,25 @@ async function smoke(): Promise<void> {
 
 async function resetSession(): Promise<void> {
   const config = await loadConfig();
-  let response: Response;
-  try {
-    response = await fetch(`http://${config.host}:${config.port}/admin/session/reset`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${config.apiToken}` },
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    throw new Error('Reset did not reach the local service within 10 seconds.');
-  }
-  if (!response.ok)
-    throw new Error(`Reset failed with HTTP ${response.status}. Is the server running?`);
+  await new LocalAdminClient(config).resetSession();
   print('Browser session process reset. Profile and manual login were preserved.');
 }
 
 async function keys(): Promise<void> {
   const config = await loadConfig();
-  const store = await ApiKeyStore.load(config.dataDir, config.apiToken);
+  const client = new LocalAdminClient(config);
   const operation = process.argv[3] ?? 'list';
   if (operation === 'list') {
-    for (const key of store.list())
+    const response = await client.listApiKeys();
+    for (const key of response.data)
       print(
-        `${key.id}\t${key.role}\t${key.revokedAt === undefined ? 'active' : 'revoked'}\t${key.label}`,
+        `${key.id}\t${key.role}\t${key.role === 'client' && key.revokedAt !== undefined ? 'revoked' : 'active'}\t${key.label}`,
       );
     return;
   }
   if (operation === 'create') {
     const label = process.argv.slice(4).join(' ').trim();
-    const created = await store.create(label);
+    const created = await client.createApiKey(label);
     print(`Created client API key ${created.id} (${created.label}).`);
     print('Copy this token now; only its SHA-256 digest is stored:');
     print(created.token);
@@ -218,8 +209,8 @@ async function keys(): Promise<void> {
   }
   if (operation === 'revoke') {
     const id = process.argv[4];
-    if (id === undefined || !(await store.revoke(id)))
-      throw new Error('Key ID is missing, unknown, or already revoked.');
+    if (id === undefined) throw new Error('Key ID is missing.');
+    await client.revokeApiKey(id);
     print(`Revoked API key ${id}.`);
     return;
   }
@@ -228,8 +219,8 @@ async function keys(): Promise<void> {
 
 async function usage(): Promise<void> {
   const config = await loadConfig();
-  const store = await UsageStore.load(config.dataDir);
-  print(JSON.stringify(store.snapshot(), null, 2));
+  const snapshot = await new LocalAdminClient(config).usage();
+  print(JSON.stringify(snapshot, null, 2));
 }
 
 const command = process.argv[2] ?? 'start';
@@ -251,8 +242,9 @@ try {
     );
   await run();
 } catch (error) {
+  const prefix = error instanceof LocalAdminError ? `tab2api (${error.code})` : 'tab2api';
   process.stderr.write(
-    `tab2api: ${error instanceof Error ? error.message : 'Unexpected failure'}\n`,
+    `${prefix}: ${error instanceof Error ? error.message : 'Unexpected failure'}\n`,
   );
   process.exitCode = 1;
 }

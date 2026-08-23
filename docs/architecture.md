@@ -55,6 +55,14 @@ Visible UI text can change non-monotonically while ChatGPT formats an answer. Ve
 
 An independent administrative usage store aggregates requests by key and route. Input/output estimates use UTF-8 byte length divided by four and are explicitly named `estimatedInputTokens`/`estimatedOutputTokens`; they are operational trends, not billing data. Persistence is serialized and contains no prompt or response text.
 
+The running service is the sole mutable owner of the API-key and usage stores. CLI administration
+does not load those files independently: it verifies the exact unauthenticated loopback health
+contract, then performs one bounded authenticated `/admin/*` request with redirects disabled. This
+avoids stale in-memory state or a later service flush overwriting a concurrent offline CLI change.
+An accidental unrelated process on the configured port receives no administrator credential. A
+malicious process with the same operating-system user can still race the probe and already has that
+user's file authority; that remains outside the local single-user trust boundary.
+
 ### Optional personal tunnel
 
 Fastify continues to listen only on loopback. The default `cloudflared` installer uses a fail-closed fixed-418 probe to prove Access interception. A distinct bearer-only command records the owner's explicit acceptance and skips that probe without weakening application authentication. In bearer-only mode `/readyz`, `/v1/*`, and `/admin/*` require a key; `/healthz` alone is public and does no browser work. Tunnel credentials/configuration remain runtime-only and are never packaged or committed.

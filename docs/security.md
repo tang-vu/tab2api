@@ -33,6 +33,14 @@ If `TAB2API_API_TOKEN` is absent, `.tab2api/api-token` is created exclusively wi
 
 The original token is the local administrator credential. Additional client keys are random, revocable, limited to non-admin routes, and stored only as SHA-256 digests. Use one per device. Cloudflare Access credentials and tunnel credential JSON files are separate secrets and must also remain outside Git.
 
+CLI key, usage, and session-reset commands send the administrator credential only after the
+configured loopback origin returns the exact public tab2api health contract. They disable redirects,
+accept only bounded typed JSON responses, and distinguish cancellation, timeout, authentication,
+unexpected-service, and transport failures without printing response bodies. The service remains
+the only mutable key/usage-store owner; the CLI requires it to be running instead of editing those
+files concurrently. This identity probe prevents accidental disclosure to an unrelated local
+service, but it is not a defense against malicious code running as the same operating-system user.
+
 The desktop Keys & Usage tab performs administrator actions only through the authenticated IPv4-loopback API. The session indicator uses the same native-only credential for a serialized, 45-second-bounded `/readyz` request and returns only a boolean plus an allowlisted state such as `ready`, `login_required`, or `ui_changed`. The native layer never returns the administrator credential, an Authorization header, or an error response body to the WebView. A newly created revocable client key is the explicit exception: it is returned once to a modal for copying, is never placed in WebView storage, and its DOM text is cleared when the modal closes. Key listings contain metadata only. Usage listings contain counters, endpoint names, labels, timestamps, byte totals, latency, and explicitly estimated token totals—never prompts or responses.
 
 The API Docs export is a compile-time copy of `docs/api.md`. It creates a new `tab2api-api*.md` file under the operating system Downloads directory, never overwrites an existing file, and never includes runtime credentials, configuration, usage, profile data, prompts, or responses.

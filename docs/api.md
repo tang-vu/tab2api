@@ -86,6 +86,12 @@ Requires the administrator bearer token. Closes the current browser context. The
 
 All require the administrator token. Client keys may call `/v1/*` but no `/admin/*` route.
 
+The `npm run keys -- ...`, `npm run usage`, and `npm run reset-session` commands require the local
+service to be running and call these routes rather than editing store files independently. Before an
+Authorization header is constructed, the CLI checks the exact `/healthz` response on the configured
+loopback origin. Redirects are refused, response bodies are bounded and schema-checked, and the
+combined identity probe plus administration request times out after ten seconds.
+
 ### Usage administration
 
 - `GET /admin/usage`: per-key and per-endpoint request/success/failure, latency, byte totals, and `estimatedInputTokens`/`estimatedOutputTokens`.
