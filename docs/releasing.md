@@ -5,7 +5,7 @@ Only maintainers may publish a release. Releases must come from a clean, reviewe
 ## Source and npm release checklist
 
 1. Keep `package.json`, `desktop/Cargo.toml`, `desktop/tauri.conf.json`, and `CHANGELOG.md` on the same semantic version.
-2. Run `npm ci`, `npm run check`, `npm test`, `npm run build`, `npm run smoke`, `npm audit`, and `npm run desktop:check`.
+2. Install the pinned Rust auditor with `cargo install cargo-audit --version 0.22.2 --locked`, then run `npm ci`, `npm run check`, `npm test`, `npm run build`, `npm run smoke`, `npm audit`, `npm run desktop:check`, and `npm run desktop:audit`.
 3. Run `npm pack --dry-run --json` and inspect every included path. Confirm the generated `dist/` has no stale modules.
 4. Review the complete diff and tracked-file list for sensitive or machine-specific data.
 5. Create an annotated `vX.Y.Z` tag from the verified commit and publish source release notes derived from `CHANGELOG.md`.
@@ -15,7 +15,7 @@ Only maintainers may publish a release. Releases must come from a clean, reviewe
 
 Windows staging already creates a production-Node CycloneDX SBOM and a complete SHA-256/size inventory of the bundled sidecar, and `desktop:smoke:windows` verifies both before running its offline fake-adapter and lifecycle checks. These are staging-integrity evidence, not artifact authenticity or a full application SBOM.
 
-Before promoting a Windows candidate, manually dispatch `Desktop install smoke` for the exact commit. It builds but never uploads the unsigned NSIS artifact, installs under an isolated temporary root on a fresh hosted runner, runs the installed sidecar smoke offline, uninstalls, and verifies default profile retention. A green run is installation evidence for that commit, not a signature or publication approval.
+Before promoting a Windows candidate, manually dispatch `Desktop install smoke` for the exact commit. It builds but never uploads the unsigned NSIS artifact, installs under an isolated temporary root on a fresh hosted runner, runs the installed sidecar smoke offline, verifies hidden startup/single-instance/crash-lock recovery, uninstalls, checks sign-in launch cleanup, and verifies default profile retention. A green run is installation evidence for that commit, not a signature or publication approval.
 
 Do not attach desktop installers until the target platform pipeline also provides code signing, externally published installer/component checksums, clean-machine install/uninstall tests, a full application SBOM covering Rust/native components, provenance, and complete third-party notices. Build each platform artifact on that platform and keep signing credentials in an environment-protected release job. Pull-request CI must never receive signing or publishing credentials.
 

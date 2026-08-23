@@ -47,7 +47,8 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/smoke-desktop-installer.ps1 `
             -InstallerPath $installers[0].FullName `
             -InstallDirectory $installDirectory `
-            -AllowedRoot $env:RUNNER_TEMP
+            -AllowedRoot $env:RUNNER_TEMP `
+            -ExerciseDesktopLifecycle
           if ($LASTEXITCODE -ne 0) {
             throw "Installer smoke failed with exit code $LASTEXITCODE."
           }

@@ -1,6 +1,7 @@
 mod admin;
 mod browser_host;
 mod lifecycle;
+mod startup;
 mod tunnel;
 
 #[cfg(not(test))]
@@ -10,6 +11,8 @@ use browser_host::BrowserBounds;
 #[cfg(not(test))]
 use lifecycle::{ServiceStatus, SidecarLifecycle};
 #[cfg(not(test))]
+use startup::{AUTOSTART_ARG, AUTOSTART_ENTRY_NAME, AutostartStatus, StartupManager};
+#[cfg(not(test))]
 use std::sync::Arc;
 #[cfg(not(test))]
 use tauri::menu::{Menu, MenuItem};
@@ -18,12 +21,59 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 #[cfg(not(test))]
 use tauri::{Manager, State};
 #[cfg(not(test))]
+use tauri_plugin_autostart::ManagerExt;
+#[cfg(not(test))]
 use tunnel::{TunnelManager, TunnelStatus};
 
 #[cfg(not(test))]
 struct DesktopState {
     lifecycle: Arc<SidecarLifecycle>,
+    startup: StartupManager,
     tunnel: Arc<TunnelManager>,
+}
+
+#[cfg(not(test))]
+fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| tauri::Error::AssetNotFound("main window".into()))?;
+    window.unminimize()?;
+    window.show()?;
+    window.set_focus()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn autostart_status(
+    app: tauri::AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<AutostartStatus, String> {
+    let autostart = app.autolaunch();
+    state
+        .startup
+        .status(|| autostart.is_enabled().map_err(|_| ()))
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn set_autostart(
+    app: tauri::AppHandle,
+    state: State<'_, DesktopState>,
+    enabled: bool,
+) -> Result<AutostartStatus, String> {
+    let autostart = app.autolaunch();
+    state.startup.set(
+        enabled,
+        || {
+            if enabled {
+                autostart.enable()
+            } else {
+                autostart.disable()
+            }
+            .map_err(|_| ())
+        },
+        || autostart.is_enabled().map_err(|_| ()),
+    )
 }
 
 #[cfg(not(test))]
@@ -247,7 +297,23 @@ async fn open_tunnel_folder(state: State<'_, DesktopState>) -> Result<TunnelStat
 #[cfg(not(test))]
 pub fn run() {
     tauri::Builder::default()
+        // Tauri requires single-instance to be registered before every other plugin.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if show_main_window(app).is_err() {
+                eprintln!("tab2api could not reveal its existing controller window");
+            }
+        }))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name(AUTOSTART_ENTRY_NAME)
+                .arg(AUTOSTART_ARG)
+                .build(),
+        )
         .setup(|app| {
+            let launched_from_autostart = startup::launched_from_autostart(std::env::args_os());
+            if !launched_from_autostart {
+                show_main_window(app.handle())?;
+            }
             let resource_dir = app.path().resource_dir()?;
             let app_local_data_dir = app.path().app_local_data_dir()?;
             #[cfg(windows)]
@@ -263,6 +329,7 @@ pub fn run() {
                 .map_err(std::io::Error::other)?;
             app.manage(DesktopState {
                 lifecycle: Arc::new(lifecycle),
+                startup: StartupManager::default(),
                 tunnel: Arc::new(tunnel),
             });
             let show = MenuItem::with_id(app, "show", "Show tab2api", true, None::<&str>)?;
@@ -278,9 +345,8 @@ pub fn run() {
                 .tooltip("tab2api local bridge")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                        if show_main_window(app).is_err() {
+                            eprintln!("tab2api could not reveal its controller window");
                         }
                     }
                     "quit" => app.exit(0),
@@ -292,10 +358,9 @@ pub fn run() {
                         button_state: MouseButtonState::Up,
                         ..
                     } = event
-                        && let Some(window) = tray.app_handle().get_webview_window("main")
+                        && show_main_window(tray.app_handle()).is_err()
                     {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                        eprintln!("tab2api could not reveal its controller window");
                     }
                 })
                 .build(app)?;
@@ -308,6 +373,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            autostart_status,
+            set_autostart,
             sidecar_status,
             check_session_readiness,
             start_sidecar,
@@ -347,6 +414,8 @@ mod tests {
         let script = include_str!("../ui/app.js");
         assert!(script.contains("typeof invoke !== 'function'"));
         for command in [
+            "autostart_status",
+            "set_autostart",
             "check_session_readiness",
             "set_browser_visibility",
             "list_api_keys",
@@ -366,5 +435,17 @@ mod tests {
         }
         assert!(script.contains("bearerDialog.showModal"));
         assert!(!script.contains("window.confirm"));
+
+        let capability = include_str!("../capabilities/default.json");
+        assert!(!capability.contains("autostart:allow-"));
+
+        let config: serde_json::Value =
+            serde_json::from_str(config).expect("desktop config should be valid JSON");
+        assert_eq!(
+            config["productName"].as_str(),
+            Some(crate::startup::AUTOSTART_ENTRY_NAME),
+            "the NSIS product name must match the removable HKCU autostart value"
+        );
+        assert_eq!(config["app"]["windows"][0]["visible"], false);
     }
 }

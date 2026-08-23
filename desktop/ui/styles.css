@@ -1583,6 +1583,84 @@ dialog::backdrop {
   background: rgba(4, 6, 4, 0.8);
   backdrop-filter: blur(5px);
 }
+.startup-setting {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(5, 7, 5, 0.42);
+}
+dialog .switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+.switch-row > span {
+  min-width: 0;
+}
+dialog .switch-row small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.switch-row input {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex: none;
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #090b09;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+.switch-row input::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--muted-bright);
+  transition:
+    transform 140ms ease,
+    background 140ms ease;
+}
+.switch-row input:checked {
+  border-color: rgba(200, 255, 61, 0.72);
+  background: rgba(200, 255, 61, 0.18);
+}
+.switch-row input:checked::before {
+  transform: translateX(20px);
+  background: var(--acid);
+}
+.switch-row input:focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: 3px;
+}
+.switch-row input:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+dialog .setting-status {
+  margin-top: 10px;
+  font-size: 11px;
+}
+.setting-status[data-tone='success'] {
+  color: var(--acid-soft);
+}
+.setting-status[data-tone='working'] {
+  color: var(--warning);
+}
+.setting-status[data-tone='error'] {
+  color: var(--danger);
+}
 
 @media (prefers-reduced-motion: no-preference) {
   .status-card,

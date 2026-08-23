@@ -63,6 +63,8 @@ Token API local ngẫu nhiên được tạo ở `.tab2api/api-token` và không
 
 Thư mục `desktop/` chứa app điều khiển Tauri 2 cho người dùng không muốn cài riêng Node.js, Chrome hoặc Playwright. Rust quản lý cửa sổ native, system tray, thư mục app-local và vòng đời sidecar có giới hạn; Node sidecar đóng gói vẫn dùng implementation Fastify/Playwright đã được kiểm thử. ChatGPT mở trong Chromium dedicated đi kèm để người dùng tự đăng nhập, tuyệt đối không được nhúng trong system WebView.
 
+Controller đã cài chỉ chạy một instance: mở app lần nữa sẽ đưa cửa sổ hiện có lên trước, không tạo controller hay chủ sidecar thứ hai. **Cài đặt → Mở khi đăng nhập** là tùy chọn native mặc định tắt. Nó chỉ mở controller thu nhỏ trong system tray, không âm thầm bật API cục bộ hoặc trình duyệt. Không kết hợp luồng desktop này với Scheduled Task của source tree ở trên cho cùng một deployment cá nhân.
+
 Build bản preview Windows self-contained chưa ký:
 
 ```powershell
@@ -76,7 +78,7 @@ Pipeline chỉ stage production dependencies, tải đúng Chromium headed revis
 
 Maintainer có thể chạy thủ công workflow `Desktop install smoke` không xuất artifact. Workflow dựng preview chưa ký trên Windows runner mới, cài silent vào thư mục tạm cô lập, lặp lại packaged smoke offline từ resource đã cài, gỡ cài đặt và xác minh dữ liệu profile app-local mặc định vẫn được giữ. Installer chưa ký không bao giờ được upload hoặc publish.
 
-App desktop có Settings đa ngôn ngữ và hướng dẫn Cloudflare Tunnel đầy đủ bằng tiếng Anh, Việt, Trung, Nhật, Hàn, Tây Ban Nha, Pháp và Đức. Lần chạy đầu app chọn ngôn ngữ hoàn toàn cục bộ theo locale hệ điều hành—không định vị bằng IP—và người dùng có thể đổi ngôn ngữ đã lưu bất cứ lúc nào.
+App desktop có Settings đa ngôn ngữ và hướng dẫn Cloudflare Tunnel đầy đủ bằng tiếng Anh, Việt, Trung, Nhật, Hàn, Tây Ban Nha, Pháp và Đức. Lần chạy đầu app chọn ngôn ngữ hoàn toàn cục bộ theo locale hệ điều hành—không định vị bằng IP—và người dùng có thể đổi ngôn ngữ đã lưu bất cứ lúc nào. WebView chỉ lưu mã ngôn ngữ và hostname tunnel công khai tùy chọn; đăng ký mở khi đăng nhập do hệ điều hành quản lý.
 
 ## Bắt đầu trên macOS/Linux
 

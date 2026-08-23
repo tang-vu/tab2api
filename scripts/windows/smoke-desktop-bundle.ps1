@@ -235,14 +235,18 @@ try {
         if ($listening.host -ne '127.0.0.1' -or [int]$listening.port -ne $smokePort) {
             throw 'The packaged sidecar did not bind the expected loopback endpoint.'
         }
-        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$smokePort/healthz" -TimeoutSec 10
+        # The probe must not retain an idle HTTP socket that can interfere with the shutdown check.
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$smokePort/healthz" -TimeoutSec 10 -DisableKeepAlive
         if ($health.status -ne 'ok' -or $health.service -ne 'tab2api') {
             throw 'The packaged sidecar returned an unexpected health response.'
         }
         $process.StandardInput.WriteLine('{"command":"shutdown"}')
         $process.StandardInput.Flush()
-        if (-not $process.WaitForExit(15000)) {
-            throw 'The packaged sidecar did not stop within 15 seconds.'
+        $process.StandardInput.Close()
+        [void](Read-LifecycleEvent -Reader $process.StandardOutput -ExpectedEvent 'stopping')
+        [void](Read-LifecycleEvent -Reader $process.StandardOutput -ExpectedEvent 'stopped' -TimeoutMilliseconds 30000)
+        if (-not $process.WaitForExit(5000)) {
+            throw 'The packaged sidecar emitted stopped but did not exit within five seconds.'
         }
         if ($process.ExitCode -ne 0) {
             throw "The packaged sidecar exited with code $($process.ExitCode)."

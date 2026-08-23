@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)] [string]$InstallerPath,
     [Parameter(Mandatory = $true)] [string]$InstallDirectory,
-    [Parameter(Mandatory = $true)] [string]$AllowedRoot
+    [Parameter(Mandatory = $true)] [string]$AllowedRoot,
+    [switch]$ExerciseDesktopLifecycle
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +47,79 @@ function Invoke-BoundedProcess {
     }
 }
 
+function Wait-PathRemoved {
+    param(
+        [Parameter(Mandatory = $true)] [string]$LiteralPath,
+        [Parameter(Mandatory = $true)] [int]$TimeoutMilliseconds,
+        [Parameter(Mandatory = $true)] [string]$Description
+    )
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+    while ((Test-Path -LiteralPath $LiteralPath) -and [DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 200
+    }
+    if (Test-Path -LiteralPath $LiteralPath) {
+        throw "$Description exceeded its bounded safety window."
+    }
+}
+
+function Stop-TestController {
+    param([Parameter(Mandatory = $true)] [Diagnostics.Process]$Process)
+
+    try {
+        if (-not $Process.HasExited) {
+            $Process.Kill()
+            if (-not $Process.WaitForExit(15000)) {
+                throw 'A desktop lifecycle probe could not terminate its isolated process.'
+            }
+        }
+    }
+    finally {
+        $Process.Dispose()
+    }
+}
+
+function Assert-DesktopControllerLifecycle {
+    param([Parameter(Mandatory = $true)] [string]$MainBinary)
+
+    $workingDirectory = Split-Path $MainBinary -Parent
+    $primary = $null
+    $secondary = $null
+    try {
+        $primary = Start-Process -FilePath $MainBinary -ArgumentList @('--tab2api-autostart') -WorkingDirectory $workingDirectory -PassThru -WindowStyle Hidden
+        if ($primary.WaitForExit(5000)) {
+            throw 'The installed desktop controller did not remain available in hidden autostart mode.'
+        }
+
+        $secondary = Start-Process -FilePath $MainBinary -ArgumentList @('--tab2api-autostart') -WorkingDirectory $workingDirectory -PassThru -WindowStyle Hidden
+        if (-not $secondary.WaitForExit(15000)) {
+            throw 'A second desktop controller did not exit within the single-instance safety window.'
+        }
+        if ($secondary.ExitCode -ne 0 -or $primary.HasExited) {
+            throw 'The installed desktop controller did not enforce one live instance.'
+        }
+    }
+    finally {
+        if ($null -ne $secondary) {
+            Stop-TestController -Process $secondary
+        }
+        if ($null -ne $primary) {
+            Stop-TestController -Process $primary
+        }
+    }
+
+    $recovered = Start-Process -FilePath $MainBinary -ArgumentList @('--tab2api-autostart') -WorkingDirectory $workingDirectory -PassThru -WindowStyle Hidden
+    try {
+        if ($recovered.WaitForExit(5000)) {
+            throw 'The desktop single-instance lock did not recover after a forced process exit.'
+        }
+    }
+    finally {
+        Stop-TestController -Process $recovered
+    }
+    Write-Output 'Installed desktop controller PASS: hidden startup, single instance, and crash-lock recovery verified.'
+}
+
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf) -or [IO.Path]::GetExtension($installer) -ne '.exe') {
     throw 'The desktop installer must be an existing executable file.'
@@ -70,6 +144,10 @@ $appDataRoot = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'dev.tangvu.t
 $appDataRootExisted = Test-Path -LiteralPath $appDataRoot
 $profileProbeDirectory = Assert-StrictChildPath -Candidate (Join-Path $appDataRoot ('installer-smoke-' + [Guid]::NewGuid().ToString('N'))) -Root $appDataRoot -Description 'Profile retention probe'
 $profileProbeFile = Join-Path $profileProbeDirectory 'retained.txt'
+$startupRegistryPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$startupValueName = 'tab2api'
+$startupValue = $null
+$startupSeeded = $false
 
 $uninstaller = Join-Path $installDirectoryPath 'uninstall.exe'
 $uninstalled = $false
@@ -93,30 +171,51 @@ try {
         throw "Installed sidecar smoke failed with exit code $LASTEXITCODE."
     }
 
-    # _?= keeps the uninstaller in place so the bounded parent can wait for complete removal.
-    Invoke-BoundedProcess -FilePath $uninstaller -Arguments @('/S', "_?=$installDirectoryPath") -TimeoutMilliseconds 300000 -Description 'Silent desktop uninstallation'
+    if ($ExerciseDesktopLifecycle) {
+        Assert-DesktopControllerLifecycle -MainBinary $mainBinary
+        $existingStartup = Get-ItemProperty -LiteralPath $startupRegistryPath -Name $startupValueName -ErrorAction SilentlyContinue
+        if ($null -ne $existingStartup) {
+            throw 'The isolated runner already has a tab2api sign-in launch registration.'
+        }
+        $startupValue = '"' + $mainBinary + '" --tab2api-autostart'
+        New-Item -Path $startupRegistryPath -Force | Out-Null
+        New-ItemProperty -LiteralPath $startupRegistryPath -Name $startupValueName -Value $startupValue -PropertyType String | Out-Null
+        $startupSeeded = $true
+    }
+
+    # Normal NSIS uninstall copies itself to a temporary directory so it can remove the original.
+    # The launcher can exit before that temporary child, so completion is the bounded disappearance
+    # of the already validated isolated installation directory.
+    Invoke-BoundedProcess -FilePath $uninstaller -Arguments @('/S') -TimeoutMilliseconds 60000 -Description 'Silent desktop uninstallation launcher'
+    Wait-PathRemoved -LiteralPath $installDirectoryPath -TimeoutMilliseconds 300000 -Description 'Silent desktop uninstallation'
     $uninstalled = $true
 
-    $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    while ((Test-Path -LiteralPath $installDirectoryPath) -and [DateTime]::UtcNow -lt $deadline) {
-        Start-Sleep -Milliseconds 200
-    }
-    if (Test-Path -LiteralPath $installDirectoryPath) {
-        throw 'Silent uninstallation left files in the isolated install directory.'
-    }
     if (-not (Test-Path -LiteralPath $profileProbeFile -PathType Leaf)) {
         throw 'Silent uninstallation removed app-local data without explicit deletion consent.'
     }
+    if ($startupSeeded -and $null -ne (Get-ItemProperty -LiteralPath $startupRegistryPath -Name $startupValueName -ErrorAction SilentlyContinue)) {
+        throw 'Silent uninstallation left the tab2api sign-in launch registration behind.'
+    }
 
-    Write-Output 'Packaged desktop installer smoke PASS: silent install, offline sidecar, uninstall, and profile retention verified.'
+    Write-Output 'Packaged desktop installer smoke PASS: silent install, offline sidecar, uninstall cleanup, and profile retention verified.'
 }
 finally {
     try {
         if (-not $uninstalled -and (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
-            Invoke-BoundedProcess -FilePath $uninstaller -Arguments @('/S', "_?=$installDirectoryPath") -TimeoutMilliseconds 300000 -Description 'Installer smoke cleanup'
+            Invoke-BoundedProcess -FilePath $uninstaller -Arguments @('/S') -TimeoutMilliseconds 60000 -Description 'Installer smoke cleanup launcher'
+            Wait-PathRemoved -LiteralPath $installDirectoryPath -TimeoutMilliseconds 300000 -Description 'Installer smoke cleanup'
         }
     }
     finally {
+        if ($startupSeeded) {
+            $remainingStartup = Get-ItemProperty -LiteralPath $startupRegistryPath -Name $startupValueName -ErrorAction SilentlyContinue
+            if ($null -ne $remainingStartup) {
+                if ([string]$remainingStartup.$startupValueName -ne $startupValue) {
+                    throw 'Refusing to remove a sign-in launch value that changed during installer smoke.'
+                }
+                Remove-ItemProperty -LiteralPath $startupRegistryPath -Name $startupValueName
+            }
+        }
         if (Test-Path -LiteralPath $installDirectoryPath) {
             $installItem = Get-Item -LiteralPath $installDirectoryPath -Force
             if (($installItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {

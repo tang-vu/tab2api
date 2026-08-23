@@ -61,6 +61,14 @@ jobs:
           rustup default stable
           rustup component add rustfmt clippy
 
+      - name: Install pinned Rust dependency auditor
+        if: runner.os == 'Linux'
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Audit Rust dependencies
+        if: runner.os == 'Linux'
+        run: npm run desktop:audit
+
       - name: Install Node dependencies
         run: npm ci
 

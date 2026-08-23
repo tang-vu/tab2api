@@ -542,6 +542,21 @@
         <small data-i18n="automaticLocale"
           >On first launch, language is selected from the operating-system locale.</small
         >
+        <section class="startup-setting">
+          <label class="switch-row" for="autostart-toggle">
+            <span>
+              <strong data-i18n="autostartTitle">Launch at sign-in</strong>
+              <small data-i18n="autostartBody"
+                >Open the controller minimized to the system tray after you sign in. The local API
+                stays off until you start it.</small
+              >
+            </span>
+            <input id="autostart-toggle" type="checkbox" role="switch" disabled />
+          </label>
+          <small id="autostart-status" class="setting-status" aria-live="polite"
+            >Checking the operating-system setting...</small
+          >
+        </section>
         <section>
           <strong data-i18n="localePrivacyTitle">Locale privacy</strong>
           <p data-i18n="localePrivacyBody">

@@ -47,6 +47,12 @@ uses the sidecar's versioned JSON stdin protocol, waits up to eight seconds for 
 then falls back to terminating an unresponsive child. Windows Chromium cleanup targets the exact
 launched PID and its process tree with a bounded wait so a loopback debugging listener is not left behind.
 
+The native shell enforces one controller instance. A later launch reveals and focuses the existing
+window. The Settings dialog exposes a default-off operating-system sign-in launch registration; an
+automatic launch uses one exact internal flag and stays minimized in the system tray. It deliberately
+does not start the sidecar or browser without the user pressing Start. The source-tree Scheduled Task
+and this installed-app setting are alternative deployment modes and must not be combined.
+
 On Windows, the **Personal Cloudflare Tunnel** card manages the optional tunnel without exposing
 configuration or credentials to the WebView. It can install the exact cloudflared winget package,
 verify prerequisites, activate the existing dedicated tunnel with the Access-protected path, and
@@ -58,16 +64,19 @@ The card contains the complete prerequisite and Access-policy walkthrough and op
 setup folder without revealing its path to frontend JavaScript. The Settings dialog supports
 English, Vietnamese, Chinese, Japanese, Korean, Spanish, French, and German. Initial language
 selection uses only the operating-system locale; no IP geolocation or locale network request is
-made. The only persisted WebView preference is the selected language code.
+made. The WebView persists only the selected language code and optional public tunnel hostname;
+sign-in launch state remains in the operating system and no executable path crosses the WebView.
 
 ## Validation
 
 ```powershell
 npm run desktop:check
+npm run desktop:audit
 npx tauri build --no-bundle --config desktop/tauri.conf.json
 ```
 
-The initial build needs network access to download Rust dependencies and a platform-supported Tauri
+The audit command requires the release-pinned `cargo-audit` version documented in
+`docs/releasing.md`. The initial build needs network access to download Rust dependencies and a platform-supported Tauri
 WebView toolchain. Development continues to use Playwright's installed browser. The Windows
 packaging command downloads the one version-matched headed Chromium revision into ignored bundle
 resources; it never copies a personal browser installation or profile. Staging emits a CycloneDX
@@ -80,4 +89,5 @@ broader clean-machine matrix.
 The manual `Desktop install smoke` workflow adds an ephemeral Windows install/uninstall gate without
 publishing its unsigned installer. It installs under a strict runner-temporary root, runs the same
 offline smoke against the installed `sidecar/`, uninstalls with bounded waits, and confirms the
-default uninstaller preserves app-local profile data.
+default uninstaller preserves app-local profile data. It also exercises hidden controller startup,
+single-instance rejection, crash-lock recovery, and removal of the per-user sign-in launch value.

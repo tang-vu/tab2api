@@ -2,6 +2,7 @@
 import { administrationControls, usageTotals, validKeyLabel } from './admin-view.js';
 import { languageOptions, loadLanguage, saveLanguage, translate } from './i18n.js';
 import { readinessPresentation, shouldApplyReadinessResult } from './session-readiness.js';
+import { autostartPresentation, validAutostartStatus } from './startup-controls.js';
 import { tunnelControlState, tunnelOperationDetail } from './tunnel-controls.js';
 import { viewState } from './view-tabs.js';
 
@@ -65,6 +66,8 @@ const elements = {
   bearerDialog: document.querySelector('#bearer-dialog'),
   confirmBearer: document.querySelector('#confirm-bearer'),
   languageSelect: document.querySelector('#language-select'),
+  autostartToggle: document.querySelector('#autostart-toggle'),
+  autostartStatus: document.querySelector('#autostart-status'),
 };
 
 function localSettingsStorage() {
@@ -92,6 +95,9 @@ let pendingRevokeKey;
 let sessionState = 'unavailable';
 let sessionCheckEpoch = 0;
 let sessionCheckRequest;
+let lastAutostartStatus;
+let autostartOperation;
+let autostartFailed = false;
 const t = (key) => translate(language, key);
 
 try {
@@ -130,8 +136,57 @@ function applyLanguage() {
   if (lastApiKeys) renderApiKeys(lastApiKeys);
   if (lastUsage) renderUsage(lastUsage);
   renderSessionReadiness();
+  renderAutostart();
   if (lastServiceStatus) render(lastServiceStatus);
   if (lastTunnelStatus) renderTunnel(lastTunnelStatus);
+}
+
+function renderAutostart() {
+  const presentation = autostartPresentation(
+    lastAutostartStatus,
+    autostartOperation,
+    autostartFailed,
+  );
+  elements.autostartToggle.checked = presentation.checked;
+  elements.autostartToggle.disabled = presentation.disabled;
+  elements.autostartStatus.textContent = t(presentation.labelKey);
+  elements.autostartStatus.dataset.tone = presentation.tone;
+}
+
+async function refreshAutostart() {
+  if (autostartOperation) return;
+  autostartOperation = 'checking';
+  autostartFailed = false;
+  renderAutostart();
+  try {
+    const result = await invoke('autostart_status');
+    if (!validAutostartStatus(result)) throw new Error(t('autostartInvalidResult'));
+    lastAutostartStatus = { enabled: result.enabled };
+  } catch {
+    autostartFailed = true;
+  } finally {
+    autostartOperation = undefined;
+    renderAutostart();
+  }
+}
+
+async function updateAutostart(enabled) {
+  if (autostartOperation || !lastAutostartStatus) return;
+  autostartOperation = enabled ? 'enabling' : 'disabling';
+  autostartFailed = false;
+  renderAutostart();
+  try {
+    const result = await invoke('set_autostart', { enabled });
+    if (!validAutostartStatus(result) || result.enabled !== enabled) {
+      throw new Error(t('autostartInvalidResult'));
+    }
+    lastAutostartStatus = { enabled: result.enabled };
+  } catch {
+    autostartFailed = true;
+  } finally {
+    autostartOperation = undefined;
+    renderAutostart();
+  }
 }
 
 function serviceDetail(status) {
@@ -710,7 +765,13 @@ if (typeof invoke !== 'function') {
   });
   elements.disableTunnel.addEventListener('click', () => performTunnel('disable_tunnel'));
   elements.openTunnelFolder.addEventListener('click', () => performTunnel('open_tunnel_folder'));
-  elements.openSettings.addEventListener('click', () => elements.settingsDialog.showModal());
+  elements.openSettings.addEventListener('click', () => {
+    elements.settingsDialog.showModal();
+    void refreshAutostart();
+  });
+  elements.autostartToggle.addEventListener('change', () => {
+    void updateAutostart(elements.autostartToggle.checked);
+  });
   elements.languageSelect.addEventListener('change', () => {
     language = elements.languageSelect.value;
     saveLanguage(settingsStorage, language);
@@ -731,6 +792,7 @@ if (typeof invoke !== 'function') {
   window.addEventListener('scroll', queueBrowserBounds, { passive: true });
 
   renderAdministrationControls();
+  renderAutostart();
   await Promise.all([refresh(), refreshTunnel()]);
   window.setInterval(refresh, 3000);
   window.setInterval(refreshTunnel, 5000);

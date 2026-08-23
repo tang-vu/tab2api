@@ -160,6 +160,8 @@ The task starts at interactive user logon, runs in the background, and uses a bo
 
 `desktop/` contains a Tauri 2 control app for users who do not want Node.js, Chrome, or Playwright installed separately. Rust owns the native window, tray, app-local paths, and bounded child lifecycle; the packaged Node sidecar retains the tested Fastify/Playwright implementation. ChatGPT opens in the bundled dedicated Chromium window for manual login and is never embedded in the operating-system WebView.
 
+The installed controller is single-instance: opening it again reveals the existing window instead of creating a second controller or sidecar owner. **Settings → Launch at sign-in** is an explicit, default-off native option. It opens the controller minimized in the system tray; it does not silently start the local API or browser. Do not combine this desktop flow with the source-tree Scheduled Task above for the same personal deployment.
+
 On Windows, build an unsigned self-contained preview with:
 
 ```powershell
@@ -173,7 +175,7 @@ The preparation step stages production dependencies, downloads only the Playwrig
 
 Maintainers can manually dispatch the artifact-free `Desktop install smoke` workflow. It builds the unsigned preview on a fresh Windows runner, installs it silently into an isolated temporary directory, repeats the offline packaged smoke from the installed resources, uninstalls it, and verifies that app-local profile data is retained by default. The workflow never uploads or publishes the unsigned installer.
 
-The desktop controller includes localized settings and a complete Cloudflare Tunnel onboarding guide in English, Vietnamese, Chinese, Japanese, Korean, Spanish, French, and German. It chooses the initial language from the operating-system locale locally—never from IP geolocation—and lets the user change the saved language at any time.
+The desktop controller includes localized settings and a complete Cloudflare Tunnel onboarding guide in English, Vietnamese, Chinese, Japanese, Korean, Spanish, French, and German. It chooses the initial language from the operating-system locale locally—never from IP geolocation—and lets the user change the saved language at any time. Only the language code and optional public tunnel hostname are kept in WebView settings; the sign-in launch registration is owned by the operating system.
 
 ### Per-device keys, usage, and private remote access
 

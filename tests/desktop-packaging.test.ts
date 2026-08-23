@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const scripts = new URL('../scripts/windows/', import.meta.url);
 const installWorkflow = new URL('../.github/workflows/desktop-install-smoke.yml', import.meta.url);
+const desktopWorkflow = new URL('../.github/workflows/desktop.yml', import.meta.url);
 
 describe('Windows desktop packaging contract', () => {
   it('builds a complete hashed inventory and production dependency SBOM', async () => {
@@ -51,7 +52,11 @@ describe('Windows desktop packaging contract', () => {
     expect(smoke).toContain('$read.Wait($TimeoutMilliseconds)');
     expect(smoke).toContain('$process.StandardOutput.ReadToEndAsync()');
     expect(smoke).toContain('$process.WaitForExit(60000)');
-    expect(smoke).toContain('$process.WaitForExit(15000)');
+    expect(smoke).toContain('-DisableKeepAlive');
+    expect(smoke).toContain('$process.StandardInput.Close()');
+    expect(smoke).toContain("-ExpectedEvent 'stopping'");
+    expect(smoke).toContain("-ExpectedEvent 'stopped' -TimeoutMilliseconds 30000");
+    expect(smoke).toContain('$process.WaitForExit(5000)');
     expect(smoke).toMatch(/finally \{[\s\S]*\$process\.Kill\(\)[\s\S]*\$process\.WaitForExit\(\)/);
     expect(smoke).toMatch(
       /finally \{[\s\S]*Remove-Item -LiteralPath \$smokeDirectory -Recurse -Force/,
@@ -66,7 +71,15 @@ describe('Windows desktop packaging contract', () => {
     expect(installerSmoke).toContain("@('/S', '/NS', \"/D=$installDirectoryPath\")");
     expect(installerSmoke).toContain('$process.WaitForExit($TimeoutMilliseconds)');
     expect(installerSmoke).toContain('-SidecarDirectory $sidecar');
-    expect(installerSmoke).toContain('@(\'/S\', "_?=$installDirectoryPath")');
+    expect(installerSmoke).toContain('[switch]$ExerciseDesktopLifecycle');
+    expect(installerSmoke).toContain("@('--tab2api-autostart')");
+    expect(installerSmoke).toContain('did not enforce one live instance');
+    expect(installerSmoke).toContain('single-instance lock did not recover');
+    expect(installerSmoke).toContain("'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'");
+    expect(installerSmoke).toContain('left the tab2api sign-in launch registration behind');
+    expect(installerSmoke).toContain("-Arguments @('/S')");
+    expect(installerSmoke).toContain('Wait-PathRemoved -LiteralPath $installDirectoryPath');
+    expect(installerSmoke).not.toContain('_?=');
     expect(installerSmoke).toContain('removed app-local data without explicit deletion consent');
     expect(installerSmoke).toMatch(
       /finally \{[\s\S]*Remove-Item -LiteralPath \$installDirectoryPath -Recurse -Force/,
@@ -83,8 +96,18 @@ describe('Windows desktop packaging contract', () => {
     expect(workflow).toContain('timeout-minutes: 60');
     expect(workflow).toContain('npm run desktop:build:windows');
     expect(workflow).toContain('smoke-desktop-installer.ps1');
+    expect(workflow).toContain('-ExerciseDesktopLifecycle');
     expect(workflow).not.toMatch(
       /actions\/upload-artifact|gh\s+release|action-gh-release|chatgpt\.com/i,
     );
+  });
+
+  it('audits locked Rust dependencies without granting repository write access', async () => {
+    const workflow = await readFile(desktopWorkflow, 'utf8');
+
+    expect(workflow).toContain('permissions:\n  contents: read');
+    expect(workflow).toContain('cargo install cargo-audit --version 0.22.2 --locked');
+    expect(workflow).toContain('npm run desktop:audit');
+    expect(workflow).not.toMatch(/checks:\s*write|issues:\s*write/);
   });
 });

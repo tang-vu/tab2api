@@ -6,6 +6,12 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Added
 
+- Native desktop single-instance enforcement now redirects subsequent launches to the existing
+  controller. Settings adds an explicit, default-off sign-in launch toggle that starts only the
+  controller minimized in the system tray; the local API and dedicated browser remain user-started.
+- The clean-install workflow now exercises hidden desktop startup, rejects a second live instance,
+  proves the single-instance lock recovers after a forced exit, and verifies NSIS removes the
+  per-user sign-in launch registration while retaining app-local profile data.
 - A manual, artifact-free Windows clean-install workflow that builds the unsigned NSIS preview,
   installs it silently in an isolated runner directory, verifies the installed sidecar offline,
   uninstalls it, and proves app-local profile data is retained by default.
@@ -26,6 +32,15 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Fixed
 
+- Raise the desktop minimum to Rust 1.88 and refresh the locked plist/XML/time dependency chain to
+  versions that address the current RustSec denial-of-service advisories.
+- Exercise the normal NSIS temporary-copy uninstall path and wait for the isolated install directory
+  to disappear, so the uninstaller can remove its own executable instead of leaving a false residue.
+- Make packaged shutdown verification close its HTTP keep-alive and parent input, require typed
+  `stopping` and `stopped` lifecycle events, and bound the final process exit separately so cold
+  Windows runners cannot turn a retained probe connection into a false hang.
+- Hash staged and installed desktop resources through the PowerShell-compatible .NET SHA-256 API,
+  including runners where `Get-FileHash` is unavailable.
 - Keep Windows-only tunnel process imports and activation arguments behind the Windows compile gate,
   so desktop Clippy remains warning-free on Linux and macOS CI.
 - Make sidecar process tests tolerate normal TypeScript-loader startup variance while retaining a
@@ -47,6 +62,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Security
 
+- Desktop CI installs a pinned `cargo-audit` release on its Linux leg and rejects vulnerable locked
+  Rust dependencies without expanding repository permissions beyond read-only access.
 - Desktop administration calls only the authenticated loopback API. The administrator key is read
   inside the native layer for the bounded request and is never returned to the WebView; only a newly
   created revocable client key crosses the bridge once and is cleared from the dialog on close.
