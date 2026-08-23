@@ -4,6 +4,24 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Get-Sha256Hex {
+    param([Parameter(Mandatory = $true)] [string]$LiteralPath)
+
+    $stream = [IO.File]::OpenRead($LiteralPath)
+    try {
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        try {
+            return [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 function Read-LifecycleEvent {
     param(
         [Parameter(Mandatory = $true)] [IO.StreamReader]$Reader,
@@ -73,7 +91,7 @@ function Assert-BundleIntegrity {
         if ([long]$entry.bytes -ne $file.Length) {
             throw 'Packaged sidecar integrity check found an unexpected file size.'
         }
-        $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
+        $actualHash = Get-Sha256Hex -LiteralPath $candidate
         if ($actualHash -ne [string]$entry.sha256) {
             throw 'Packaged sidecar integrity check found an unexpected file hash.'
         }

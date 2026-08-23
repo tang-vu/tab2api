@@ -1,5 +1,23 @@
 $ErrorActionPreference = 'Stop'
 
+function Get-Sha256Hex {
+    param([Parameter(Mandatory = $true)] [string]$LiteralPath)
+
+    $stream = [IO.File]::OpenRead($LiteralPath)
+    try {
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        try {
+            return [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 $repository = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $desktopDirectory = Join-Path $repository 'desktop'
 $generatedDirectory = Join-Path $desktopDirectory 'generated'
@@ -113,7 +131,7 @@ try {
             [ordered]@{
                 path = $_.FullName.Substring($stagingDirectory.Length + 1).Replace('\', '/')
                 bytes = [long]$_.Length
-                sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                sha256 = Get-Sha256Hex -LiteralPath $_.FullName
             }
         })
     if ($inventory.Count -lt 10) {

@@ -21,7 +21,8 @@ describe('Windows desktop packaging contract', () => {
     expect(prepare).toContain('Remove-Item -LiteralPath $releaseSidecarDirectory -Recurse -Force');
     expect(prepare).toContain('must not contain Playwright headless-shell binaries');
     expect(prepare).toMatch(/Get-ChildItem[^\n]+-File -Recurse/);
-    expect(prepare).toMatch(/Get-FileHash[^\n]+-Algorithm SHA256/);
+    expect(prepare).toContain('[Security.Cryptography.SHA256]::Create()');
+    expect(prepare).toContain('Get-Sha256Hex -LiteralPath $_.FullName');
     expect(prepare).toContain('format = 2');
     expect(prepare).toContain("sbom = 'sidecar-sbom.cdx.json'");
     expect(prepare).toContain('files = $inventory');
@@ -34,6 +35,8 @@ describe('Windows desktop packaging contract', () => {
     expect(smoke).toContain('integrity manifest contains an invalid or duplicate path');
     expect(smoke).toContain('integrity check found an unexpected file size');
     expect(smoke).toContain('integrity check found an unexpected file hash');
+    expect(smoke).toContain('[Security.Cryptography.SHA256]::Create()');
+    expect(smoke).toContain('Get-Sha256Hex -LiteralPath $candidate');
     expect(smoke).toContain('contains files absent from its integrity manifest');
     expect(smoke).toContain("$start.Arguments = 'dist/cli/index.js smoke'");
     expect(smoke).toContain('[string]$SidecarDirectory');
