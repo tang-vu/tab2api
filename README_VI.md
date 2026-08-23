@@ -72,7 +72,7 @@ npm run desktop:build:windows
 npm run desktop:smoke:windows
 ```
 
-Pipeline chỉ stage production dependencies và tải đúng Chromium headed revision khớp Playwright. Resource sinh ra, installer, runtime và profile đều được gitignore. File trong `desktop/target/release/bundle/nsis/` là developer preview; bản public vẫn cần code signing và clean-machine install test. Xem [hướng dẫn desktop](docs/desktop.md).
+Pipeline chỉ stage production dependencies, tải đúng Chromium headed revision khớp Playwright, sinh CycloneDX SBOM cho dependency production và ghi SHA-256 cùng kích thước của mọi file sidecar. Packaged smoke xác minh inventory đó, chạy một request fake-adapter có xác thực ở chế độ offline, rồi kiểm tra loopback health và graceful shutdown. Resource sinh ra, installer, runtime và profile đều được gitignore. File trong `desktop/target/release/bundle/nsis/` vẫn là developer preview chưa ký; inventory nhúng không thay thế code signing, checksum phát hành độc lập, provenance hay clean-machine install test. Xem [hướng dẫn desktop](docs/desktop.md).
 
 App desktop có Settings đa ngôn ngữ và hướng dẫn Cloudflare Tunnel đầy đủ bằng tiếng Anh, Việt, Trung, Nhật, Hàn, Tây Ban Nha, Pháp và Đức. Lần chạy đầu app chọn ngôn ngữ hoàn toàn cục bộ theo locale hệ điều hành—không định vị bằng IP—và người dùng có thể đổi ngôn ngữ đã lưu bất cứ lúc nào.
 

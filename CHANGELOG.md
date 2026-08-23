@@ -6,6 +6,11 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Added
 
+- Windows desktop staging now emits a CycloneDX SBOM for bundled production npm dependencies and a
+  SHA-256/size inventory covering every sidecar resource, and clears stale Tauri resource copies
+  before packaging. The packaged smoke verifies that inventory before executing anything, runs the
+  compiled fake-adapter authenticated request with remote proxies forced closed, then checks loopback
+  health and graceful sidecar shutdown.
 - A desktop ChatGPT session check that clearly separates loopback process health from authenticated
   UI readiness, reports every typed `/readyz` state with localized guidance, and stays bounded to 45
   seconds without exposing the administrator key to the WebView.
@@ -18,6 +23,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Fixed
 
+- Keep Windows-only tunnel process imports and activation arguments behind the Windows compile gate,
+  so desktop Clippy remains warning-free on Linux and macOS CI.
 - Make sidecar process tests tolerate normal TypeScript-loader startup variance while retaining a
   strict bounded hang detector, avoiding false failures when the full suite runs concurrently.
 - Hide docked Chromium while API Docs is selected, then restore and resize it when returning to the

@@ -169,7 +169,7 @@ npm run desktop:build:windows
 npm run desktop:smoke:windows
 ```
 
-The preparation step stages production dependencies and downloads only the Playwright-matched headed Chromium revision. Generated resources, installers, runtime data, and profiles are ignored by Git. The output under `desktop/target/release/bundle/nsis/` is a developer preview; public releases still require code signing and clean-machine installation tests. See [the desktop guide](docs/desktop.md).
+The preparation step stages production dependencies, downloads only the Playwright-matched headed Chromium revision, emits a production-dependency CycloneDX SBOM, and records SHA-256 plus size for every staged sidecar file. The packaged smoke verifies that inventory, runs an authenticated fake-adapter request offline, then checks loopback health and graceful shutdown. Generated resources, installers, runtime data, and profiles are ignored by Git. The output under `desktop/target/release/bundle/nsis/` is still an unsigned developer preview; the embedded inventory detects staging drift but is not a substitute for code signing, externally published checksums, provenance, or clean-machine installation tests. See [the desktop guide](docs/desktop.md).
 
 The desktop controller includes localized settings and a complete Cloudflare Tunnel onboarding guide in English, Vietnamese, Chinese, Japanese, Korean, Spanish, French, and German. It chooses the initial language from the operating-system locale locally—never from IP geolocation—and lets the user change the saved language at any time.
 

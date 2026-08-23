@@ -13,6 +13,8 @@ Only maintainers may publish a release. Releases must come from a clean, reviewe
 
 ## Desktop binary gates
 
-Do not attach desktop installers until the target platform pipeline provides code signing, clean-machine install/uninstall tests, embedded-component checksums, an SBOM, provenance, and complete third-party notices. Build each platform artifact on that platform and keep signing credentials in an environment-protected release job. Pull-request CI must never receive signing or publishing credentials.
+Windows staging already creates a production-Node CycloneDX SBOM and a complete SHA-256/size inventory of the bundled sidecar, and `desktop:smoke:windows` verifies both before running its offline fake-adapter and lifecycle checks. These are staging-integrity evidence, not artifact authenticity or a full application SBOM.
+
+Do not attach desktop installers until the target platform pipeline also provides code signing, externally published installer/component checksums, clean-machine install/uninstall tests, a full application SBOM covering Rust/native components, provenance, and complete third-party notices. Build each platform artifact on that platform and keep signing credentials in an environment-protected release job. Pull-request CI must never receive signing or publishing credentials.
 
 If any gate fails after a tag is published, do not silently replace public artifacts. Document the issue, revoke or deprecate the affected release when appropriate, fix it on `main`, and publish a new version.

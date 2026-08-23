@@ -4,7 +4,7 @@
 
 The `desktop/` directory is a Tauri 2 developer preview, not a signed end-user release. It provides a native window and system tray for status, start, stop, and manual login. The existing TypeScript service and Playwright adapter remain the source of truth for the API and browser automation.
 
-Development mode uses the repository Node.js runtime and Playwright installation. The Windows packaging pipeline is self-contained: it stages the current Node runtime, audited production npm dependencies, compiled service, and only the headed Chromium revision matched to Playwright, then creates an unsigned NSIS installer. CI compiles with `--no-bundle` and deliberately uploads nothing; signing and clean-machine installer validation remain release gates.
+Development mode uses the repository Node.js runtime and Playwright installation. The Windows packaging pipeline is self-contained: it stages the current Node runtime, audited production npm dependencies, compiled service, and only the headed Chromium revision matched to Playwright, then creates an unsigned NSIS installer. Staging also creates a CycloneDX SBOM for the production Node dependency graph and a SHA-256/size inventory for every bundled sidecar file. CI compiles with `--no-bundle` and deliberately uploads nothing; signing and clean-machine installer validation remain release gates.
 
 ## Architecture
 
@@ -84,7 +84,7 @@ npm run desktop:build:windows
 npm run desktop:smoke:windows
 ```
 
-`desktop:prepare:windows` creates the ignored `desktop/generated/sidecar/` resource tree from a clean production dependency install and uses Playwright's `--no-shell` option because the application is always headed. Tauri bundles that tree under `sidecar/`; the Rust process never accepts a binary path from the WebView. The generated installer is under `desktop/target/release/bundle/nsis/` and must not be committed.
+`desktop:prepare:windows` creates the ignored `desktop/generated/sidecar/` resource tree from a clean production dependency install and uses Playwright's `--no-shell` option because the application is always headed. It requires the Node runtime license, retains project notices and Chromium's bundled attribution files, writes `sidecar-sbom.cdx.json`, then writes `bundle-manifest.json` with the byte length and SHA-256 of every other staged file. Before Tauri runs, preparation removes the previous `target/release/sidecar` copy because Tauri overlays directory resources and would otherwise retain obsolete files. Tauri bundles the clean tree under `sidecar/`; the Rust process never accepts a binary path from the WebView. `desktop:smoke:windows` first rejects missing, extra, resized, rehashed, duplicate, rooted, or traversal paths and validates the SBOM. It then runs the compiled CLI fake provider through authentication, validation, mapping, and the FIFO queue with external proxy variables pointed at a closed loopback port, followed by the real packaged sidecar's loopback liveness and graceful-shutdown lifecycle. All child waits are bounded and the ignored smoke runtime is removed in `finally`. The generated installer is under `desktop/target/release/bundle/nsis/` and must not be committed.
 
 The implemented Windows staging layout contains all executable dependencies needed at runtime. Other platforms must implement the equivalent native staging before distributing installers:
 
@@ -96,7 +96,7 @@ The implemented Windows staging layout contains all executable dependencies need
 6. Include third-party notices and licenses for Node.js, Chromium, Playwright, Rust crates, and JavaScript dependencies.
 7. Produce installers on native, pinned build images. Code-sign Windows packages and sign/notarize macOS packages before calling them releases.
 
-Bundling Chromium makes the download much larger and transfers browser patch responsibility to tab2api maintainers. A release policy must define how quickly a Playwright/Chromium security update is rebuilt and shipped. The application must never silently fall back to a personal system browser profile.
+Bundling Chromium makes the download much larger and transfers browser patch responsibility to tab2api maintainers. A release policy must define how quickly a Playwright/Chromium security update is rebuilt and shipped. The embedded inventory detects accidental staging drift but provides no authenticity while the installer is unsigned; an official release still needs signed artifacts, externally published checksums, full-application SBOM/provenance, and clean-machine tests. The application must never silently fall back to a personal system browser profile.
 
 Tauri supports separating compilation from bundling with `tauri build --no-bundle`; see the [official distribution guide](https://v2.tauri.app/distribute/). Installer generation should remain a separate, protected release workflow.
 

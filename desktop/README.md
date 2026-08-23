@@ -32,9 +32,10 @@ settings are delegated to the frontend. On Windows, the CDP endpoint is selected
 passed only between native Rust and the Node child. Runtime data and the dedicated profile live in the OS
 app-local data directory, outside installation resources.
 
-The UI never receives an API token, CDP endpoint, PID/window handle, browser profile contents,
-cookies, authorization headers, or sidecar output. It probes only the public local `/healthz`
-endpoint. Login can only open while the
+The UI never receives an administrator token, CDP endpoint, PID/window handle, browser profile contents,
+cookies, authorization headers, or sidecar output. Periodic status probes use only the public local
+`/healthz` endpoint; a separate serialized, 45-second-bounded native command calls authenticated
+`/readyz` and returns only an allowlisted session state. Login can only open while the
 service process is stopped, preventing two processes from concurrently using the profile. The shell
 tracks the manual Chromium child until it exits and never falls back to a system browser or personal
 profile. During service operation, the verified owned Chromium window is best-effort made a direct
@@ -69,4 +70,8 @@ npx tauri build --no-bundle --config desktop/tauri.conf.json
 The initial build needs network access to download Rust dependencies and a platform-supported Tauri
 WebView toolchain. Development continues to use Playwright's installed browser. The Windows
 packaging command downloads the one version-matched headed Chromium revision into ignored bundle
-resources; it never copies a personal browser installation or profile.
+resources; it never copies a personal browser installation or profile. Staging emits a CycloneDX
+SBOM for production Node dependencies and a SHA-256/size inventory for every sidecar file. The
+packaged smoke verifies both before running the compiled fake-adapter request offline and checking
+the real sidecar's loopback health and graceful shutdown. This integrity inventory does not replace
+signing, externally published installer checksums, full native SBOM/provenance, or clean-machine tests.
