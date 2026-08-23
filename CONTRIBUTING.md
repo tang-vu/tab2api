@@ -26,6 +26,11 @@ npm audit --audit-level=high
 
 Use a focused branch and keep commits reviewable. Link a relevant issue when one exists. Maintainers may close proposals that conflict with the single-owner, loopback-only product boundary even when the implementation is technically sound.
 
+Pin every third-party GitHub Actions or reusable-workflow `uses` reference to its full immutable
+commit SHA and retain a human-readable version comment. Repository-local actions may use a
+normalized `./` path; container actions must use a `sha256` digest. `npm run check` enforces this
+boundary offline.
+
 Review `git status` and the diff for secrets/runtime files. Explain behavior, security consequences, tests, and documentation changes in the PR. Manual E2E is optional and must be explicitly enabled against your own session; never ask maintainers to share credentials or profiles.
 
 ## Reporting security issues

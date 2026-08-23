@@ -24,6 +24,9 @@ All notable user-facing changes are documented here. This project follows semant
 - Native desktop administration now performs a separate just-in-time unauthenticated identity probe
   before reading or sending the administrator key, shares one deadline across both connections, and
   rejects oversized or contract-invalid responses without exposing credentials or response bodies.
+- Every third-party GitHub Actions reference is pinned to an immutable commit SHA, with an offline
+  repository check that rejects mutable tags, branches, missing exact-version annotations, unpinned
+  container images, and malformed `uses` entries.
 
 ## [0.2.0] - 2026-08-23
 
