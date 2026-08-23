@@ -81,9 +81,16 @@ describe('Windows desktop packaging contract', () => {
     expect(installerSmoke).toContain('did not enforce one live instance');
     expect(installerSmoke).toContain('single-instance lock did not recover');
     expect(installerSmoke).toContain("'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'");
-    expect(installerSmoke).toContain('left the tab2api sign-in launch registration behind');
     expect(installerSmoke).toContain("-Arguments @('/S')");
     expect(installerSmoke).toContain('Wait-PathRemoved -LiteralPath $installDirectoryPath');
+    expect(installerSmoke).toContain('function Wait-OwnedRegistryValueRemoved');
+    expect(installerSmoke).toContain(
+      'Wait-OwnedRegistryValueRemoved -LiteralPath $startupRegistryPath',
+    );
+    expect(installerSmoke).toContain(
+      "-TimeoutMilliseconds 30000 -Description 'Silent desktop sign-in cleanup'",
+    );
+    expect(installerSmoke).toContain('sign-in launch value that changed during installer smoke');
     expect(installerSmoke).not.toContain('_?=');
     expect(installerSmoke).toContain('removed app-local data without explicit deletion consent');
     expect(installerSmoke).toMatch(

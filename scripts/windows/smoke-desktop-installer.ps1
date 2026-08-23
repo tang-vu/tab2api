@@ -63,6 +63,30 @@ function Wait-PathRemoved {
     }
 }
 
+function Wait-OwnedRegistryValueRemoved {
+    param(
+        [Parameter(Mandatory = $true)] [string]$LiteralPath,
+        [Parameter(Mandatory = $true)] [string]$Name,
+        [Parameter(Mandatory = $true)] [string]$ExpectedValue,
+        [Parameter(Mandatory = $true)] [int]$TimeoutMilliseconds,
+        [Parameter(Mandatory = $true)] [string]$Description
+    )
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+    do {
+        $current = Get-ItemProperty -LiteralPath $LiteralPath -Name $Name -ErrorAction SilentlyContinue
+        if ($null -eq $current) {
+            return
+        }
+        if ([string]$current.$Name -ne $ExpectedValue) {
+            throw "Refusing to wait on a sign-in launch value that changed during installer smoke."
+        }
+        Start-Sleep -Milliseconds 200
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    throw "$Description exceeded its bounded safety window."
+}
+
 function Stop-TestController {
     param([Parameter(Mandatory = $true)] [Diagnostics.Process]$Process)
 
@@ -184,8 +208,8 @@ try {
     }
 
     # Normal NSIS uninstall copies itself to a temporary directory so it can remove the original.
-    # The launcher can exit before that temporary child, so completion is the bounded disappearance
-    # of the already validated isolated installation directory.
+    # The launcher can exit before that temporary child. Directory removal and registry cleanup can
+    # complete in either order, so both independently owned effects receive bounded waits.
     Invoke-BoundedProcess -FilePath $uninstaller -Arguments @('/S') -TimeoutMilliseconds 60000 -Description 'Silent desktop uninstallation launcher'
     Wait-PathRemoved -LiteralPath $installDirectoryPath -TimeoutMilliseconds 300000 -Description 'Silent desktop uninstallation'
     $uninstalled = $true
@@ -193,8 +217,8 @@ try {
     if (-not (Test-Path -LiteralPath $profileProbeFile -PathType Leaf)) {
         throw 'Silent uninstallation removed app-local data without explicit deletion consent.'
     }
-    if ($startupSeeded -and $null -ne (Get-ItemProperty -LiteralPath $startupRegistryPath -Name $startupValueName -ErrorAction SilentlyContinue)) {
-        throw 'Silent uninstallation left the tab2api sign-in launch registration behind.'
+    if ($startupSeeded) {
+        Wait-OwnedRegistryValueRemoved -LiteralPath $startupRegistryPath -Name $startupValueName -ExpectedValue $startupValue -TimeoutMilliseconds 30000 -Description 'Silent desktop sign-in cleanup'
     }
 
     Write-Output 'Packaged desktop installer smoke PASS: silent install, offline sidecar, uninstall cleanup, and profile retention verified.'

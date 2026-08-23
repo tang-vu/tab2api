@@ -39,7 +39,8 @@ All notable user-facing changes are documented here. This project follows semant
 - Raise the desktop minimum to Rust 1.88 and refresh the locked plist/XML/time dependency chain to
   versions that address the current RustSec denial-of-service advisories.
 - Exercise the normal NSIS temporary-copy uninstall path and wait for the isolated install directory
-  to disappear, so the uninstaller can remove its own executable instead of leaving a false residue.
+  and its independently completed sign-in registry cleanup, so the uninstaller can remove its own
+  executable without turning normal temporary-child timing into a false failure.
 - Make packaged shutdown verification close its HTTP keep-alive and parent input, require typed
   `stopping` and `stopped` lifecycle events, and bound the final process exit separately so cold
   Windows runners cannot turn a retained probe connection into a false hang.
