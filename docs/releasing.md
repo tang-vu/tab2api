@@ -16,6 +16,25 @@ or a trusted publisher is not configured, publish only the GitHub source prerele
 not published. Never weaken authentication or use an unprotected automation token to make the two
 channels appear synchronized.
 
+Pushing an annotated semantic-version tag also runs `Source package provenance`. The workflow
+checks that the tag is reachable from `main`, re-runs the complete source and desktop verification
+set, validates the actual `npm pack` file list against a narrow allowlist, generates a production
+dependency CycloneDX SBOM and SHA-256 checksums, and creates GitHub provenance plus SBOM
+attestations. It retains the candidate for 14 days as an authenticated workflow artifact. The job
+has no `contents: write` or npm credential, so it cannot create a GitHub Release, publish to npm, or
+attach a desktop binary. An attested candidate is evidence about its origin, not permission to
+publish it and not proof that it is vulnerability-free.
+
+After downloading a candidate, verify its provenance before inspection:
+
+```bash
+gh attestation verify tab2api-X.Y.Z.tgz -R tang-vu/tab2api
+sha256sum --check SHA256SUMS
+```
+
+`npm run release:verify -- --tag vX.Y.Z` performs the local version/changelog/package-boundary
+checks. Supplying `--pack-json <path>` additionally checks an `npm pack --json` result.
+
 ## Desktop binary gates
 
 Windows staging already creates a production-Node CycloneDX SBOM and a complete SHA-256/size inventory of the bundled sidecar, and `desktop:smoke:windows` verifies both before running its offline fake-adapter and lifecycle checks. These are staging-integrity evidence, not artifact authenticity or a full application SBOM.

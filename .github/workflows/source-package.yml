@@ -1,0 +1,147 @@
+name: Source package provenance
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated semantic-version tag to rebuild
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-package-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    name: Verify and attest npm candidate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    env:
+      CARGO_TERM_COLOR: always
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      TAB2API_API_TOKEN: ci-only-token-with-at-least-24-characters
+    steps:
+      - name: Check out the tagged source without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: Verify the annotated tag belongs to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo 'Release tag must be a canonical semantic version.' >&2
+            exit 1
+          fi
+          if [[ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" != 'tag' ]]; then
+            echo 'Release candidates require an annotated tag.' >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tag_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+          if [[ "$tag_commit" != "$(git rev-parse HEAD)" ]]; then
+            echo 'The checked-out commit does not match the requested tag.' >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo 'The release tag is not reachable from origin/main.' >&2
+            exit 1
+          fi
+
+      - name: Set up pinned Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.13.1
+          cache: npm
+
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install pinned Rust verification tools
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup component add rustfmt clippy
+          cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Install exact Node dependencies
+        run: npm ci
+
+      - name: Verify synchronized release metadata
+        run: npm run release:verify -- --tag "$RELEASE_TAG"
+
+      - name: Run source and desktop gates
+        run: |
+          npm run check
+          npm test
+          npm run build
+          npm run smoke
+          npm audit --audit-level=high
+          npm run desktop:check
+          npm run desktop:audit
+
+      - name: Pack and inspect the npm candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --ignore-scripts --json > package-result.json
+          npm run release:verify -- --tag "$RELEASE_TAG" --pack-json package-result.json
+
+      - name: Generate the package SBOM and checksums
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          package_path="release-candidate/tab2api-${version}.tgz"
+          sbom_path="release-candidate/tab2api-${version}.sbom.cdx.json"
+          checksums_path='release-candidate/SHA256SUMS'
+          mkdir -- 'release-candidate'
+          mv -- "tab2api-${version}.tgz" "$package_path"
+          npm sbom --omit=dev --package-lock-only --sbom-format cyclonedx > "$sbom_path"
+          sha256sum -- "$package_path" "$sbom_path" > "$checksums_path"
+          echo "package=$package_path" >> "$GITHUB_OUTPUT"
+          echo "sbom=$sbom_path" >> "$GITHUB_OUTPUT"
+          echo "checksums=$checksums_path" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=tab2api-${version}-npm-candidate" >> "$GITHUB_OUTPUT"
+
+      - name: Attest candidate provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: ${{ steps.candidate.outputs.checksums }}
+
+      - name: Attest the production dependency SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.candidate.outputs.package }}
+          sbom-path: ${{ steps.candidate.outputs.sbom }}
+
+      - name: Retain the verified candidate temporarily
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.candidate.outputs.artifact_name }}
+          path: release-candidate/
+          if-no-files-found: error
+          retention-days: 14

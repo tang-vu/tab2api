@@ -4,6 +4,12 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+### Added
+
+- A tag-only source-package workflow now re-runs the complete release gates, rejects unreviewed npm
+  package contents, emits a production CycloneDX SBOM and checksums, and creates GitHub build and
+  SBOM attestations without receiving npm or GitHub release-publishing credentials.
+
 ## [0.2.0] - 2026-08-23
 
 ### Added
