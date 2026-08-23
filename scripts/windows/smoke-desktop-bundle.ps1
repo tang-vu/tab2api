@@ -49,6 +49,20 @@ function Read-LifecycleEvent {
     return $event
 }
 
+function Write-LifecycleCommand {
+    param(
+        [Parameter(Mandatory = $true)] [Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)] [ValidateSet('status', 'shutdown')] [string]$Command
+    )
+
+    # Process.StandardInput otherwise inherits a runner-dependent text encoding. Write the
+    # JSON protocol as explicit BOM-free UTF-8 bytes so the first command cannot be mistaken
+    # for malformed JSON on a clean Windows host with a different console code page.
+    $payload = [Text.UTF8Encoding]::new($false).GetBytes('{"command":"' + $Command + '"}' + "`n")
+    $Process.StandardInput.BaseStream.Write($payload, 0, $payload.Length)
+    $Process.StandardInput.BaseStream.Flush()
+}
+
 function Assert-BundleIntegrity {
     param([Parameter(Mandatory = $true)] [string]$BundleDirectory)
 
@@ -240,8 +254,7 @@ try {
         if ($health.status -ne 'ok' -or $health.service -ne 'tab2api') {
             throw 'The packaged sidecar returned an unexpected health response.'
         }
-        $process.StandardInput.WriteLine('{"command":"shutdown"}')
-        $process.StandardInput.Flush()
+        Write-LifecycleCommand -Process $process -Command 'shutdown'
         $process.StandardInput.Close()
         [void](Read-LifecycleEvent -Reader $process.StandardOutput -ExpectedEvent 'stopping')
         [void](Read-LifecycleEvent -Reader $process.StandardOutput -ExpectedEvent 'stopped' -TimeoutMilliseconds 30000)

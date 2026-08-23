@@ -53,6 +53,10 @@ describe('Windows desktop packaging contract', () => {
     expect(smoke).toContain('$process.StandardOutput.ReadToEndAsync()');
     expect(smoke).toContain('$process.WaitForExit(60000)');
     expect(smoke).toContain('-DisableKeepAlive');
+    expect(smoke).toContain("Write-LifecycleCommand -Process $process -Command 'shutdown'");
+    expect(smoke).toContain(
+      '$Process.StandardInput.BaseStream.Write($payload, 0, $payload.Length)',
+    );
     expect(smoke).toContain('$process.StandardInput.Close()');
     expect(smoke).toContain("-ExpectedEvent 'stopping'");
     expect(smoke).toContain("-ExpectedEvent 'stopped' -TimeoutMilliseconds 30000");
