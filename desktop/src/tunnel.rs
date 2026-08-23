@@ -157,7 +157,7 @@ impl TunnelManager {
         #[cfg(not(windows))]
         {
             let _ = (bearer_only, hostname);
-            return Err("Cloudflare Tunnel setup is currently available only on Windows".into());
+            Err("Cloudflare Tunnel setup is currently available only on Windows".into())
         }
 
         #[cfg(windows)]
