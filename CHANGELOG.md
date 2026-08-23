@@ -66,6 +66,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Security
 
+- Update Fastify and `@fastify/multipart` to their current upstream security releases; refresh the
+  compatible ESLint and Vitest patch/minor toolchain at the same time.
 - Runtime/profile/artifact paths are now checked against their canonical filesystem targets before
   creation and again before browser or diagnostic writes. Directory links/reparse points, private
   file symlinks or hard links, default browser profile component paths, and out-of-data escapes fail

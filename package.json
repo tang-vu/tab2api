@@ -80,9 +80,9 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@fastify/multipart": "^9.4.0",
+    "@fastify/multipart": "^10.1.1",
     "dotenv": "^17.2.1",
-    "fastify": "^5.5.0",
+    "fastify": "^5.12.1",
     "pino": "^9.9.0",
     "playwright": "^1.55.0",
     "zod": "^4.1.5"
@@ -91,7 +91,7 @@
     "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^24.3.0",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.11.0",
     "linkedom": "^0.18.12",
@@ -99,6 +99,6 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.67.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
