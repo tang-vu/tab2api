@@ -1,36 +1,69 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, open } from 'node:fs/promises';
 import path from 'node:path';
+import { AppError } from '../errors.js';
+import { assertSafePrivateFile } from './paths.js';
+import { hardenPrivateDirectoryPermissions, readPrivateTextFile } from './private-files.js';
 
 const TOKEN_BYTES = 32;
+const MAX_TOKEN_FILE_BYTES = 1_024;
+const SAFE_TOKEN = /^[\x21-\x7e]{24,512}$/;
+
+function storageUnavailable(): AppError {
+  return new AppError('storage_unavailable', 'The local API token could not be stored safely.');
+}
+
+function parseStoredToken(contents: string): string | undefined {
+  const token = contents.endsWith('\r\n')
+    ? contents.slice(0, -2)
+    : contents.endsWith('\n')
+      ? contents.slice(0, -1)
+      : contents;
+  return SAFE_TOKEN.test(token) ? token : undefined;
+}
 
 export async function loadOrCreateToken(dataDir: string, configured?: string): Promise<string> {
   if (configured !== undefined) {
-    if (configured.length < 24)
-      throw new Error('TAB2API_API_TOKEN must contain at least 24 characters.');
+    if (!SAFE_TOKEN.test(configured))
+      throw new Error('TAB2API_API_TOKEN must contain 24-512 visible ASCII characters.');
     return configured;
   }
-  await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const tokenFile = path.join(dataDir, 'api-token');
+  await assertSafePrivateFile(dataDir, tokenFile);
   try {
-    const existing = (await readFile(tokenFile, 'utf8')).trim();
-    if (existing.length >= 24) {
-      await chmod(tokenFile, 0o600).catch(() => undefined);
-      return existing;
-    }
-  } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    await mkdir(dataDir, { recursive: true, mode: 0o700 });
+  } catch {
+    throw storageUnavailable();
+  }
+  await hardenPrivateDirectoryPermissions(dataDir);
+  await assertSafePrivateFile(dataDir, tokenFile);
+  const existingFile = await readPrivateTextFile(dataDir, tokenFile, MAX_TOKEN_FILE_BYTES);
+  if (existingFile !== undefined) {
+    const existing = parseStoredToken(existingFile);
+    if (existing !== undefined) return existing;
+    throw new AppError('invalid_request', 'The local API token file is invalid.');
   }
   const token = randomBytes(TOKEN_BYTES).toString('base64url');
   try {
-    await writeFile(tokenFile, `${token}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    const handle = await open(tokenFile, 'wx', 0o600);
+    try {
+      await handle.writeFile(`${token}\n`, { encoding: 'utf8' });
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await assertSafePrivateFile(dataDir, tokenFile);
+    await chmod(tokenFile, 0o600);
     return token;
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
-      const winner = (await readFile(tokenFile, 'utf8')).trim();
-      if (winner.length >= 24) return winner;
+      const winnerFile = await readPrivateTextFile(dataDir, tokenFile, MAX_TOKEN_FILE_BYTES);
+      const winner = winnerFile === undefined ? undefined : parseStoredToken(winnerFile);
+      if (winner !== undefined) return winner;
+      throw new AppError('invalid_request', 'The local API token file is invalid.');
     }
-    throw error;
+    if (error instanceof AppError) throw error;
+    throw storageUnavailable();
   }
 }
 

@@ -8,6 +8,7 @@ export type ErrorCode =
   | 'queue_full'
   | 'rate_limited'
   | 'security_challenge'
+  | 'storage_unavailable'
   | 'timeout'
   | 'ui_changed';
 
@@ -21,6 +22,7 @@ const statusByCode: Record<ErrorCode, number> = {
   queue_full: 429,
   rate_limited: 429,
   security_challenge: 503,
+  storage_unavailable: 503,
   timeout: 504,
   ui_changed: 503,
 };

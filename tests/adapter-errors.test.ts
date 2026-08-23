@@ -36,6 +36,7 @@ class FakeLocator {
 
 class FakePage {
   closed = false;
+  failClose = false;
   navigations = 0;
   currentUrl = 'https://chatgpt.com/';
   waits = 0;
@@ -62,6 +63,7 @@ class FakePage {
     return new FakeLocator(composer || send || login) as unknown as Locator;
   }
   async close(): Promise<void> {
+    if (this.failClose) throw new Error('simulated page cleanup failure');
     this.closed = true;
   }
   async screenshot(): Promise<Buffer> {
@@ -103,6 +105,15 @@ describe('ChatGPT adapter failure cleanup', () => {
     expect(await adapter.health()).toBe('ready');
     expect(browser.page.waits).toBeGreaterThan(0);
     expect(browser.page.closed).toBe(true);
+  });
+
+  it('does not replace a completed health result with a page-cleanup failure', async () => {
+    const browser = new FakeBrowser('ready');
+    browser.page.failClose = true;
+    const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
+
+    await expect(adapter.health()).resolves.toBe('ready');
+    expect(browser.page.closed).toBe(false);
   });
 
   it('closes its tab when a running generation is cancelled', async () => {

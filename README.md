@@ -210,7 +210,7 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 
 ## Security
 
-The dedicated profile grants access to your logged-in session: protect it like a credential. Do not sync or share `.tab2api`, screenshots, logs, token files, Cloudflare credentials, or service-token secrets. Never point `TAB2API_PROFILE_DIR` at your normal browser profile. Keep the server itself on loopback and use one revocable client key per remote device. See [the threat model](docs/security.md) and [architecture decisions](docs/architecture.md).
+The dedicated profile grants access to your logged-in session: protect it like a credential. Do not sync or share `.tab2api`, screenshots, logs, token files, Cloudflare credentials, or service-token secrets. Never point `TAB2API_PROFILE_DIR` at your normal browser profile. Startup resolves real filesystem targets and rejects profile/artifact escapes, directory links/reparse points, private-file symlinks or hard links, and known Chrome/Chromium/Edge default-profile component paths. Private state files are size-bounded and replaced atomically; a failed durable key/usage mutation leaves the last committed in-memory state intact. Same-user malware can still race or read files with that user's authority, so use a trusted account and disk encryption. Keep the server itself on loopback and use one revocable client key per remote device. See [the threat model](docs/security.md) and [architecture decisions](docs/architecture.md).
 
 ## Troubleshooting
 

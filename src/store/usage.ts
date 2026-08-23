@@ -1,28 +1,100 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { AppError } from '../errors.js';
 import type { ApiPrincipal } from '../security/api-keys.js';
+import { assertSafePrivateFile } from '../security/paths.js';
+import {
+  atomicWritePrivateFile,
+  hardenPrivateDirectoryPermissions,
+  readPrivateTextFile,
+  type PrivateFileWriter,
+} from '../security/private-files.js';
 
-const endpointUsageSchema = z.object({
-  requests: z.number().int().nonnegative(),
-  successful: z.number().int().nonnegative(),
-  failed: z.number().int().nonnegative(),
-  estimatedInputTokens: z.number().int().nonnegative(),
-  estimatedOutputTokens: z.number().int().nonnegative(),
-  inputBytes: z.number().int().nonnegative(),
-  outputBytes: z.number().int().nonnegative(),
-  totalLatencyMs: z.number().nonnegative(),
-});
-const keyUsageSchema = endpointUsageSchema.extend({
-  keyId: z.string(),
-  label: z.string(),
-  lastUsedAt: z.iso.datetime(),
-  endpoints: z.record(z.string(), endpointUsageSchema),
-});
-const usageFileSchema = z.object({
-  version: z.literal(1),
-  keys: z.record(z.string(), keyUsageSchema),
-});
+const MAX_USAGE_FILE_BYTES = 2_097_152;
+const MAX_USAGE_KEYS = 101;
+const MAX_USAGE_ENDPOINTS = 64;
+const MAX_PENDING_USAGE_MUTATIONS = 128;
+const LATENCY_TOTAL_EPSILON_MS = 0.001;
+const boundedCounter = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const usageKeyId = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9._-]+$/);
+const usageEndpoint = z
+  .string()
+  .min(1)
+  .max(160)
+  .regex(/^\/[A-Za-z0-9._~:/-]+$/);
+const usageLabel = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[^\p{C}]+$/u);
+
+const endpointUsageSchema = z
+  .object({
+    requests: boundedCounter,
+    successful: boundedCounter,
+    failed: boundedCounter,
+    estimatedInputTokens: boundedCounter,
+    estimatedOutputTokens: boundedCounter,
+    inputBytes: boundedCounter,
+    outputBytes: boundedCounter,
+    totalLatencyMs: z.number().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  })
+  .refine(({ requests, successful, failed }) => requests === successful + failed, {
+    message: 'Usage success and failure counters must equal total requests.',
+  });
+const keyUsageSchema = endpointUsageSchema
+  .safeExtend({
+    keyId: usageKeyId,
+    label: usageLabel,
+    lastUsedAt: z.iso.datetime(),
+    endpoints: z
+      .record(usageEndpoint, endpointUsageSchema)
+      .refine((endpoints) => Object.keys(endpoints).length <= MAX_USAGE_ENDPOINTS, {
+        message: 'Too many usage endpoints.',
+      }),
+  })
+  .refine((usage) => {
+    const totals = Object.values(usage.endpoints).reduce(
+      (sum, endpoint) => ({
+        requests: sum.requests + endpoint.requests,
+        successful: sum.successful + endpoint.successful,
+        failed: sum.failed + endpoint.failed,
+        estimatedInputTokens: sum.estimatedInputTokens + endpoint.estimatedInputTokens,
+        estimatedOutputTokens: sum.estimatedOutputTokens + endpoint.estimatedOutputTokens,
+        inputBytes: sum.inputBytes + endpoint.inputBytes,
+        outputBytes: sum.outputBytes + endpoint.outputBytes,
+        totalLatencyMs: sum.totalLatencyMs + endpoint.totalLatencyMs,
+      }),
+      emptyUsage(),
+    );
+    return (
+      totals.requests === usage.requests &&
+      totals.successful === usage.successful &&
+      totals.failed === usage.failed &&
+      totals.estimatedInputTokens === usage.estimatedInputTokens &&
+      totals.estimatedOutputTokens === usage.estimatedOutputTokens &&
+      totals.inputBytes === usage.inputBytes &&
+      totals.outputBytes === usage.outputBytes &&
+      Math.abs(totals.totalLatencyMs - usage.totalLatencyMs) <= LATENCY_TOTAL_EPSILON_MS
+    );
+  }, 'Per-key usage counters must equal the endpoint totals.');
+const usageFileSchema = z
+  .object({
+    version: z.literal(1),
+    keys: z
+      .record(usageKeyId, keyUsageSchema)
+      .refine((keys) => Object.keys(keys).length <= MAX_USAGE_KEYS, {
+        message: 'Too many usage keys.',
+      }),
+  })
+  .refine(({ keys }) => Object.entries(keys).every(([id, usage]) => id === usage.keyId), {
+    message: 'Usage record keys must match their embedded key identifiers.',
+  });
 
 export type EndpointUsage = z.infer<typeof endpointUsageSchema>;
 export type KeyUsage = z.infer<typeof keyUsageSchema>;
@@ -63,56 +135,90 @@ function add(target: EndpointUsage, delta: UsageDelta): void {
   target.estimatedOutputTokens += estimateTokens(delta.outputText);
   target.inputBytes += delta.inputBytes ?? 0;
   target.outputBytes += delta.outputBytes ?? 0;
-  target.totalLatencyMs += Math.max(0, delta.latencyMs);
+  target.totalLatencyMs += Math.max(0, Math.round(delta.latencyMs));
 }
 
 export class UsageStore {
-  private readonly entries = new Map<string, KeyUsage>();
-  private writeChain = Promise.resolve();
+  private entries = new Map<string, KeyUsage>();
+  private mutationTail = Promise.resolve();
+  private pendingMutations = 0;
 
   private constructor(
+    private readonly dataDir: string | undefined,
     private readonly filePath: string | undefined,
     entries: Record<string, KeyUsage>,
+    private readonly writer: PrivateFileWriter,
   ) {
     for (const [id, usage] of Object.entries(entries)) this.entries.set(id, usage);
   }
 
   static memory(): UsageStore {
-    return new UsageStore(undefined, {});
+    return new UsageStore(undefined, undefined, {}, atomicWritePrivateFile);
   }
 
-  static async load(dataDir: string): Promise<UsageStore> {
-    await mkdir(dataDir, { recursive: true, mode: 0o700 });
+  static async load(
+    dataDir: string,
+    writer: PrivateFileWriter = atomicWritePrivateFile,
+  ): Promise<UsageStore> {
     const filePath = path.join(dataDir, 'usage.json');
+    await assertSafePrivateFile(dataDir, filePath);
     try {
-      const parsed = usageFileSchema.parse(JSON.parse(await readFile(filePath, 'utf8')));
-      await chmod(filePath, 0o600).catch(() => undefined);
-      return new UsageStore(filePath, parsed.keys);
+      await mkdir(dataDir, { recursive: true, mode: 0o700 });
+    } catch {
+      throw new AppError('storage_unavailable', 'The usage statistics store is unavailable.');
+    }
+    await hardenPrivateDirectoryPermissions(dataDir);
+    await assertSafePrivateFile(dataDir, filePath);
+    const contents = await readPrivateTextFile(dataDir, filePath, MAX_USAGE_FILE_BYTES);
+    if (contents === undefined) return new UsageStore(dataDir, filePath, {}, writer);
+    try {
+      const parsed = usageFileSchema.parse(JSON.parse(contents));
+      return new UsageStore(dataDir, filePath, parsed.keys, writer);
     } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
-        return new UsageStore(filePath, {});
       throw new Error('The usage statistics file is invalid or unreadable.', { cause: error });
     }
   }
 
   async record(principal: ApiPrincipal, delta: UsageDelta): Promise<void> {
-    let usage = this.entries.get(principal.id);
-    if (usage === undefined) {
-      usage = {
-        ...emptyUsage(),
-        keyId: principal.id,
-        label: principal.label,
-        lastUsedAt: new Date().toISOString(),
-        endpoints: {},
-      };
-      this.entries.set(principal.id, usage);
-    }
-    usage.label = principal.label;
-    usage.lastUsedAt = new Date().toISOString();
-    add(usage, delta);
-    const endpoint = (usage.endpoints[delta.endpoint] ??= emptyUsage());
-    add(endpoint, delta);
-    await this.persist();
+    const endpointName = usageEndpoint.parse(delta.endpoint);
+    const principalId = usageKeyId.parse(principal.id);
+    const principalLabel = usageLabel.parse(principal.label);
+    await this.enqueue(async () => {
+      const candidate = new Map(
+        [...this.entries].map(([id, usage]) => [id, structuredClone(usage)] as const),
+      );
+      let usage = candidate.get(principalId);
+      if (usage === undefined) {
+        if (candidate.size >= MAX_USAGE_KEYS) {
+          const oldestClient = [...candidate.values()]
+            .filter(({ keyId }) => keyId !== 'local-admin')
+            .sort(
+              (left, right) =>
+                left.lastUsedAt.localeCompare(right.lastUsedAt) ||
+                left.keyId.localeCompare(right.keyId),
+            )[0];
+          if (oldestClient === undefined) {
+            throw new AppError('queue_full', 'The bounded usage registry is full.');
+          }
+          candidate.delete(oldestClient.keyId);
+        }
+        usage = {
+          ...emptyUsage(),
+          keyId: principalId,
+          label: principalLabel,
+          lastUsedAt: new Date().toISOString(),
+          endpoints: {},
+        };
+        candidate.set(principalId, usage);
+      }
+      usage.label = principalLabel;
+      usage.lastUsedAt = new Date().toISOString();
+      add(usage, delta);
+      const endpoint = (usage.endpoints[endpointName] ??= emptyUsage());
+      add(endpoint, delta);
+      await this.persist(candidate);
+      this.entries = candidate;
+    });
   }
 
   snapshot(): { tokenCounts: 'estimated'; keys: KeyUsage[] } {
@@ -123,28 +229,41 @@ export class UsageStore {
   }
 
   async reset(): Promise<void> {
-    this.entries.clear();
-    await this.persist();
+    await this.enqueue(async () => {
+      const candidate = new Map<string, KeyUsage>();
+      await this.persist(candidate);
+      this.entries = candidate;
+    });
   }
 
   async flush(): Promise<void> {
-    await this.writeChain;
+    await this.mutationTail;
   }
 
-  private async persist(): Promise<void> {
-    if (this.filePath === undefined) return;
-    const snapshot = JSON.stringify(
-      { version: 1, keys: Object.fromEntries(this.entries) },
-      null,
-      2,
+  private enqueue<T>(mutation: () => Promise<T>): Promise<T> {
+    if (this.pendingMutations >= MAX_PENDING_USAGE_MUTATIONS) {
+      return Promise.reject(
+        new AppError('queue_full', 'The private usage mutation queue is full.'),
+      );
+    }
+    this.pendingMutations += 1;
+    const result = this.mutationTail.then(mutation);
+    // Failed persistence is observable to that request while later mutations can still retry.
+    this.mutationTail = result.then(
+      () => {
+        this.pendingMutations -= 1;
+      },
+      () => {
+        this.pendingMutations -= 1;
+      },
     );
-    const target = this.filePath;
-    const temporary = `${target}.${process.pid}.tmp`;
-    this.writeChain = this.writeChain.then(async () => {
-      await writeFile(temporary, `${snapshot}\n`, { encoding: 'utf8', mode: 0o600 });
-      await rename(temporary, target);
-      await chmod(target, 0o600).catch(() => undefined);
-    });
-    await this.writeChain;
+    return result;
+  }
+
+  private async persist(entries: ReadonlyMap<string, KeyUsage>): Promise<void> {
+    const payload = usageFileSchema.parse({ version: 1, keys: Object.fromEntries(entries) });
+    if (this.dataDir === undefined || this.filePath === undefined) return;
+    const snapshot = JSON.stringify(payload, null, 2);
+    await this.writer(this.dataDir, this.filePath, `${snapshot}\n`);
   }
 }

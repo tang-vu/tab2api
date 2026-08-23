@@ -32,6 +32,10 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Fixed
 
+- TTS now creates prompt/output files exclusively inside a validated owner-private temporary
+  directory, preserves cancellation versus timeout errors, validates bounded RIFF/WAVE output,
+  removes temporaries across setup/engine/read failures, and bounds the operating-system engine
+  availability probe.
 - Raise the desktop minimum to Rust 1.88 and refresh the locked plist/XML/time dependency chain to
   versions that address the current RustSec denial-of-service advisories.
 - Exercise the normal NSIS temporary-copy uninstall path and wait for the isolated install directory
@@ -62,6 +66,11 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Security
 
+- Runtime/profile/artifact paths are now checked against their canonical filesystem targets before
+  creation and again before browser or diagnostic writes. Directory links/reparse points, private
+  file symlinks or hard links, default browser profile component paths, and out-of-data escapes fail
+  closed. Private JSON writes are exclusive, bounded, atomic, and rollback in-memory mutations when
+  durable storage fails; Unix runtime permissions are tightened to owner-only.
 - Desktop CI installs a pinned `cargo-audit` release on its Linux leg and rejects vulnerable locked
   Rust dependencies without expanding repository permissions beyond read-only access.
 - Desktop administration calls only the authenticated loopback API. The administrator key is read

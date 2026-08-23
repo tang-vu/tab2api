@@ -128,6 +128,30 @@ describe('app-managed browser CDP connection', () => {
     expect(browserClose).toHaveBeenCalledOnce();
   });
 
+  it('attempts every CDP cleanup and reports a typed failure', async () => {
+    const requestPage = fakePage();
+    requestPage.close.mockRejectedValueOnce(new Error('simulated page cleanup failure'));
+    const context = {
+      newPage: vi.fn(async () => requestPage as unknown as Page),
+    } as unknown as BrowserContext;
+    const browserClose = vi.fn(async () => undefined);
+    const browser = {
+      contexts: () => [context],
+      isConnected: () => true,
+      once: vi.fn(),
+      close: browserClose,
+    } as unknown as Browser;
+    const manager = new CdpBrowserManager(
+      testConfig({ browserCdpEndpoint: 'http://127.0.0.1:54321' }),
+      async () => browser,
+    );
+    await manager.getPage();
+
+    await expect(manager.close()).rejects.toMatchObject({ code: 'browser_disconnected' });
+    expect(requestPage.close).toHaveBeenCalledOnce();
+    expect(browserClose).toHaveBeenCalledOnce();
+  });
+
   it('keeps launchPersistentContext as the default Playwright controller', () => {
     expect(createBrowserController(testConfig())).toBeInstanceOf(BrowserManager);
     expect(

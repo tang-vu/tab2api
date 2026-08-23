@@ -7,7 +7,7 @@ use std::env;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -261,7 +261,7 @@ fn validated_bundled_root(resource_dir: &Path, bundled_root: &Path) -> Result<Pa
 
 fn normalize_child_path(path: &Path) -> Result<PathBuf, String> {
     let Some(text) = path.to_str() else {
-        return Err("desktop resource path is not valid Unicode".into());
+        return Err("child-process path is not valid Unicode".into());
     };
     let Some(remainder) = text.strip_prefix(r"\\?\") else {
         return Ok(path.to_path_buf());
@@ -278,9 +278,9 @@ fn normalize_child_path(path: &Path) -> Result<PathBuf, String> {
         .get(..4)
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("UNC\\"))
     {
-        return Err("desktop resources must be on a local drive, not a verbatim UNC path".into());
+        return Err("child-process paths must be on a local drive, not a verbatim UNC path".into());
     }
-    Err("unsupported Windows verbatim desktop resource path".into())
+    Err("unsupported Windows verbatim child-process path".into())
 }
 
 fn write_protocol_handshake(output: &mut impl Write) -> std::io::Result<()> {
@@ -450,11 +450,7 @@ impl SidecarLifecycle {
         if port == 0 {
             return Err("TAB2API_PORT must not be zero".into());
         }
-        let (data_dir, profile_dir) = runtime_paths(&app_local_data_dir);
-        std::fs::create_dir_all(&data_dir)
-            .map_err(|error| format!("could not create app data directory: {error}"))?;
-        std::fs::create_dir_all(&profile_dir)
-            .map_err(|error| format!("could not create browser profile directory: {error}"))?;
+        let (data_dir, profile_dir) = prepare_runtime_paths(&app_local_data_dir)?;
         Ok(Self {
             inner: Mutex::new(Inner {
                 process: None,
@@ -477,6 +473,7 @@ impl SidecarLifecycle {
             if inner.process.is_some() {
                 return Err("tab2api is already running or the login window is open".into());
             }
+            revalidate_runtime_paths(&self.data_dir, &self.profile_dir)?;
             #[cfg(windows)]
             let endpoint = {
                 let browser = BrowserSession::launch(
@@ -574,6 +571,7 @@ impl SidecarLifecycle {
         if inner.process.is_some() {
             return Err("stop tab2api before opening the dedicated login profile".into());
         }
+        revalidate_runtime_paths(&self.data_dir, &self.profile_dir)?;
         inner.process = Some(self.runtime.spawn(
             ProcessKind::Login,
             self.port,
@@ -739,6 +737,144 @@ fn runtime_paths(app_local_data_dir: &Path) -> (PathBuf, PathBuf) {
     (data_dir, profile_dir)
 }
 
+#[cfg(windows)]
+fn validate_local_runtime_root(candidate: &Path) -> Result<(), String> {
+    let text = candidate.to_string_lossy().replace('/', "\\");
+    if text.starts_with(r"\\") {
+        return Err("private runtime storage must use a local drive".into());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn validate_local_runtime_root(_candidate: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+fn validate_runtime_directory_entry(candidate: &Path) -> Result<(), String> {
+    let metadata = match std::fs::symlink_metadata(candidate) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("could not validate private runtime storage".into()),
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err("private runtime directories must not be reparse points".into());
+        }
+    }
+    #[cfg(not(windows))]
+    if metadata.file_type().is_symlink() {
+        return Err("private runtime directories must not be symbolic links".into());
+    }
+    if !metadata.is_dir() {
+        return Err("private runtime storage path is not a directory".into());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn harden_runtime_directory_permissions(candidate: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let metadata = std::fs::symlink_metadata(candidate)
+        .map_err(|_| "could not inspect private runtime permissions".to_string())?;
+    let mut permissions = metadata.permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(candidate, permissions)
+        .map_err(|_| "could not secure private runtime permissions".to_string())
+}
+
+#[cfg(not(unix))]
+fn harden_runtime_directory_permissions(_candidate: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+fn path_contains_sequence(path: &Path, sequence: &[&str]) -> bool {
+    let segments = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(segment) => Some(segment.to_string_lossy().to_ascii_lowercase()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    segments.windows(sequence.len()).any(|window| {
+        window
+            .iter()
+            .map(String::as_str)
+            .eq(sequence.iter().copied())
+    })
+}
+
+fn is_default_browser_profile(path: &Path) -> bool {
+    [
+        &["google", "chrome", "user data"][..],
+        &["microsoft", "edge", "user data"][..],
+        &["chromium", "user data"][..],
+        &["library", "application support", "google", "chrome"][..],
+        &["library", "application support", "chromium"][..],
+        &["library", "application support", "microsoft edge"][..],
+        &[".config", "google-chrome"][..],
+        &[".config", "chromium"][..],
+        &[".config", "microsoft-edge"][..],
+    ]
+    .iter()
+    .any(|sequence| path_contains_sequence(path, sequence))
+}
+
+fn validated_canonical_runtime_paths(
+    data_dir: &Path,
+    profile_dir: &Path,
+) -> Result<(PathBuf, PathBuf), String> {
+    validate_local_runtime_root(data_dir)?;
+    validate_runtime_directory_entry(data_dir)?;
+    validate_runtime_directory_entry(profile_dir)?;
+    let canonical_data = data_dir
+        .canonicalize()
+        .map_err(|_| "could not validate private app runtime directory".to_string())?;
+    let canonical_profile = profile_dir
+        .canonicalize()
+        .map_err(|_| "could not validate dedicated browser profile directory".to_string())?;
+    if canonical_data.parent().is_none()
+        || canonical_profile == canonical_data
+        || !canonical_profile.starts_with(&canonical_data)
+    {
+        return Err("browser profile must remain strictly inside private app runtime data".into());
+    }
+    if is_default_browser_profile(&canonical_profile) {
+        return Err("refusing to use a default Chrome, Chromium, or Edge profile".into());
+    }
+    Ok((
+        normalize_child_path(&canonical_data)?,
+        normalize_child_path(&canonical_profile)?,
+    ))
+}
+
+fn revalidate_runtime_paths(data_dir: &Path, profile_dir: &Path) -> Result<(), String> {
+    let (actual_data, actual_profile) = validated_canonical_runtime_paths(data_dir, profile_dir)?;
+    if actual_data != data_dir || actual_profile != profile_dir {
+        return Err("private runtime paths changed after application startup".into());
+    }
+    Ok(())
+}
+
+fn prepare_runtime_paths(app_local_data_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
+    validate_local_runtime_root(app_local_data_dir)?;
+    let (data_dir, profile_dir) = runtime_paths(app_local_data_dir);
+    validate_runtime_directory_entry(&data_dir)?;
+    validate_runtime_directory_entry(&profile_dir)?;
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|_| "could not create private app runtime directory".to_string())?;
+    std::fs::create_dir_all(&profile_dir)
+        .map_err(|_| "could not create dedicated browser profile directory".to_string())?;
+    harden_runtime_directory_permissions(&data_dir)?;
+    harden_runtime_directory_permissions(&profile_dir)?;
+    validate_runtime_directory_entry(&data_dir)?;
+    validate_runtime_directory_entry(&profile_dir)?;
+    validated_canonical_runtime_paths(&data_dir, &profile_dir)
+}
+
 impl Drop for SidecarLifecycle {
     fn drop(&mut self) {
         if let Ok(inner) = self.inner.get_mut()
@@ -819,6 +955,18 @@ fn probe_health(port: u16, timeout: Duration) -> bool {
 mod tests {
     use super::*;
     use std::net::TcpListener;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_directory(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "tab2api-lifecycle-{label}-{}-{unique}",
+            std::process::id()
+        ))
+    }
 
     #[test]
     fn health_probe_only_targets_ipv4_loopback() {
@@ -927,6 +1075,123 @@ mod tests {
         assert_ne!(profile_dir, data_dir);
         assert!(profile_dir.starts_with(&data_dir));
         assert_eq!(profile_dir, data_dir.join("browser-profile"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_runtime_rejects_network_shares_before_creation() {
+        assert!(validate_local_runtime_root(Path::new(r"\\server\share\tab2api")).is_err());
+        assert!(validate_local_runtime_root(Path::new(r"C:\Users\owner\tab2api")).is_ok());
+    }
+
+    #[test]
+    fn canonical_runtime_paths_are_created_as_strict_ordinary_children() {
+        let app_data = unique_test_directory("safe-paths");
+        let (data_dir, profile_dir) = prepare_runtime_paths(&app_data).unwrap();
+        assert!(data_dir.is_dir());
+        assert!(profile_dir.is_dir());
+        assert_ne!(profile_dir, data_dir);
+        assert!(profile_dir.starts_with(&data_dir));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&data_dir).unwrap().permissions().mode() & 0o077,
+                0
+            );
+            assert_eq!(
+                std::fs::metadata(&profile_dir)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o077,
+                0
+            );
+        }
+        std::fs::remove_dir_all(app_data).unwrap();
+    }
+
+    #[test]
+    fn known_default_browser_profile_components_are_rejected_without_substring_matches() {
+        let default_profile = PathBuf::from("home")
+            .join("owner")
+            .join(".config")
+            .join("chromium")
+            .join("Default");
+        let lookalike = PathBuf::from("home")
+            .join("owner")
+            .join(".config")
+            .join("chromium-backup")
+            .join("Default");
+        assert!(is_default_browser_profile(&default_profile));
+        assert!(!is_default_browser_profile(&lookalike));
+    }
+
+    #[test]
+    fn app_data_nested_under_a_default_browser_profile_is_rejected() {
+        let root = unique_test_directory("default-profile");
+        let app_data = root
+            .join("Google")
+            .join("Chrome")
+            .join("User Data")
+            .join("tab2api");
+        assert!(prepare_runtime_paths(&app_data).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn linked_native_profile_root_is_rejected() {
+        let app_data = unique_test_directory("linked-profile");
+        let data_dir = app_data.join("runtime");
+        let profile_dir = data_dir.join("browser-profile");
+        let outside = app_data.join("outside");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &profile_dir).unwrap();
+        #[cfg(windows)]
+        if let Err(error) = std::os::windows::fs::symlink_dir(&outside, &profile_dir) {
+            if error.kind() == std::io::ErrorKind::PermissionDenied
+                || error.raw_os_error() == Some(1314)
+            {
+                std::fs::remove_dir_all(app_data).unwrap();
+                return;
+            }
+            panic!("could not create test directory link: {error}");
+        }
+        assert!(prepare_runtime_paths(&app_data).is_err());
+        #[cfg(unix)]
+        std::fs::remove_file(&profile_dir).unwrap();
+        #[cfg(windows)]
+        std::fs::remove_dir(&profile_dir).unwrap();
+        std::fs::remove_dir_all(app_data).unwrap();
+    }
+
+    #[test]
+    fn runtime_paths_are_revalidated_immediately_before_launch() {
+        let app_data = unique_test_directory("revalidated-profile");
+        let (data_dir, profile_dir) = prepare_runtime_paths(&app_data).unwrap();
+        let outside = app_data.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::remove_dir(&profile_dir).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &profile_dir).unwrap();
+        #[cfg(windows)]
+        if let Err(error) = std::os::windows::fs::symlink_dir(&outside, &profile_dir) {
+            if error.kind() == std::io::ErrorKind::PermissionDenied
+                || error.raw_os_error() == Some(1314)
+            {
+                std::fs::remove_dir_all(app_data).unwrap();
+                return;
+            }
+            panic!("could not replace test profile with a directory link: {error}");
+        }
+        assert!(revalidate_runtime_paths(&data_dir, &profile_dir).is_err());
+        #[cfg(unix)]
+        std::fs::remove_file(&profile_dir).unwrap();
+        #[cfg(windows)]
+        std::fs::remove_dir(&profile_dir).unwrap();
+        std::fs::remove_dir_all(app_data).unwrap();
     }
 
     #[test]

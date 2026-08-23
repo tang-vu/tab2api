@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   assertLoopbackHost,
   assertLoopbackCdpEndpoint,
+  assertSafeRuntimePaths,
   resolveSafeDataPaths,
 } from '../security/paths.js';
 import { loadOrCreateToken } from '../security/token.js';
@@ -18,7 +19,10 @@ const integer = (minimum: number, maximum: number) =>
 const environmentSchema = z.object({
   TAB2API_HOST: z.string().default('127.0.0.1'),
   TAB2API_PORT: integer(1, 65535).default(3210),
-  TAB2API_API_TOKEN: z.string().min(24).optional(),
+  TAB2API_API_TOKEN: z
+    .string()
+    .regex(/^[\x21-\x7e]{24,512}$/)
+    .optional(),
   TAB2API_DATA_DIR: z.string().min(1).default('.tab2api'),
   TAB2API_PROFILE_DIR: z.string().min(1).default(path.join('.tab2api', 'browser-profile')),
   TAB2API_HEADLESS: booleanValue,
@@ -70,6 +74,8 @@ export async function loadConfig(
     parsed.TAB2API_DATA_DIR,
     parsed.TAB2API_PROFILE_DIR,
   );
+  const artifactDir = path.join(dataDir, 'debug-artifacts');
+  await assertSafeRuntimePaths(dataDir, profileDir, artifactDir);
   const apiToken = await loadOrCreateToken(dataDir, parsed.TAB2API_API_TOKEN);
   return {
     host,
@@ -77,7 +83,7 @@ export async function loadConfig(
     apiToken,
     dataDir,
     profileDir,
-    artifactDir: path.join(dataDir, 'debug-artifacts'),
+    artifactDir,
     headless: parsed.TAB2API_HEADLESS,
     browserCdpEndpoint:
       parsed.TAB2API_BROWSER_CDP_ENDPOINT === undefined

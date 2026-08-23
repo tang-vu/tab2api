@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config/index.js';
 
@@ -40,7 +41,7 @@ describe('configuration security', () => {
         {
           TAB2API_API_TOKEN: token,
           TAB2API_DATA_DIR: '.runtime',
-          TAB2API_PROFILE_DIR: '..\\personal-profile',
+          TAB2API_PROFILE_DIR: path.join('..', 'personal-profile'),
         },
         'C:\\work\\tab2api',
       ),
@@ -60,6 +61,22 @@ describe('configuration security', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it.each(['token with spaces that cannot be a bearer value', `valid-prefix-${'x'.repeat(20)}\n`])(
+    'rejects an unsafe configured administrator token',
+    async (unsafeToken) => {
+      await expect(
+        loadConfig(
+          {
+            TAB2API_API_TOKEN: unsafeToken,
+            TAB2API_DATA_DIR: '.runtime',
+            TAB2API_PROFILE_DIR: '.runtime/profile',
+          },
+          'C:\\work\\tab2api',
+        ),
+      ).rejects.toThrow();
+    },
+  );
 
   it('accepts bounded browser concurrency and rejects unsafe values', async () => {
     const base = {

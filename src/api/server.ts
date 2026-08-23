@@ -624,6 +624,7 @@ export function buildServer(dependencies: ServerDependencies) {
     try {
       return await apiKeys.create(body.label);
     } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(
         'invalid_request',
         error instanceof Error ? error.message : 'Could not create the API key.',
@@ -673,8 +674,18 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.addHook('onClose', async () => {
     queue.close();
-    await provider.close();
-    await Promise.all([apiKeys.flush(), usage.flush()]);
+    const cleanup = await Promise.allSettled([
+      Promise.resolve().then(() => provider.close()),
+      Promise.resolve().then(() => apiKeys.flush()),
+      Promise.resolve().then(() => usage.flush()),
+    ]);
+    const failure = cleanup.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (failure !== undefined) {
+      if (failure.reason instanceof AppError) throw failure.reason;
+      throw new AppError('storage_unavailable', 'Runtime shutdown did not finish safely.');
+    }
   });
   return app;
 }

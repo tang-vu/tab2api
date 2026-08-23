@@ -44,7 +44,12 @@ Current lifecycle behavior is intentionally small:
 - a Start failure rolls back the Node child and Chromium. Stop/quit requests graceful Node shutdown and then performs bounded Chromium process-tree cleanup so CDP is not orphaned;
 - periodic status probes only `127.0.0.1` for process liveness; authenticated browser readiness is a separate bounded check and is never treated as a cheap background poll;
 - stop and application exit request graceful shutdown over a private, bounded JSONL stdin protocol, wait up to eight seconds, then terminate and reap the child only as a fallback;
-- the profile and runtime data stay outside the application installation directory.
+- the profile and runtime data stay outside the application installation directory. Rust creates
+  owner-private runtime/profile directories and revalidates them immediately before direct login or
+  sidecar launch: it rejects a final symlink or Windows reparse point, resolves both canonically,
+  requires the profile to remain a strict data child, and rejects known system-browser profile
+  component paths. Node repeats the canonical containment checks for profile, artifacts, audio,
+  token, key, and usage storage.
 
 Native Win32 reparenting is explicitly experimental because Chromium and Windows do not promise that cross-process child-window hosting will remain stable. "Open externally" is the supported escape hatch; "Dock browser" retries only the already verified owned window. The UI intentionally offers no native reload shortcut because synthesizing input could interfere with an in-progress generation.
 

@@ -185,7 +185,7 @@ Task chạy nền khi user đăng nhập Windows và dùng watchdog có giới h
 - UI không cho biết token usage: Chat Completions dùng số 0 kèm `usage_available=false`; Responses dùng `usage: null`. Đây là “không biết”, không phải usage thực bằng 0.
 - `stream: true` là buffered fallback: đợi browser hoàn tất rồi mới gửi một delta. Chat Completions kết thúc bằng `[DONE]`, Responses bằng `response.completed`; đây không phải token streaming thời gian thực.
 - Không bypass CAPTCHA, Cloudflare, rate limit hay security challenge; không stealth/fingerprint spoofing; không retry prompt sau lỗi mơ hồ.
-- Profile `.tab2api` tương đương thông tin đăng nhập nhạy cảm. Không chia sẻ/sync/commit thư mục này và không dùng profile Chrome cá nhân mặc định.
+- Profile `.tab2api` tương đương thông tin đăng nhập nhạy cảm. Không chia sẻ/sync/commit thư mục này và không dùng profile Chrome cá nhân mặc định. Khi khởi động, app kiểm tra đích filesystem thật, từ chối đường dẫn thoát khỏi data root, directory link/reparse point, symlink hoặc hard link của file riêng tư, và các chuỗi thành phần profile mặc định của Chrome/Chromium/Edge. File trạng thái có giới hạn kích thước và được thay thế theo cơ chế nguyên tử; nếu ghi key/usage thất bại, trạng thái trong bộ nhớ vẫn giữ bản đã commit gần nhất. Malware cùng user vẫn có quyền đọc hoặc tạo race, nên chỉ chạy trong tài khoản tin cậy và bật mã hóa ổ đĩa.
 
 Xem [API](docs/api.md), [security](docs/security.md), [troubleshooting](docs/troubleshooting.md), và [hướng dẫn đóng góp](CONTRIBUTING.md).
 

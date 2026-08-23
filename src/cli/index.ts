@@ -12,6 +12,8 @@ import { loadConfig, type AppConfig } from '../config/index.js';
 import { createLogger } from '../observability/logger.js';
 import { SystemSpeechSynthesizer } from '../audio/system-speech.js';
 import { ApiKeyStore } from '../security/api-keys.js';
+import { assertSafeDataChildDirectory } from '../security/paths.js';
+import { hardenPrivateDirectoryPermissions } from '../security/private-files.js';
 import { UsageStore } from '../store/usage.js';
 import { FakeProvider } from '../testing/fake-provider.js';
 
@@ -34,15 +36,25 @@ async function start(): Promise<void> {
     UsageStore.load(config.dataDir),
   ]);
   const app = buildServer({ config, provider, logger, apiKeys, usage });
-  const shutdown = async (signal: string) => {
-    logger.info({ signal }, 'graceful shutdown');
-    await app.close();
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (signal: string): Promise<void> => {
+    if (shutdownPromise === undefined) {
+      logger.info({ signal }, 'graceful shutdown');
+      shutdownPromise = Promise.resolve().then(() => app.close());
+    }
+    return shutdownPromise;
   };
-  process.once('SIGINT', () => void shutdown('SIGINT'));
-  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  const requestShutdown = (signal: string): void => {
+    void shutdown(signal).catch(() => {
+      process.exitCode = 1;
+      logger.error({ signal }, 'graceful shutdown failed');
+    });
+  };
+  process.once('SIGINT', () => requestShutdown('SIGINT'));
+  process.once('SIGTERM', () => requestShutdown('SIGTERM'));
   await app.listen({ host: config.host, port: config.port });
   print(`tab2api listening on http://${config.host}:${config.port}`);
-  print(`Local API token file: ${path.join(config.dataDir, 'api-token')} (value not printed)`);
+  print('Local API token: ready in private runtime storage (value not printed)');
 }
 
 async function login(): Promise<void> {
@@ -92,7 +104,10 @@ async function doctor(): Promise<void> {
     [
       'Data directory writable',
       async () => {
+        await assertSafeDataChildDirectory(config.dataDir, config.profileDir);
         await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
+        await hardenPrivateDirectoryPermissions(config.dataDir);
+        await assertSafeDataChildDirectory(config.dataDir, config.profileDir);
         const probe = path.join(config.dataDir, `.doctor-${process.pid}`);
         const handle = await open(probe, 'wx', 0o600);
         await handle.close();
@@ -167,10 +182,16 @@ async function smoke(): Promise<void> {
 
 async function resetSession(): Promise<void> {
   const config = await loadConfig();
-  const response = await fetch(`http://${config.host}:${config.port}/admin/session/reset`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${config.apiToken}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`http://${config.host}:${config.port}/admin/session/reset`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${config.apiToken}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    throw new Error('Reset did not reach the local service within 10 seconds.');
+  }
   if (!response.ok)
     throw new Error(`Reset failed with HTTP ${response.status}. Is the server running?`);
   print('Browser session process reset. Profile and manual login were preserved.');

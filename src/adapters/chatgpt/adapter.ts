@@ -1,3 +1,4 @@
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { Locator, Page } from 'playwright';
 import type { Logger } from 'pino';
@@ -18,6 +19,8 @@ import type {
 } from '../../provider.js';
 import type { AppConfig } from '../../config/index.js';
 import type { BrowserController } from '../../browser/controller.js';
+import { assertSafeDataChildDirectory } from '../../security/paths.js';
+import { hardenPrivateDirectoryPermissions } from '../../security/private-files.js';
 import { CompletionStateMachine } from './completion-state.js';
 import {
   CHATGPT_URL,
@@ -205,12 +208,25 @@ export class ChatGptAdapter implements WebChatProvider {
       if (request.signal.aborted) throw abortError(request.signal);
       if (error instanceof AppError) {
         if (error.code === 'ui_changed' && this.config.debug && page !== undefined) {
-          await page
-            .screenshot({
+          try {
+            await assertSafeDataChildDirectory(this.config.dataDir, this.config.artifactDir);
+            await mkdir(this.config.artifactDir, { recursive: true, mode: 0o700 });
+            await hardenPrivateDirectoryPermissions(this.config.dataDir);
+            await hardenPrivateDirectoryPermissions(this.config.artifactDir);
+            await assertSafeDataChildDirectory(this.config.dataDir, this.config.artifactDir);
+            await page.screenshot({
               path: path.join(this.config.artifactDir, `ui-changed-${request.requestId}.png`),
               fullPage: false,
-            })
-            .catch(() => undefined);
+            });
+          } catch (screenshotError) {
+            this.logger.warn(
+              {
+                errorType: screenshotError instanceof Error ? screenshotError.name : 'unknown',
+                requestId: request.requestId,
+              },
+              'diagnostic screenshot was not written',
+            );
+          }
         }
         throw error;
       }
@@ -225,7 +241,7 @@ export class ChatGptAdapter implements WebChatProvider {
       // A submitted prompt is never retried because generation may already have started.
       throw asSafeAppError(error);
     } finally {
-      await page?.close().catch(() => undefined);
+      await this.closePage(page, 'generation', request.requestId);
     }
   }
 
@@ -267,7 +283,7 @@ export class ChatGptAdapter implements WebChatProvider {
       );
       throw asSafeAppError(error);
     } finally {
-      await page?.close().catch(() => undefined);
+      await this.closePage(page, 'image_generation', request.requestId);
     }
   }
 
@@ -555,7 +571,27 @@ export class ChatGptAdapter implements WebChatProvider {
       );
       throw asSafeAppError(error);
     } finally {
-      await page?.close().catch(() => undefined);
+      await this.closePage(page, 'project', requestId);
+    }
+  }
+
+  private async closePage(
+    page: Page | undefined,
+    operation: 'generation' | 'image_generation' | 'project' | 'manual_login' | 'health',
+    requestId?: string,
+  ): Promise<void> {
+    if (page === undefined) return;
+    try {
+      await page.close();
+    } catch (error) {
+      this.logger.warn(
+        {
+          errorType: error instanceof Error ? error.name : 'unknown',
+          operation,
+          ...(requestId === undefined ? {} : { requestId }),
+        },
+        'browser page cleanup failed',
+      );
     }
   }
 
@@ -614,7 +650,7 @@ export class ChatGptAdapter implements WebChatProvider {
         'The manual login window was closed before the session became ready.',
       );
     } finally {
-      await page?.close().catch(() => undefined);
+      await this.closePage(page, 'manual_login');
     }
   }
 
@@ -629,7 +665,7 @@ export class ChatGptAdapter implements WebChatProvider {
         ? 'browser_disconnected'
         : 'ui_changed';
     } finally {
-      await page?.close().catch(() => undefined);
+      await this.closePage(page, 'health');
     }
   }
 

@@ -92,6 +92,9 @@ All require the administrator token. Client keys may call `/v1/*` but no `/admin
 - `DELETE /admin/usage`: reset counters.
 
 `tokenCounts` is always `"estimated"`. The UI provides no real tokenizer/account usage, so these byte-based estimates are unsuitable for billing or quota claims. No prompt or response text is persisted.
+The bounded snapshot retains at most 101 key records; after long-running client-key rotation, adding
+a new key's first request removes the least-recently-used non-admin usage record. Reset or export
+the content-free counters before that point if historical per-device totals matter.
 
 ## Errors
 
@@ -109,7 +112,7 @@ Errors are consistent OpenAI-like envelopes:
 }
 ```
 
-Codes: `authentication_error` (401), `invalid_request` (400), `cancelled` (499), `queue_full`/`rate_limited` (429), `login_required`/`security_challenge`/`ui_changed`/`browser_disconnected`/`audio_unavailable` (503), and `timeout` (504).
+Codes: `authentication_error` (401), `invalid_request` (400), `cancelled` (499), `queue_full`/`rate_limited` (429), `login_required`/`security_challenge`/`ui_changed`/`browser_disconnected`/`audio_unavailable`/`storage_unavailable` (503), and `timeout` (504). `storage_unavailable` means a private key/usage mutation was not durably committed; retry only after fixing the dedicated data directory.
 
 ## Request IDs and limits
 

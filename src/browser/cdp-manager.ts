@@ -42,18 +42,26 @@ export class CdpBrowserManager implements BrowserController {
 
   async close(): Promise<void> {
     this.generation += 1;
+    // An attachment failure is returned to the concurrent getPage caller; close still has to
+    // continue through any browser/pages that the attempt managed to publish before failing.
     if (this.connecting !== undefined) await this.connecting.catch(() => undefined);
     const browser = this.browser;
     this.browser = undefined;
     this.context = undefined;
     const pages = [...this.ownedPages];
     this.ownedPages.clear();
-    await Promise.all(pages.map(async (page) => page.close().catch(() => undefined)));
+    const pageResults = await Promise.allSettled(pages.map(async (page) => page.close()));
+    let cleanupFailed = pageResults.some(({ status }) => status === 'rejected');
     // For a connected browser Playwright documents close() as disconnecting from the
     // browser server. The desktop shell remains the owner of the Chromium process/profile.
     if (browser !== undefined) {
-      await browser.close({ reason: 'tab2api sidecar disconnected' }).catch(() => undefined);
+      try {
+        await browser.close({ reason: 'tab2api sidecar disconnected' });
+      } catch {
+        cleanupFailed = true;
+      }
     }
+    if (cleanupFailed) throw this.connectionError();
   }
 
   private async ensureContext(): Promise<BrowserContext> {

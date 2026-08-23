@@ -2,6 +2,8 @@ import { mkdir } from 'node:fs/promises';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { AppError } from '../errors.js';
 import type { AppConfig } from '../config/index.js';
+import { assertSafeRuntimePaths } from '../security/paths.js';
+import { hardenPrivateDirectoryPermissions } from '../security/private-files.js';
 
 export class BrowserManager {
   private context: BrowserContext | undefined;
@@ -33,7 +35,16 @@ export class BrowserManager {
   async close(): Promise<void> {
     const current = this.context;
     this.context = undefined;
-    if (current !== undefined) await current.close().catch(() => undefined);
+    if (current !== undefined) {
+      try {
+        await current.close();
+      } catch {
+        throw new AppError(
+          'browser_disconnected',
+          'The browser context could not be closed cleanly.',
+        );
+      }
+    }
   }
 
   isConnected(): boolean {
@@ -41,8 +52,21 @@ export class BrowserManager {
   }
 
   private async launch(): Promise<BrowserContext> {
+    await assertSafeRuntimePaths(
+      this.config.dataDir,
+      this.config.profileDir,
+      this.config.artifactDir,
+    );
     await mkdir(this.config.profileDir, { recursive: true, mode: 0o700 });
     if (this.config.debug) await mkdir(this.config.artifactDir, { recursive: true, mode: 0o700 });
+    await hardenPrivateDirectoryPermissions(this.config.dataDir);
+    await hardenPrivateDirectoryPermissions(this.config.profileDir);
+    if (this.config.debug) await hardenPrivateDirectoryPermissions(this.config.artifactDir);
+    await assertSafeRuntimePaths(
+      this.config.dataDir,
+      this.config.profileDir,
+      this.config.artifactDir,
+    );
     try {
       const context = await chromium.launchPersistentContext(this.config.profileDir, {
         headless: this.config.headless,

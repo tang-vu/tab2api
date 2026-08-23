@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { buildServer } from '../src/api/server.js';
 import { AppError } from '../src/errors.js';
@@ -59,6 +59,28 @@ function server(provider: WebChatProvider, timeoutMs = 2_000, speech?: SpeechSyn
 }
 
 describe('Fastify API contract', () => {
+  it('flushes both private stores even when browser shutdown fails', async () => {
+    const provider = new FakeProvider();
+    vi.spyOn(provider, 'close').mockRejectedValue(
+      new AppError('browser_disconnected', 'simulated browser cleanup failure'),
+    );
+    const apiKeys = ApiKeyStore.memory(auth.authorization.slice('Bearer '.length));
+    const usage = UsageStore.memory();
+    const keyFlush = vi.spyOn(apiKeys, 'flush');
+    const usageFlush = vi.spyOn(usage, 'flush');
+    const app = buildServer({
+      config: testConfig(),
+      provider,
+      logger: createLogger('silent'),
+      apiKeys,
+      usage,
+    });
+
+    await expect(app.close()).rejects.toMatchObject({ code: 'browser_disconnected' });
+    expect(keyFlush).toHaveBeenCalledOnce();
+    expect(usageFlush).toHaveBeenCalledOnce();
+  });
+
   it('exposes liveness but protects model and generation routes', async () => {
     const app = server(new FakeProvider());
     expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
@@ -330,6 +352,7 @@ describe('Fastify API contract', () => {
     ['security_challenge', 503],
     ['rate_limited', 429],
     ['ui_changed', 503],
+    ['storage_unavailable', 503],
   ] as const)('returns machine-readable %s errors', async (code, status) => {
     const app = server(new ErrorProvider(new AppError(code, `simulated ${code}`)));
     const response = await app.inject({
