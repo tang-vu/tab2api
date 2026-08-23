@@ -59,8 +59,11 @@ The running service is the sole mutable owner of the API-key and usage stores. C
 does not load those files independently: it verifies the exact unauthenticated loopback health
 contract, then performs one bounded authenticated `/admin/*` request with redirects disabled. This
 avoids stale in-memory state or a later service flush overwriting a concurrent offline CLI change.
-An accidental unrelated process on the configured port receives no administrator credential. A
-malicious process with the same operating-system user can still race the probe and already has that
+The native desktop client applies the same just-in-time identity check over a separate connection
+before it reads and sends the administrator key; the probe and authenticated request share one
+deadline, and returned structures must match the closed Rust contract. An accidental unrelated
+process on the configured port therefore receives no administrator credential. A malicious process
+with the same operating-system user can still imitate or race the public probe and already has that
 user's file authority; that remains outside the local single-user trust boundary.
 
 ### Optional personal tunnel

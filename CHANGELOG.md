@@ -21,6 +21,9 @@ All notable user-facing changes are documented here. This project follows semant
   the administrator key, refuses redirects, bounds and schema-checks responses, and reports typed
   cancellation, timeout, authentication, unexpected-service, and transport failures without
   exposing response bodies.
+- Native desktop administration now performs a separate just-in-time unauthenticated identity probe
+  before reading or sending the administrator key, shares one deadline across both connections, and
+  rejects oversized or contract-invalid responses without exposing credentials or response bodies.
 
 ## [0.2.0] - 2026-08-23
 

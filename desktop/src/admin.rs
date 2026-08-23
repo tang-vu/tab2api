@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::env;
 use std::fs::{OpenOptions, read_to_string};
 use std::io::{Read, Write};
@@ -7,7 +8,7 @@ use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const MAX_ADMIN_RESPONSE_BYTES: u64 = 1024 * 1024;
+const MAX_ADMIN_RESPONSE_BYTES: u64 = 2_621_440;
 const ADMIN_TIMEOUT: Duration = Duration::from_secs(4);
 const READINESS_TIMEOUT: Duration = Duration::from_secs(45);
 const API_DOCS: &str = include_str!("../../docs/api.md");
@@ -20,7 +21,7 @@ pub enum ApiKeyRole {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApiKeySummary {
     pub id: String,
     pub label: String,
@@ -31,7 +32,7 @@ pub struct ApiKeySummary {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreatedApiKey {
     pub id: String,
     pub label: String,
@@ -41,12 +42,13 @@ pub struct CreatedApiKey {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApiKeyList {
     pub data: Vec<ApiKeySummary>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EndpointUsage {
     pub requests: u64,
     pub successful: u64,
@@ -59,7 +61,7 @@ pub struct EndpointUsage {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KeyUsage {
     pub key_id: String,
     pub label: String,
@@ -76,19 +78,21 @@ pub struct KeyUsage {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UsageSnapshot {
     pub token_counts: String,
     pub keys: Vec<KeyUsage>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RevokedApiKey {
     id: String,
     status: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ResetUsage {
     status: String,
     #[serde(rename = "tokenCounts")]
@@ -121,9 +125,17 @@ pub struct SessionReadiness {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ReadinessResponse {
     status: String,
     session: SessionState,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HealthResponse {
+    status: String,
+    service: String,
 }
 
 pub struct AdminClient {
@@ -138,7 +150,7 @@ impl AdminClient {
 
     pub fn list_api_keys(&self) -> Result<ApiKeyList, String> {
         let result = self.request::<ApiKeyList>("GET", "/admin/api-keys", None, ADMIN_TIMEOUT)?;
-        if result.data.len() > 101 || result.data.iter().any(|key| !valid_key_summary(key)) {
+        if !valid_api_key_list(&result.data) {
             return Err("the local service returned invalid API-key metadata".into());
         }
         Ok(result)
@@ -149,24 +161,30 @@ impl AdminClient {
     }
 
     fn readiness_with_timeout(&self, timeout: Duration) -> Result<SessionReadiness, String> {
+        let deadline = request_deadline(timeout)?;
+        self.verify_service_identity(deadline)?;
         let token = load_admin_token(&self.data_dir)?;
-        self.readiness_with_token_timeout(timeout, token)
+        let response = self.request_authenticated_bytes("GET", "/readyz", None, deadline, token)?;
+        let (status_code, response) = parse_json_response_with_status(&response)?;
+        validate_readiness(status_code, response)
     }
 
+    #[cfg(test)]
     fn readiness_with_token_timeout(
         &self,
         timeout: Duration,
         token: String,
     ) -> Result<SessionReadiness, String> {
-        let (status_code, response) = self.request_with_token_status::<ReadinessResponse>(
-            "GET", "/readyz", None, timeout, token,
-        )?;
+        let deadline = request_deadline(timeout)?;
+        self.verify_service_identity(deadline)?;
+        let response = self.request_authenticated_bytes("GET", "/readyz", None, deadline, token)?;
+        let (status_code, response) = parse_json_response_with_status(&response)?;
         validate_readiness(status_code, response)
     }
 
     pub fn create_api_key(&self, label: &str) -> Result<CreatedApiKey, String> {
         let normalized = label.trim();
-        if normalized.is_empty() || normalized.chars().count() > 80 {
+        if !valid_label(normalized) {
             return Err("API key label must contain 1-80 characters".into());
         }
         let body = serde_json::to_vec(&serde_json::json!({ "label": normalized }))
@@ -174,15 +192,10 @@ impl AdminClient {
         let created =
             self.request::<CreatedApiKey>("POST", "/admin/api-keys", Some(&body), ADMIN_TIMEOUT)?;
         if !valid_client_id(&created.id)
-            || created.label.is_empty()
-            || created.label.chars().count() > 80
+            || !valid_label(&created.label)
             || created.role != ApiKeyRole::Client
-            || created.token.len() < 24
-            || created.token.len() > 256
-            || !created
-                .token
-                .starts_with(&format!("tab2api_{}_", created.id))
-            || created.token.bytes().any(|byte| !byte.is_ascii_graphic())
+            || !valid_iso_timestamp(&created.created_at)
+            || !valid_client_token(&created.id, &created.token)
         {
             return Err("the local service returned an invalid new API key".into());
         }
@@ -237,10 +250,14 @@ impl AdminClient {
         body: Option<&[u8]>,
         timeout: Duration,
     ) -> Result<T, String> {
+        let deadline = request_deadline(timeout)?;
+        self.verify_service_identity(deadline)?;
         let token = load_admin_token(&self.data_dir)?;
-        self.request_with_token(method, path, body, timeout, token)
+        let response = self.request_authenticated_bytes(method, path, body, deadline, token)?;
+        parse_json_response(&response)
     }
 
+    #[cfg(test)]
     fn request_with_token<T: DeserializeOwned>(
         &self,
         method: &str,
@@ -249,34 +266,50 @@ impl AdminClient {
         timeout: Duration,
         token: String,
     ) -> Result<T, String> {
-        let response = self.request_bytes_with_token(method, path, body, timeout, token)?;
+        let deadline = request_deadline(timeout)?;
+        self.verify_service_identity(deadline)?;
+        let response = self.request_authenticated_bytes(method, path, body, deadline, token)?;
         parse_json_response(&response)
     }
 
-    fn request_with_token_status<T: DeserializeOwned>(
-        &self,
-        method: &str,
-        path: &str,
-        body: Option<&[u8]>,
-        timeout: Duration,
-        token: String,
-    ) -> Result<(u16, T), String> {
-        let response = self.request_bytes_with_token(method, path, body, timeout, token)?;
-        parse_json_response_with_status(&response)
+    fn verify_service_identity(&self, deadline: Instant) -> Result<(), String> {
+        let response = self.request_bytes("GET", "/healthz", None, deadline, None)?;
+        let identity = parse_json_response::<HealthResponse>(&response).map_err(|_| {
+            "the configured loopback port is not serving tab2api; the administrator key was not sent"
+                .to_string()
+        })?;
+        if identity.status != "ok" || identity.service != "tab2api" {
+            return Err(
+                "the configured loopback port is not serving tab2api; the administrator key was not sent"
+                    .into(),
+            );
+        }
+        Ok(())
     }
 
-    fn request_bytes_with_token(
+    fn request_authenticated_bytes(
         &self,
         method: &str,
         path: &str,
         body: Option<&[u8]>,
-        timeout: Duration,
+        deadline: Instant,
         token: String,
     ) -> Result<Vec<u8>, String> {
-        let deadline = Instant::now() + timeout;
+        self.request_bytes(method, path, body, deadline, Some(token))
+    }
+
+    fn request_bytes(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        deadline: Instant,
+        token: Option<String>,
+    ) -> Result<Vec<u8>, String> {
         let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, self.port);
-        let mut stream = TcpStream::connect_timeout(&address.into(), timeout)
-            .map_err(|_| "the local service is unavailable for administration")?;
+        let mut stream =
+            TcpStream::connect_timeout(&address.into(), remaining_request_timeout(deadline)?)
+                .map_err(|_| "the local service is unavailable for administration")?;
         let remaining = remaining_request_timeout(deadline)?;
         stream
             .set_read_timeout(Some(remaining))
@@ -285,11 +318,18 @@ impl AdminClient {
             .set_write_timeout(Some(remaining))
             .map_err(|_| "could not configure the local administration connection")?;
         let body = body.unwrap_or_default();
-        let request = format!(
-            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            self.port,
-            body.len()
-        );
+        let request = match token.as_deref() {
+            Some(token) => format!(
+                "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAccept: application/json\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                self.port,
+                body.len()
+            ),
+            None => format!(
+                "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAccept: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                self.port,
+                body.len()
+            ),
+        };
         stream
             .write_all(request.as_bytes())
             .and_then(|()| stream.write_all(body))
@@ -315,6 +355,12 @@ impl AdminClient {
             response.extend_from_slice(&chunk[..read]);
         }
     }
+}
+
+fn request_deadline(timeout: Duration) -> Result<Instant, String> {
+    Instant::now()
+        .checked_add(timeout)
+        .ok_or_else(|| "the local administration request timeout was invalid".into())
 }
 
 fn remaining_request_timeout(deadline: Instant) -> Result<Duration, String> {
@@ -452,12 +498,60 @@ fn valid_client_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
-fn valid_key_summary(key: &ApiKeySummary) -> bool {
-    let valid_id = match key.role {
-        ApiKeyRole::Admin => key.id == "local-admin",
-        ApiKeyRole::Client => valid_client_id(&key.id),
-    };
-    valid_id && !key.label.is_empty() && key.label.chars().count() <= 80
+fn valid_api_key_list(keys: &[ApiKeySummary]) -> bool {
+    if keys.is_empty() || keys.len() > 101 {
+        return false;
+    }
+    let mut identifiers = HashSet::with_capacity(keys.len());
+    keys.iter().enumerate().all(|(index, key)| {
+        identifiers.insert(key.id.as_str())
+            && valid_label(&key.label)
+            && match key.role {
+                ApiKeyRole::Admin => {
+                    index == 0
+                        && key.id == "local-admin"
+                        && key.label == "Local administrator"
+                        && key.created_at == "runtime"
+                        && key.revoked_at.is_none()
+                }
+                ApiKeyRole::Client => {
+                    index > 0
+                        && valid_client_id(&key.id)
+                        && valid_iso_timestamp(&key.created_at)
+                        && key.revoked_at.as_deref().is_none_or(valid_iso_timestamp)
+                }
+            }
+    })
+}
+
+fn valid_label(label: &str) -> bool {
+    let length = label.chars().count();
+    (1..=80).contains(&length) && !label.chars().any(char::is_control)
+}
+
+fn valid_iso_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 24 {
+        return false;
+    }
+    bytes.iter().enumerate().all(|(index, byte)| match index {
+        4 | 7 => *byte == b'-',
+        10 => *byte == b'T',
+        13 | 16 => *byte == b':',
+        19 => *byte == b'.',
+        23 => *byte == b'Z',
+        _ => byte.is_ascii_digit(),
+    })
+}
+
+fn valid_client_token(id: &str, token: &str) -> bool {
+    let prefix = format!("tab2api_{id}_");
+    token.strip_prefix(&prefix).is_some_and(|suffix| {
+        suffix.len() == 43
+            && suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    })
 }
 
 fn valid_latency(value: f64) -> bool {
@@ -494,6 +588,7 @@ mod tests {
     use super::*;
     use std::fs::{create_dir, read_to_string};
     use std::net::TcpListener;
+    use std::sync::mpsc;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -505,6 +600,31 @@ mod tests {
         let directory = env::temp_dir().join(format!("tab2api-{name}-{unique}"));
         create_dir(&directory).unwrap();
         directory
+    }
+
+    fn accept_request(listener: &TcpListener) -> (TcpStream, String) {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 2048];
+        let read = stream.read(&mut request).unwrap();
+        (
+            stream,
+            std::str::from_utf8(&request[..read]).unwrap().to_owned(),
+        )
+    }
+
+    fn assert_identity_probe(request: &str) {
+        assert!(request.starts_with("GET /healthz HTTP/1.1\r\n"));
+        assert!(request.contains("\r\nHost: 127.0.0.1:"));
+        assert!(request.contains("\r\nAccept: application/json\r\n"));
+        assert!(!request.to_ascii_lowercase().contains("authorization:"));
+    }
+
+    fn respond_with_identity(stream: &mut TcpStream) {
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\",\"service\":\"tab2api\"}",
+            )
+            .unwrap();
     }
 
     #[test]
@@ -592,6 +712,50 @@ mod tests {
         assert!(valid_client_id("0123456789abcdef"));
         assert!(!valid_client_id("../../api-token"));
         assert!(!valid_client_id("0123456789ABCDEF"));
+        assert!(valid_label("Personal laptop"));
+        assert!(!valid_label("bad\u{1b}label"));
+        assert!(valid_iso_timestamp("2026-08-23T00:00:00.000Z"));
+        assert!(!valid_iso_timestamp("2026-08-23 00:00:00Z"));
+        assert!(valid_client_token(
+            "0123456789abcdef",
+            &format!("tab2api_0123456789abcdef_{}", "A".repeat(43))
+        ));
+        assert!(!valid_client_token(
+            "0123456789abcdef",
+            "tab2api_0123456789abcdef_too-short"
+        ));
+
+        let administrator = ApiKeySummary {
+            id: "local-admin".into(),
+            label: "Local administrator".into(),
+            role: ApiKeyRole::Admin,
+            created_at: "runtime".into(),
+            revoked_at: None,
+        };
+        let client = ApiKeySummary {
+            id: "0123456789abcdef".into(),
+            label: "Personal laptop".into(),
+            role: ApiKeyRole::Client,
+            created_at: "2026-08-23T00:00:00.000Z".into(),
+            revoked_at: None,
+        };
+        assert!(valid_api_key_list(&[administrator.clone(), client.clone()]));
+        assert!(!valid_api_key_list(&[]));
+        assert!(!valid_api_key_list(&[
+            client.clone(),
+            administrator.clone()
+        ]));
+        assert!(!valid_api_key_list(&[
+            administrator,
+            client.clone(),
+            client
+        ]));
+        assert!(
+            parse_json_response::<ApiKeyList>(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"data\":[],\"unexpected\":true}"
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -614,11 +778,13 @@ mod tests {
     fn local_admin_request_times_out_without_leaking_the_key() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
+        let (release_sender, release_receiver) = mpsc::channel();
         let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 1024];
-            let _ = stream.read(&mut request);
-            thread::sleep(Duration::from_millis(150));
+            let (_stream, request) = accept_request(&listener);
+            assert_identity_probe(&request);
+            release_receiver
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap();
         });
         let client = AdminClient::new(port, PathBuf::new());
         let secret = "test-administrator-key-never-report";
@@ -633,6 +799,7 @@ mod tests {
             .unwrap_err();
         assert!(error.contains("timed out"));
         assert!(!error.contains(secret));
+        release_sender.send(()).unwrap();
         server.join().unwrap();
     }
 
@@ -641,12 +808,15 @@ mod tests {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 2048];
-            let read = stream.read(&mut request).unwrap();
-            let request = std::str::from_utf8(&request[..read]).unwrap();
+            let (mut identity_stream, identity_request) = accept_request(&listener);
+            assert_identity_probe(&identity_request);
+            respond_with_identity(&mut identity_stream);
+            drop(identity_stream);
+
+            let (mut stream, request) = accept_request(&listener);
             assert!(request.starts_with("GET /admin/api-keys HTTP/1.1\r\n"));
             assert!(request.contains("\r\nHost: 127.0.0.1:"));
+            assert!(request.contains("\r\nAccept: application/json\r\n"));
             assert!(
                 request
                     .contains("\r\nAuthorization: Bearer test-administrator-key-never-report\r\n")
@@ -672,16 +842,49 @@ mod tests {
     }
 
     #[test]
+    fn unrelated_loopback_service_never_receives_the_administrator_key() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut stream, request) = accept_request(&listener);
+            assert_identity_probe(&request);
+            assert!(!request.contains("test-administrator-key-never-report"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{\"status\":\"ok\",\"service\":\"another-service\"}",
+                )
+                .unwrap();
+        });
+        let client = AdminClient::new(port, PathBuf::new());
+        let secret = "test-administrator-key-never-report";
+        let error = client
+            .request_with_token::<ApiKeyList>(
+                "GET",
+                "/admin/api-keys",
+                None,
+                Duration::from_secs(1),
+                secret.to_owned(),
+            )
+            .unwrap_err();
+        assert!(error.contains("administrator key was not sent"));
+        assert!(!error.contains(secret));
+        server.join().unwrap();
+    }
+
+    #[test]
     fn readiness_request_accepts_a_typed_non_ready_response_without_exposing_the_key() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 2048];
-            let read = stream.read(&mut request).unwrap();
-            let request = std::str::from_utf8(&request[..read]).unwrap();
+            let (mut identity_stream, identity_request) = accept_request(&listener);
+            assert_identity_probe(&identity_request);
+            respond_with_identity(&mut identity_stream);
+            drop(identity_stream);
+
+            let (mut stream, request) = accept_request(&listener);
             assert!(request.starts_with("GET /readyz HTTP/1.1\r\n"));
             assert!(request.contains("\r\nHost: 127.0.0.1:"));
+            assert!(request.contains("\r\nAccept: application/json\r\n"));
             assert!(
                 request
                     .contains("\r\nAuthorization: Bearer test-administrator-key-never-report\r\n")
@@ -713,11 +916,13 @@ mod tests {
     fn readiness_request_is_bounded_and_never_leaks_the_key() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
+        let (release_sender, release_receiver) = mpsc::channel();
         let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 1024];
-            let _ = stream.read(&mut request);
-            thread::sleep(Duration::from_millis(150));
+            let (_stream, request) = accept_request(&listener);
+            assert_identity_probe(&request);
+            release_receiver
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap();
         });
         let client = AdminClient::new(port, PathBuf::new());
         let secret = "test-readiness-key-never-report";
@@ -726,6 +931,7 @@ mod tests {
             .unwrap_err();
         assert!(error.contains("timed out"));
         assert!(!error.contains(secret));
+        release_sender.send(()).unwrap();
         server.join().unwrap();
     }
 }
