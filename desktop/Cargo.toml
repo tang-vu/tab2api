@@ -1,6 +1,6 @@
 [package]
 name = "tab2api-desktop"
-version = "0.2.0"
+version = "0.2.1"
 description = "Native desktop controller for the local tab2api sidecar"
 authors = ["tab2api contributors"]
 edition = "2024"
