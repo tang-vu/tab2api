@@ -57,6 +57,7 @@ describe('Windows desktop packaging contract', () => {
     expect(smoke).toContain(
       '$Process.StandardInput.BaseStream.Write($payload, 0, $payload.Length)',
     );
+    expect(smoke).toContain('decoder explicitly accepts that RFC 8259 interoperability case');
     expect(smoke).toContain('$process.StandardInput.Close()');
     expect(smoke).toContain("-ExpectedEvent 'stopping'");
     expect(smoke).toContain("-ExpectedEvent 'stopped' -TimeoutMilliseconds 30000");

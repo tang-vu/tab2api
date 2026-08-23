@@ -153,6 +153,21 @@ describe('desktop sidecar lifecycle', () => {
     expect(errors).toEqual(['invalid_command', 'command_too_large']);
   });
 
+  it('accepts one stream-leading BOM but rejects it on later protocol lines', () => {
+    const commands: string[] = [];
+    const errors: string[] = [];
+    const decoder = new SidecarCommandDecoder(
+      ({ command }) => commands.push(command),
+      (error) => errors.push(error),
+    );
+
+    decoder.push('\uFEFF{"command":"status"}\n');
+    decoder.push('\uFEFF{"command":"shutdown"}\n');
+
+    expect(commands).toEqual(['status']);
+    expect(errors).toEqual(['invalid_command']);
+  });
+
   it('exits after startup failure even while the parent pipe remains open', async () => {
     const cwd = path.resolve(import.meta.dirname, '..');
     const child = spawn(

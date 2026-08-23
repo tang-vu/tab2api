@@ -112,6 +112,7 @@ type SidecarCommand = { command: 'status' } | { command: 'shutdown' };
 
 export class SidecarCommandDecoder {
   private buffer = '';
+  private atStreamStart = true;
 
   constructor(
     private readonly onCommand: (command: SidecarCommand) => void,
@@ -120,6 +121,12 @@ export class SidecarCommandDecoder {
   ) {}
 
   push(chunk: string): void {
+    if (this.atStreamStart) {
+      this.atStreamStart = false;
+      // RFC 8259 permits parsers to ignore one leading BOM for interoperability. Some
+      // Windows Process.StandardInput writers emit it before their first redirected line.
+      if (chunk.startsWith('\uFEFF')) chunk = chunk.slice(1);
+    }
     this.buffer += chunk;
     if (Buffer.byteLength(this.buffer, 'utf8') > this.maximumLineBytes) {
       this.buffer = '';

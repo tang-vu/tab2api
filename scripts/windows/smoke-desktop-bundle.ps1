@@ -55,9 +55,9 @@ function Write-LifecycleCommand {
         [Parameter(Mandatory = $true)] [ValidateSet('status', 'shutdown')] [string]$Command
     )
 
-    # Process.StandardInput otherwise inherits a runner-dependent text encoding. Write the
-    # JSON protocol as explicit BOM-free UTF-8 bytes so the first command cannot be mistaken
-    # for malformed JSON on a clean Windows host with a different console code page.
+    # Keep the command bytes UTF-8 across runner console code pages. Windows' redirected
+    # StreamWriter can emit one leading BOM when BaseStream is exposed; the bounded sidecar
+    # decoder explicitly accepts that RFC 8259 interoperability case only at stream start.
     $payload = [Text.UTF8Encoding]::new($false).GetBytes('{"command":"' + $Command + '"}' + "`n")
     $Process.StandardInput.BaseStream.Write($payload, 0, $payload.Length)
     $Process.StandardInput.BaseStream.Flush()
