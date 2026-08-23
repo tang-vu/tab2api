@@ -69,4 +69,16 @@ describe('workflow action pinning', () => {
     expect(sources.map(({ fileName }) => fileName)).toContain('source-package.yml');
     expect(verifyWorkflowActionPins(sources)).toBeGreaterThan(0);
   });
+
+  it('writes source-package checksums with artifact-portable basenames', async () => {
+    const rootDirectory = path.resolve(import.meta.dirname, '..');
+    const sources = await readWorkflowSources(rootDirectory);
+    const sourcePackage = sources.find(({ fileName }) => fileName === 'source-package.yml');
+    expect(sourcePackage).toBeDefined();
+    expect(sourcePackage?.contents).toContain("cd -- 'release-candidate'");
+    expect(sourcePackage?.contents).toContain(
+      `sha256sum -- "$package_name" "$sbom_name" > 'SHA256SUMS'`,
+    );
+    expect(sourcePackage?.contents).not.toContain('sha256sum -- "$package_path" "$sbom_path"');
+  });
 });

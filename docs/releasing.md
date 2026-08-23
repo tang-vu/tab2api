@@ -32,6 +32,12 @@ gh attestation verify tab2api-X.Y.Z.tgz -R tang-vu/tab2api
 sha256sum --check SHA256SUMS
 ```
 
+The `v0.2.1` workflow artifact alone retained the internal `release-candidate/` staging prefix in
+`SHA256SUMS` even though artifact download flattens that directory. Its hashes and attestations are
+valid; verify that artifact with
+`sed 's#release-candidate/##' SHA256SUMS | sha256sum --check -`. Later candidates write portable
+basenames and use the direct command above.
+
 `npm run release:verify -- --tag vX.Y.Z` performs the local version/changelog/package-boundary
 checks. Supplying `--pack-json <path>` additionally checks an `npm pack --json` result.
 

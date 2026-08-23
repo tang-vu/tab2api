@@ -115,13 +115,18 @@ jobs:
         run: |
           set -euo pipefail
           version="${RELEASE_TAG#v}"
-          package_path="release-candidate/tab2api-${version}.tgz"
-          sbom_path="release-candidate/tab2api-${version}.sbom.cdx.json"
+          package_name="tab2api-${version}.tgz"
+          sbom_name="tab2api-${version}.sbom.cdx.json"
+          package_path="release-candidate/${package_name}"
+          sbom_path="release-candidate/${sbom_name}"
           checksums_path='release-candidate/SHA256SUMS'
           mkdir -- 'release-candidate'
           mv -- "tab2api-${version}.tgz" "$package_path"
           npm sbom --omit=dev --package-lock-only --sbom-format cyclonedx > "$sbom_path"
-          sha256sum -- "$package_path" "$sbom_path" > "$checksums_path"
+          (
+            cd -- 'release-candidate'
+            sha256sum -- "$package_name" "$sbom_name" > 'SHA256SUMS'
+          )
           echo "package=$package_path" >> "$GITHUB_OUTPUT"
           echo "sbom=$sbom_path" >> "$GITHUB_OUTPUT"
           echo "checksums=$checksums_path" >> "$GITHUB_OUTPUT"

@@ -4,6 +4,12 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+### Fixed
+
+- Source-package checksum manifests now use artifact-portable basenames, so the documented direct
+  verification command works after GitHub flattens the uploaded staging directory. The `v0.2.1`
+  path-prefix workaround remains documented without moving or replacing that public tag.
+
 ## [0.2.1] - 2026-08-24
 
 ### Added
