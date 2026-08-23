@@ -18,13 +18,43 @@ const en = {
   stopped: 'Stopped',
   starting: 'Starting',
   ready: 'Ready',
+  serviceOnline: 'Local API online',
   unhealthy: 'Needs attention',
   loginOpen: 'Login browser open',
   serviceStopped: 'The local service is stopped.',
   serviceStarting: 'Starting the loopback-only service and dedicated browser.',
   serviceReady: 'The local API and dedicated browser are ready.',
+  serviceOnlineDetail: 'The loopback API is healthy. Verify the ChatGPT session below.',
   serviceUnhealthy: 'The process is running but its loopback health check failed.',
   serviceLoginOpen: 'Close the manual login browser before starting the service.',
+  sessionTitle: 'ChatGPT session',
+  checkSession: 'Check session',
+  sessionUnavailable: 'Service offline',
+  sessionUnavailableDetail: 'Start the local service before checking the browser session.',
+  sessionUnchecked: 'Not checked',
+  sessionUncheckedDetail: 'Run a bounded authenticated check of the live ChatGPT UI.',
+  sessionChecking: 'Checking session...',
+  sessionCheckingDetail: 'Opening a temporary browser tab and inspecting the public ChatGPT UI.',
+  sessionReady: 'Ready for requests',
+  sessionReadyDetail: 'The authenticated ChatGPT UI and required controls are available.',
+  sessionLoginRequired: 'Login required',
+  sessionLoginRequiredDetail: 'Stop the service, open the login browser, and sign in manually.',
+  sessionChallenge: 'Manual challenge',
+  sessionChallengeDetail: 'Complete the security challenge manually in the dedicated browser.',
+  sessionBusy: 'Generation in progress',
+  sessionBusyDetail: 'Wait for the current browser generation to finish, then check again.',
+  sessionRateLimited: 'Rate limited',
+  sessionRateLimitedDetail:
+    'Wait for the account or UI limit to clear. tab2api will not bypass it.',
+  sessionUiChanged: 'UI compatibility issue',
+  sessionUiChangedDetail: 'The current ChatGPT UI does not match the supported selectors.',
+  sessionDisconnected: 'Browser disconnected',
+  sessionDisconnectedDetail: 'Restart the local service and its dedicated browser, then retry.',
+  sessionCheckFailed: 'Check failed',
+  sessionCheckFailedDetail: 'The session could not be verified. Retry or inspect the error below.',
+  sessionTimeoutError: 'The ChatGPT session check exceeded its 45-second safety limit.',
+  sessionCheckBusyError: 'Another ChatGPT session check is already running.',
+  sessionInvalidResult: 'The local service returned an invalid session-check result.',
   startService: 'Start service',
   stopService: 'Stop service',
   openLogin: 'Open login browser',
@@ -1645,7 +1675,271 @@ const managementTranslations = {
   },
 };
 
+const readinessTranslations = {
+  vi: {
+    serviceOnline: 'API cục bộ đang hoạt động',
+    serviceOnlineDetail: 'API loopback đang khỏe. Hãy xác minh phiên ChatGPT bên dưới.',
+    sessionTitle: 'Phiên ChatGPT',
+    checkSession: 'Kiểm tra phiên',
+    sessionUnavailable: 'Dịch vụ đang tắt',
+    sessionUnavailableDetail: 'Hãy bật dịch vụ cục bộ trước khi kiểm tra phiên trình duyệt.',
+    sessionUnchecked: 'Chưa kiểm tra',
+    sessionUncheckedDetail:
+      'Chạy kiểm tra có xác thực và giới hạn thời gian trên giao diện ChatGPT trực tiếp.',
+    sessionChecking: 'Đang kiểm tra phiên...',
+    sessionCheckingDetail: 'Đang mở một tab tạm và kiểm tra giao diện ChatGPT công khai.',
+    sessionReady: 'Sẵn sàng nhận yêu cầu',
+    sessionReadyDetail: 'Phiên ChatGPT đã xác thực và các điều khiển cần thiết đang khả dụng.',
+    sessionLoginRequired: 'Cần đăng nhập',
+    sessionLoginRequiredDetail: 'Dừng dịch vụ, mở trình duyệt đăng nhập và đăng nhập thủ công.',
+    sessionChallenge: 'Cần xử lý thủ công',
+    sessionChallengeDetail: 'Hoàn tất thử thách bảo mật thủ công trong trình duyệt riêng.',
+    sessionBusy: 'Đang tạo nội dung',
+    sessionBusyDetail: 'Chờ tác vụ hiện tại trong trình duyệt hoàn tất rồi kiểm tra lại.',
+    sessionRateLimited: 'Đang bị giới hạn',
+    sessionRateLimitedDetail:
+      'Chờ giới hạn tài khoản hoặc giao diện được gỡ. tab2api không vượt giới hạn.',
+    sessionUiChanged: 'Giao diện chưa tương thích',
+    sessionUiChangedDetail: 'Giao diện ChatGPT hiện tại không khớp với các selector được hỗ trợ.',
+    sessionDisconnected: 'Trình duyệt mất kết nối',
+    sessionDisconnectedDetail: 'Khởi động lại dịch vụ cục bộ và trình duyệt riêng rồi thử lại.',
+    sessionCheckFailed: 'Kiểm tra thất bại',
+    sessionCheckFailedDetail: 'Không thể xác minh phiên. Hãy thử lại hoặc xem lỗi bên dưới.',
+    sessionTimeoutError: 'Kiểm tra phiên ChatGPT đã vượt giới hạn an toàn 45 giây.',
+    sessionCheckBusyError: 'Một lượt kiểm tra phiên ChatGPT khác đang chạy.',
+    sessionInvalidResult: 'Dịch vụ cục bộ trả về kết quả kiểm tra phiên không hợp lệ.',
+  },
+  zh: {
+    serviceOnline: '本地 API 在线',
+    serviceOnlineDetail: 'Loopback API 运行正常。请在下方验证 ChatGPT 会话。',
+    sessionTitle: 'ChatGPT 会话',
+    checkSession: '检查会话',
+    sessionUnavailable: '服务离线',
+    sessionUnavailableDetail: '请先启动本地服务，再检查浏览器会话。',
+    sessionUnchecked: '尚未检查',
+    sessionUncheckedDetail: '对实时 ChatGPT 界面运行一次有时限的认证检查。',
+    sessionChecking: '正在检查会话…',
+    sessionCheckingDetail: '正在打开临时标签页并检查 ChatGPT 公共界面。',
+    sessionReady: '可接收请求',
+    sessionReadyDetail: '已认证的 ChatGPT 界面和所需控件均可用。',
+    sessionLoginRequired: '需要登录',
+    sessionLoginRequiredDetail: '停止服务，打开登录浏览器并手动登录。',
+    sessionChallenge: '需要手动验证',
+    sessionChallengeDetail: '请在专用浏览器中手动完成安全验证。',
+    sessionBusy: '正在生成',
+    sessionBusyDetail: '等待当前浏览器生成结束后再检查。',
+    sessionRateLimited: '已触发速率限制',
+    sessionRateLimitedDetail: '等待账户或界面限制解除；tab2api 不会绕过限制。',
+    sessionUiChanged: '界面兼容性问题',
+    sessionUiChangedDetail: '当前 ChatGPT 界面与受支持的选择器不匹配。',
+    sessionDisconnected: '浏览器已断开',
+    sessionDisconnectedDetail: '重启本地服务及其专用浏览器后重试。',
+    sessionCheckFailed: '检查失败',
+    sessionCheckFailedDetail: '无法验证会话。请重试或查看下方错误。',
+    sessionTimeoutError: 'ChatGPT 会话检查超过了 45 秒安全时限。',
+    sessionCheckBusyError: '已有另一个 ChatGPT 会话检查正在运行。',
+    sessionInvalidResult: '本地服务返回了无效的会话检查结果。',
+  },
+  ja: {
+    serviceOnline: 'ローカル API はオンライン',
+    serviceOnlineDetail: 'Loopback API は正常です。下で ChatGPT セッションを確認してください。',
+    sessionTitle: 'ChatGPT セッション',
+    checkSession: 'セッションを確認',
+    sessionUnavailable: 'サービスはオフライン',
+    sessionUnavailableDetail:
+      'ブラウザーセッションを確認する前にローカルサービスを開始してください。',
+    sessionUnchecked: '未確認',
+    sessionUncheckedDetail: '実際の ChatGPT UI に対して、認証済みの時間制限付き確認を実行します。',
+    sessionChecking: 'セッションを確認中…',
+    sessionCheckingDetail: '一時タブを開き、公開 ChatGPT UI を確認しています。',
+    sessionReady: 'リクエスト受付可能',
+    sessionReadyDetail: '認証済み ChatGPT UI と必要な操作要素を利用できます。',
+    sessionLoginRequired: 'ログインが必要',
+    sessionLoginRequiredDetail:
+      'サービスを停止し、ログインブラウザーを開いて手動でログインしてください。',
+    sessionChallenge: '手動確認が必要',
+    sessionChallengeDetail: '専用ブラウザーでセキュリティ確認を手動で完了してください。',
+    sessionBusy: '生成処理中',
+    sessionBusyDetail: '現在の生成が完了してから、もう一度確認してください。',
+    sessionRateLimited: 'レート制限中',
+    sessionRateLimitedDetail:
+      'アカウントまたは UI の制限解除を待ってください。tab2api は回避しません。',
+    sessionUiChanged: 'UI 互換性の問題',
+    sessionUiChangedDetail: '現在の ChatGPT UI は対応セレクターと一致しません。',
+    sessionDisconnected: 'ブラウザー切断',
+    sessionDisconnectedDetail: 'ローカルサービスと専用ブラウザーを再起動して再試行してください。',
+    sessionCheckFailed: '確認に失敗',
+    sessionCheckFailedDetail:
+      'セッションを確認できませんでした。再試行するか下のエラーを確認してください。',
+    sessionTimeoutError: 'ChatGPT セッション確認が 45 秒の安全上限を超えました。',
+    sessionCheckBusyError: '別の ChatGPT セッション確認がすでに実行中です。',
+    sessionInvalidResult: 'ローカルサービスが無効なセッション確認結果を返しました。',
+  },
+  ko: {
+    serviceOnline: '로컬 API 온라인',
+    serviceOnlineDetail: 'Loopback API가 정상입니다. 아래에서 ChatGPT 세션을 확인하세요.',
+    sessionTitle: 'ChatGPT 세션',
+    checkSession: '세션 확인',
+    sessionUnavailable: '서비스 오프라인',
+    sessionUnavailableDetail: '브라우저 세션을 확인하기 전에 로컬 서비스를 시작하세요.',
+    sessionUnchecked: '확인하지 않음',
+    sessionUncheckedDetail: '실시간 ChatGPT UI에 대해 인증된 시간 제한 검사를 실행합니다.',
+    sessionChecking: '세션 확인 중…',
+    sessionCheckingDetail: '임시 탭을 열어 공개 ChatGPT UI를 확인하고 있습니다.',
+    sessionReady: '요청 준비 완료',
+    sessionReadyDetail: '인증된 ChatGPT UI와 필수 컨트롤을 사용할 수 있습니다.',
+    sessionLoginRequired: '로그인 필요',
+    sessionLoginRequiredDetail: '서비스를 중지하고 로그인 브라우저를 열어 수동으로 로그인하세요.',
+    sessionChallenge: '수동 확인 필요',
+    sessionChallengeDetail: '전용 브라우저에서 보안 확인을 수동으로 완료하세요.',
+    sessionBusy: '생성 진행 중',
+    sessionBusyDetail: '현재 브라우저 생성이 끝난 후 다시 확인하세요.',
+    sessionRateLimited: '요청 제한됨',
+    sessionRateLimitedDetail:
+      '계정 또는 UI 제한이 해제될 때까지 기다리세요. tab2api는 우회하지 않습니다.',
+    sessionUiChanged: 'UI 호환성 문제',
+    sessionUiChangedDetail: '현재 ChatGPT UI가 지원되는 셀렉터와 일치하지 않습니다.',
+    sessionDisconnected: '브라우저 연결 끊김',
+    sessionDisconnectedDetail: '로컬 서비스와 전용 브라우저를 다시 시작한 후 재시도하세요.',
+    sessionCheckFailed: '확인 실패',
+    sessionCheckFailedDetail: '세션을 확인할 수 없습니다. 다시 시도하거나 아래 오류를 확인하세요.',
+    sessionTimeoutError: 'ChatGPT 세션 확인이 45초 안전 제한을 초과했습니다.',
+    sessionCheckBusyError: '다른 ChatGPT 세션 확인이 이미 실행 중입니다.',
+    sessionInvalidResult: '로컬 서비스가 잘못된 세션 확인 결과를 반환했습니다.',
+  },
+  es: {
+    serviceOnline: 'API local en línea',
+    serviceOnlineDetail: 'La API loopback está operativa. Verifica la sesión de ChatGPT abajo.',
+    sessionTitle: 'Sesión de ChatGPT',
+    checkSession: 'Comprobar sesión',
+    sessionUnavailable: 'Servicio sin conexión',
+    sessionUnavailableDetail:
+      'Inicia el servicio local antes de comprobar la sesión del navegador.',
+    sessionUnchecked: 'Sin comprobar',
+    sessionUncheckedDetail:
+      'Ejecuta una comprobación autenticada y limitada de la interfaz activa de ChatGPT.',
+    sessionChecking: 'Comprobando sesión…',
+    sessionCheckingDetail:
+      'Abriendo una pestaña temporal e inspeccionando la interfaz pública de ChatGPT.',
+    sessionReady: 'Lista para solicitudes',
+    sessionReadyDetail:
+      'La interfaz autenticada de ChatGPT y los controles necesarios están disponibles.',
+    sessionLoginRequired: 'Inicio de sesión necesario',
+    sessionLoginRequiredDetail:
+      'Detén el servicio, abre el navegador de acceso e inicia sesión manualmente.',
+    sessionChallenge: 'Verificación manual',
+    sessionChallengeDetail:
+      'Completa manualmente la verificación de seguridad en el navegador dedicado.',
+    sessionBusy: 'Generación en curso',
+    sessionBusyDetail: 'Espera a que termine la generación actual y vuelve a comprobar.',
+    sessionRateLimited: 'Límite de frecuencia',
+    sessionRateLimitedDetail:
+      'Espera a que se libere el límite de la cuenta o la interfaz. tab2api no lo elude.',
+    sessionUiChanged: 'Problema de compatibilidad de UI',
+    sessionUiChangedDetail:
+      'La interfaz actual de ChatGPT no coincide con los selectores compatibles.',
+    sessionDisconnected: 'Navegador desconectado',
+    sessionDisconnectedDetail:
+      'Reinicia el servicio local y su navegador dedicado y vuelve a intentarlo.',
+    sessionCheckFailed: 'Comprobación fallida',
+    sessionCheckFailedDetail:
+      'No se pudo verificar la sesión. Reintenta o revisa el error inferior.',
+    sessionTimeoutError:
+      'La comprobación de sesión de ChatGPT superó el límite seguro de 45 segundos.',
+    sessionCheckBusyError: 'Ya hay otra comprobación de sesión de ChatGPT en curso.',
+    sessionInvalidResult: 'El servicio local devolvió un resultado de sesión no válido.',
+  },
+  fr: {
+    serviceOnline: 'API locale en ligne',
+    serviceOnlineDetail: 'L’API loopback fonctionne. Vérifiez la session ChatGPT ci-dessous.',
+    sessionTitle: 'Session ChatGPT',
+    checkSession: 'Vérifier la session',
+    sessionUnavailable: 'Service hors ligne',
+    sessionUnavailableDetail:
+      'Démarrez le service local avant de vérifier la session du navigateur.',
+    sessionUnchecked: 'Non vérifiée',
+    sessionUncheckedDetail:
+      'Lancez une vérification authentifiée et limitée de l’interface ChatGPT active.',
+    sessionChecking: 'Vérification de la session…',
+    sessionCheckingDetail:
+      'Ouverture d’un onglet temporaire et inspection de l’interface publique ChatGPT.',
+    sessionReady: 'Prête pour les requêtes',
+    sessionReadyDetail:
+      'L’interface ChatGPT authentifiée et les contrôles requis sont disponibles.',
+    sessionLoginRequired: 'Connexion requise',
+    sessionLoginRequiredDetail:
+      'Arrêtez le service, ouvrez le navigateur de connexion et connectez-vous manuellement.',
+    sessionChallenge: 'Vérification manuelle',
+    sessionChallengeDetail:
+      'Terminez manuellement la vérification de sécurité dans le navigateur dédié.',
+    sessionBusy: 'Génération en cours',
+    sessionBusyDetail: 'Attendez la fin de la génération actuelle, puis vérifiez à nouveau.',
+    sessionRateLimited: 'Limite de débit atteinte',
+    sessionRateLimitedDetail:
+      'Attendez la levée de la limite du compte ou de l’interface. tab2api ne la contourne pas.',
+    sessionUiChanged: 'Problème de compatibilité de l’UI',
+    sessionUiChangedDetail:
+      'L’interface ChatGPT actuelle ne correspond pas aux sélecteurs pris en charge.',
+    sessionDisconnected: 'Navigateur déconnecté',
+    sessionDisconnectedDetail:
+      'Redémarrez le service local et son navigateur dédié, puis réessayez.',
+    sessionCheckFailed: 'Échec de la vérification',
+    sessionCheckFailedDetail:
+      'La session n’a pas pu être vérifiée. Réessayez ou consultez l’erreur ci-dessous.',
+    sessionTimeoutError:
+      'La vérification de session ChatGPT a dépassé la limite de sécurité de 45 secondes.',
+    sessionCheckBusyError: 'Une autre vérification de session ChatGPT est déjà en cours.',
+    sessionInvalidResult: 'Le service local a renvoyé un résultat de session non valide.',
+  },
+  de: {
+    serviceOnline: 'Lokale API online',
+    serviceOnlineDetail: 'Die Loopback-API ist erreichbar. Prüfen Sie unten die ChatGPT-Sitzung.',
+    sessionTitle: 'ChatGPT-Sitzung',
+    checkSession: 'Sitzung prüfen',
+    sessionUnavailable: 'Dienst offline',
+    sessionUnavailableDetail:
+      'Starten Sie den lokalen Dienst, bevor Sie die Browsersitzung prüfen.',
+    sessionUnchecked: 'Nicht geprüft',
+    sessionUncheckedDetail:
+      'Führen Sie eine authentifizierte, zeitlich begrenzte Prüfung der aktiven ChatGPT-UI aus.',
+    sessionChecking: 'Sitzung wird geprüft…',
+    sessionCheckingDetail:
+      'Ein temporärer Tab wird geöffnet und die öffentliche ChatGPT-UI geprüft.',
+    sessionReady: 'Bereit für Anfragen',
+    sessionReadyDetail:
+      'Die authentifizierte ChatGPT-UI und die erforderlichen Bedienelemente sind verfügbar.',
+    sessionLoginRequired: 'Anmeldung erforderlich',
+    sessionLoginRequiredDetail:
+      'Stoppen Sie den Dienst, öffnen Sie den Login-Browser und melden Sie sich manuell an.',
+    sessionChallenge: 'Manuelle Prüfung erforderlich',
+    sessionChallengeDetail:
+      'Schließen Sie die Sicherheitsprüfung im dedizierten Browser manuell ab.',
+    sessionBusy: 'Generierung läuft',
+    sessionBusyDetail: 'Warten Sie das Ende der aktuellen Generierung ab und prüfen Sie erneut.',
+    sessionRateLimited: 'Ratenlimit erreicht',
+    sessionRateLimitedDetail:
+      'Warten Sie, bis das Konto- oder UI-Limit aufgehoben ist. tab2api umgeht es nicht.',
+    sessionUiChanged: 'UI-Kompatibilitätsproblem',
+    sessionUiChangedDetail:
+      'Die aktuelle ChatGPT-UI entspricht nicht den unterstützten Selektoren.',
+    sessionDisconnected: 'Browser getrennt',
+    sessionDisconnectedDetail:
+      'Starten Sie den lokalen Dienst und den dedizierten Browser neu und versuchen Sie es erneut.',
+    sessionCheckFailed: 'Prüfung fehlgeschlagen',
+    sessionCheckFailedDetail:
+      'Die Sitzung konnte nicht verifiziert werden. Wiederholen Sie die Prüfung oder sehen Sie unten nach.',
+    sessionTimeoutError:
+      'Die ChatGPT-Sitzungsprüfung hat das Sicherheitslimit von 45 Sekunden überschritten.',
+    sessionCheckBusyError: 'Eine andere ChatGPT-Sitzungsprüfung läuft bereits.',
+    sessionInvalidResult:
+      'Der lokale Dienst hat ein ungültiges Sitzungsprüfergebnis zurückgegeben.',
+  },
+};
+
 export const messages = { en, vi, zh, ja, ko, es, fr, de };
+for (const [code, translations] of Object.entries(readinessTranslations)) {
+  Object.assign(messages[code], translations);
+}
 for (const [code, translations] of Object.entries(managementTranslations)) {
   Object.assign(messages[code], translations);
 }

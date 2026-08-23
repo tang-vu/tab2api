@@ -1,6 +1,7 @@
 /* global document, navigator, window */
 import { administrationControls, usageTotals, validKeyLabel } from './admin-view.js';
 import { languageOptions, loadLanguage, saveLanguage, translate } from './i18n.js';
+import { readinessPresentation, shouldApplyReadinessResult } from './session-readiness.js';
 import { tunnelControlState, tunnelOperationDetail } from './tunnel-controls.js';
 import { viewState } from './view-tabs.js';
 
@@ -10,6 +11,11 @@ const elements = {
   label: document.querySelector('#status-label'),
   detail: document.querySelector('#status-detail'),
   endpoint: document.querySelector('#endpoint'),
+  sessionReadiness: document.querySelector('#session-readiness'),
+  sessionReadinessDot: document.querySelector('#session-readiness-dot'),
+  sessionReadinessLabel: document.querySelector('#session-readiness-label'),
+  sessionReadinessDetail: document.querySelector('#session-readiness-detail'),
+  checkSession: document.querySelector('#check-session'),
   error: document.querySelector('#error'),
   start: document.querySelector('#start'),
   stop: document.querySelector('#stop'),
@@ -83,6 +89,9 @@ let adminOperation;
 let lastApiKeys;
 let lastUsage;
 let pendingRevokeKey;
+let sessionState = 'unavailable';
+let sessionCheckEpoch = 0;
+let sessionCheckRequest;
 const t = (key) => translate(language, key);
 
 try {
@@ -120,6 +129,7 @@ function applyLanguage() {
   }
   if (lastApiKeys) renderApiKeys(lastApiKeys);
   if (lastUsage) renderUsage(lastUsage);
+  renderSessionReadiness();
   if (lastServiceStatus) render(lastServiceStatus);
   if (lastTunnelStatus) renderTunnel(lastTunnelStatus);
 }
@@ -128,11 +138,56 @@ function serviceDetail(status) {
   const keys = {
     stopped: 'serviceStopped',
     starting: 'serviceStarting',
-    ready: 'serviceReady',
+    ready: 'serviceOnlineDetail',
     unhealthy: 'serviceUnhealthy',
     login_open: 'serviceLoginOpen',
   };
   return keys[status.phase] ? t(keys[status.phase]) : status.detail;
+}
+
+function renderSessionReadiness() {
+  const presentation = readinessPresentation(
+    lastServiceStatus?.phase,
+    sessionState,
+    Boolean(sessionCheckRequest),
+  );
+  const visiblyChecking = presentation.state === 'checking';
+  elements.sessionReadiness.className = `session-readiness ${presentation.tone}`;
+  elements.sessionReadiness.setAttribute('aria-busy', String(visiblyChecking));
+  elements.sessionReadinessDot.className = `session-dot ${presentation.tone}`;
+  elements.sessionReadinessLabel.textContent = t(presentation.labelKey);
+  elements.sessionReadinessDetail.textContent = t(presentation.detailKey);
+  elements.checkSession.textContent = t('checkSession');
+  elements.checkSession.disabled = presentation.checkDisabled;
+}
+
+async function checkSessionReadiness() {
+  if (sessionCheckRequest || lastServiceStatus?.phase !== 'ready') return;
+  elements.error.hidden = true;
+  const request = { epoch: sessionCheckEpoch };
+  sessionCheckRequest = request;
+  sessionState = 'checking';
+  renderSessionReadiness();
+  try {
+    const result = await invoke('check_session_readiness');
+    if (result?.ready !== (result?.session === 'ready')) {
+      throw new Error(t('sessionInvalidResult'));
+    }
+    if (shouldApplyReadinessResult(lastServiceStatus?.phase, request.epoch, sessionCheckEpoch)) {
+      sessionState = result.session;
+    }
+  } catch (error) {
+    if (shouldApplyReadinessResult(lastServiceStatus?.phase, request.epoch, sessionCheckEpoch)) {
+      sessionState = 'failed';
+      showError(error);
+    }
+  } finally {
+    if (sessionCheckRequest === request) sessionCheckRequest = undefined;
+    renderSessionReadiness();
+    if (request.epoch !== sessionCheckEpoch && lastServiceStatus?.phase === 'ready') {
+      void checkSessionReadiness();
+    }
+  }
 }
 
 function render(status) {
@@ -141,7 +196,7 @@ function render(status) {
   const labelKeys = {
     stopped: 'stopped',
     starting: 'starting',
-    ready: 'ready',
+    ready: 'serviceOnline',
     unhealthy: 'unhealthy',
     login_open: 'loginOpen',
   };
@@ -163,6 +218,12 @@ function render(status) {
   elements.refresh.disabled = busy;
   elements.undock.disabled = status.browser_mode !== 'docked';
   elements.redock.disabled = status.browser_mode !== 'external';
+  if (status.phase !== previousPhase) {
+    sessionCheckEpoch += 1;
+    sessionState = status.phase === 'ready' ? 'unchecked' : 'unavailable';
+  }
+  renderSessionReadiness();
+  if (status.phase === 'ready' && previousPhase !== 'ready') void checkSessionReadiness();
   if (status.browser_mode === 'docked' && activeView === 'browser') queueBrowserBounds();
   queueNativeBrowserVisibility();
   renderAdministrationControls();
@@ -479,6 +540,12 @@ function renderTunnel(status) {
 
 function localizedError(error) {
   const message = String(error);
+  if (message.includes('readiness') && message.includes('timed out')) {
+    return t('sessionTimeoutError');
+  }
+  if (message.includes('another ChatGPT session check')) return t('sessionCheckBusyError');
+  if (message.includes('inconsistent readiness result')) return t('sessionInvalidResult');
+  if (message.includes('session readiness task failed')) return t('sessionCheckFailedDetail');
   if (message.includes('Cloudflare Access verification or tunnel activation failed')) {
     return t('accessActivationError');
   }
@@ -590,6 +657,7 @@ if (typeof invoke !== 'function') {
   elements.stop.addEventListener('click', () => perform('stop_sidecar'));
   elements.login.addEventListener('click', () => perform('open_login'));
   elements.refresh.addEventListener('click', refresh);
+  elements.checkSession.addEventListener('click', () => void checkSessionReadiness());
   elements.undock.addEventListener('click', () => perform('undock_browser'));
   elements.redock.addEventListener('click', async () => {
     await perform('redock_browser');

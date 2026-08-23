@@ -6,6 +6,9 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Added
 
+- A desktop ChatGPT session check that clearly separates loopback process health from authenticated
+  UI readiness, reports every typed `/readyz` state with localized guidance, and stays bounded to 45
+  seconds without exposing the administrator key to the WebView.
 - A localized in-app API Docs tab covering authentication, examples, core routes, projects, media,
   administrator routes, and current limitations.
 - In-app API-key and content-free usage management, including one-time client-key display,
@@ -15,6 +18,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Fixed
 
+- Make sidecar process tests tolerate normal TypeScript-loader startup variance while retaining a
+  strict bounded hang detector, avoiding false failures when the full suite runs concurrently.
 - Hide docked Chromium while API Docs is selected, then restore and resize it when returning to the
   Browser tab, so the native child window cannot cover in-app documentation.
 - Upgrade the supported lint/test toolchain to ESLint 10, `globals` 17, and Vitest 4; the minimum

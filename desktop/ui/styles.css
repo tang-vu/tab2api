@@ -942,6 +942,96 @@ dialog section p {
   }
 }
 
+.session-readiness {
+  position: relative;
+  z-index: 1;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
+.session-readiness-heading,
+.session-readiness-identity {
+  display: flex;
+  align-items: center;
+}
+.session-readiness-heading {
+  justify-content: space-between;
+  gap: 12px;
+}
+.session-readiness-identity {
+  gap: 8px;
+  min-width: 0;
+}
+.session-readiness-heading small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.session-readiness-heading strong {
+  color: var(--muted-bright);
+  font-size: 11px;
+  text-align: right;
+}
+.session-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #70786e;
+  color: #70786e;
+  box-shadow: 0 0 10px currentColor;
+}
+.session-dot.ready {
+  background: var(--acid);
+  color: var(--acid);
+}
+.session-dot.checking,
+.session-dot.warning {
+  background: var(--warning);
+  color: var(--warning);
+}
+.session-dot.danger {
+  background: var(--danger);
+  color: var(--danger);
+}
+.session-readiness.ready .session-readiness-heading strong {
+  color: var(--acid-soft);
+}
+.session-readiness.checking .session-readiness-heading strong,
+.session-readiness.warning .session-readiness-heading strong {
+  color: var(--warning);
+}
+.session-readiness.danger .session-readiness-heading strong {
+  color: var(--danger);
+}
+.status-card .session-readiness p {
+  max-width: none;
+  min-height: 36px;
+  margin: 8px 0 11px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.session-readiness button {
+  width: 100%;
+  min-height: 35px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+.session-readiness[aria-busy='true'] button::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  border: 2px solid rgba(255, 199, 96, 0.28);
+  border-top-color: var(--warning);
+  border-radius: 50%;
+  animation: tunnel-spin 0.8s linear infinite;
+}
+
 /* Premium control-room skin. Component selectors remain intentionally aligned with the native UI. */
 .view-tabs {
   position: relative;
@@ -1517,6 +1607,13 @@ dialog::backdrop {
       opacity: 1;
       transform: translateY(0);
     }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tunnel-card[aria-busy='true'] #tunnel-detail::before,
+  .session-readiness[aria-busy='true'] button::before {
+    animation: none;
   }
 }
 

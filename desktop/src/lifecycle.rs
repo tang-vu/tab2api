@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(dead_code))]
 
-use crate::admin::{AdminClient, ApiKeyList, CreatedApiKey, UsageSnapshot};
+use crate::admin::{AdminClient, ApiKeyList, CreatedApiKey, SessionReadiness, UsageSnapshot};
 use crate::browser_host::{BrowserMode, BrowserSession, PhysicalBounds};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -72,6 +72,7 @@ struct Inner {
 
 pub struct SidecarLifecycle {
     inner: Mutex<Inner>,
+    session_check: Mutex<()>,
     port: u16,
     runtime: RuntimeSpec,
     data_dir: PathBuf,
@@ -460,6 +461,7 @@ impl SidecarLifecycle {
                 browser: None,
                 phase: ServicePhase::Stopped,
             }),
+            session_check: Mutex::new(()),
             port,
             runtime: RuntimeSpec::resolve(&resource_dir)?,
             data_dir,
@@ -660,6 +662,15 @@ impl SidecarLifecycle {
     pub fn list_api_keys(&self) -> Result<ApiKeyList, String> {
         self.ensure_admin_ready()?;
         AdminClient::new(self.port, self.data_dir.clone()).list_api_keys()
+    }
+
+    pub fn check_session_readiness(&self) -> Result<SessionReadiness, String> {
+        let _operation = self
+            .session_check
+            .try_lock()
+            .map_err(|_| "another ChatGPT session check is already running".to_string())?;
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).readiness()
     }
 
     pub fn create_api_key(&self, label: &str) -> Result<CreatedApiKey, String> {

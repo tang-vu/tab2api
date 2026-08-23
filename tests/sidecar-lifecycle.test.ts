@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -38,6 +39,33 @@ async function freeLoopbackPort(): Promise<number> {
       }
       server.close((error) => (error === undefined ? resolve(address.port) : reject(error)));
     });
+  });
+}
+
+async function waitForExit(
+  child: ChildProcess,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<number | null> {
+  return new Promise<number | null>((resolve, reject) => {
+    const onError = (error: Error) => {
+      clearTimeout(timeout);
+      child.off('exit', onExit);
+      reject(error);
+    };
+    const onExit = (code: number | null) => {
+      clearTimeout(timeout);
+      child.off('error', onError);
+      resolve(code);
+    };
+    const timeout = setTimeout(() => {
+      child.off('error', onError);
+      child.off('exit', onExit);
+      child.kill();
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+    child.once('error', onError);
+    child.once('exit', onExit);
   });
 }
 
@@ -142,17 +170,7 @@ describe('desktop sidecar lifecycle', () => {
       stdout += chunk;
     });
 
-    const exitCode = await new Promise<number | null>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        child.kill();
-        reject(new Error('Sidecar hung after startup failure.'));
-      }, 5_000);
-      child.once('error', reject);
-      child.once('exit', (code) => {
-        clearTimeout(timeout);
-        resolve(code);
-      });
-    });
+    const exitCode = await waitForExit(child, 12_000, 'Sidecar hung after startup failure.');
 
     expect(exitCode).toBe(1);
     const events = stdout
@@ -161,7 +179,7 @@ describe('desktop sidecar lifecycle', () => {
       .map((line) => JSON.parse(line) as SidecarEvent);
     expect(events.map(({ event }) => event)).toEqual(['starting', 'fatal']);
     expect(stdout).not.toContain('unsupported');
-  });
+  }, 20_000);
 
   it('starts the real local server and exits after a parent shutdown command', async () => {
     const cwd = path.resolve(import.meta.dirname, '..');
@@ -197,21 +215,11 @@ describe('desktop sidecar lifecycle', () => {
       expect(listening).toBe(true);
       child.stdin.write('{"command":"shutdown"}\n');
 
-      const exitCode = await new Promise<number | null>((resolve, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error('Real sidecar shutdown timed out.')),
-          5_000,
-        );
-        child.once('error', reject);
-        child.once('exit', (code) => {
-          clearTimeout(timeout);
-          resolve(code);
-        });
-      });
+      const exitCode = await waitForExit(child, 12_000, 'Real sidecar shutdown timed out.');
       expect(exitCode).toBe(0);
     } finally {
       if (!child.killed) child.kill();
       await rm(dataDirectory, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 });

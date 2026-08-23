@@ -32,6 +32,9 @@ test('all advertised languages provide the complete English key set', () => {
       'settings',
       'guideTitle',
       'serviceReady',
+      'serviceOnline',
+      'sessionReady',
+      'sessionTimeoutError',
       'confirmBearer',
       'tunnelHostname',
       'hostnameError',
@@ -105,6 +108,8 @@ test('every translated DOM key exists and locale selection performs no network l
   assert.match(html, /id="show-api-docs"/);
   assert.match(html, /id="api-docs-column"/);
   assert.match(html, /id="admin-column"/);
+  assert.match(html, /id="session-readiness"/);
+  assert.match(html, /id="check-session"/);
   assert.match(html, /id="export-api-docs"/);
   assert.match(html, /id="created-key-dialog"/);
   assert.match(html, /class="method post">POST/);
@@ -116,6 +121,7 @@ test('every translated DOM key exists and locale selection performs no network l
   assert.match(app, /usage_status/);
   assert.match(app, /reset_usage/);
   assert.match(app, /export_api_docs/);
+  assert.match(app, /check_session_readiness/);
   assert.match(app, /created\.token = ''/);
   assert.equal(app.match(/settingsStorage\?\.setItem/g)?.length, 1);
   assert.match(styles, /dialog \{[\s\S]*width: min\(340px/);

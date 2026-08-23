@@ -69,6 +69,27 @@ describe('Fastify API contract', () => {
     await app.close();
   });
 
+  it.each([
+    ['ready', 200],
+    ['login_required', 503],
+    ['security_challenge', 503],
+    ['generation_in_progress', 503],
+    ['rate_limited', 503],
+    ['ui_changed', 503],
+    ['browser_disconnected', 503],
+  ] as const)('reports authenticated browser readiness for %s', async (session, statusCode) => {
+    const provider = new FakeProvider();
+    provider.state = session;
+    const app = server(provider);
+    const response = await app.inject({ method: 'GET', url: '/readyz', headers: auth });
+    expect(response.statusCode).toBe(statusCode);
+    expect(response.json()).toEqual({
+      status: session === 'ready' ? 'ready' : 'not_ready',
+      session,
+    });
+    await app.close();
+  });
+
   it('lists truthful text, image, transcription, and local speech capabilities', async () => {
     const app = server(new FakeProvider());
     const response = await app.inject({ method: 'GET', url: '/v1/models', headers: auth });

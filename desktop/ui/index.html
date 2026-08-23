@@ -62,6 +62,27 @@
           </div>
           <p id="status-detail" data-i18n="inspectingService">Inspecting the local sidecar.</p>
           <code id="endpoint">http://127.0.0.1:3210</code>
+          <div id="session-readiness" class="session-readiness offline" aria-busy="false">
+            <div class="session-readiness-heading">
+              <span class="session-readiness-identity">
+                <span id="session-readiness-dot" class="session-dot" aria-hidden="true"></span>
+                <small data-i18n="sessionTitle">ChatGPT session</small>
+              </span>
+              <strong id="session-readiness-label" data-i18n="sessionUnavailable"
+                >Service offline</strong
+              >
+            </div>
+            <p
+              id="session-readiness-detail"
+              aria-live="polite"
+              data-i18n="sessionUnavailableDetail"
+            >
+              Start the local service before checking the browser session.
+            </p>
+            <button id="check-session" type="button" data-i18n="checkSession" disabled>
+              Check session
+            </button>
+          </div>
         </section>
 
         <section class="actions" aria-label="Service controls">

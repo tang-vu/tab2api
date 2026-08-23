@@ -4,7 +4,7 @@ mod lifecycle;
 mod tunnel;
 
 #[cfg(not(test))]
-use admin::{ApiKeyList, CreatedApiKey, ExportedApiDocs, UsageSnapshot};
+use admin::{ApiKeyList, CreatedApiKey, ExportedApiDocs, SessionReadiness, UsageSnapshot};
 #[cfg(not(test))]
 use browser_host::BrowserBounds;
 #[cfg(not(test))]
@@ -33,6 +33,17 @@ async fn sidecar_status(state: State<'_, DesktopState>) -> Result<ServiceStatus,
     tauri::async_runtime::spawn_blocking(move || lifecycle.status())
         .await
         .map_err(|error| format!("status task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn check_session_readiness(
+    state: State<'_, DesktopState>,
+) -> Result<SessionReadiness, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.check_session_readiness())
+        .await
+        .map_err(|error| format!("session readiness task failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -298,6 +309,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             sidecar_status,
+            check_session_readiness,
             start_sidecar,
             stop_sidecar,
             open_login,
@@ -335,6 +347,7 @@ mod tests {
         let script = include_str!("../ui/app.js");
         assert!(script.contains("typeof invoke !== 'function'"));
         for command in [
+            "check_session_readiness",
             "set_browser_visibility",
             "list_api_keys",
             "create_api_key",

@@ -1,13 +1,15 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::borrow::Cow;
 use std::env;
 use std::fs::{OpenOptions, read_to_string};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_ADMIN_RESPONSE_BYTES: u64 = 1024 * 1024;
 const ADMIN_TIMEOUT: Duration = Duration::from_secs(4);
+const READINESS_TIMEOUT: Duration = Duration::from_secs(45);
 const API_DOCS: &str = include_str!("../../docs/api.md");
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -99,6 +101,31 @@ pub struct ExportedApiDocs {
     pub file_name: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionState {
+    Ready,
+    LoginRequired,
+    SecurityChallenge,
+    GenerationInProgress,
+    RateLimited,
+    UiChanged,
+    BrowserDisconnected,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionReadiness {
+    pub ready: bool,
+    pub session: SessionState,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadinessResponse {
+    status: String,
+    session: SessionState,
+}
+
 pub struct AdminClient {
     port: u16,
     data_dir: PathBuf,
@@ -115,6 +142,26 @@ impl AdminClient {
             return Err("the local service returned invalid API-key metadata".into());
         }
         Ok(result)
+    }
+
+    pub fn readiness(&self) -> Result<SessionReadiness, String> {
+        self.readiness_with_timeout(READINESS_TIMEOUT)
+    }
+
+    fn readiness_with_timeout(&self, timeout: Duration) -> Result<SessionReadiness, String> {
+        let token = load_admin_token(&self.data_dir)?;
+        self.readiness_with_token_timeout(timeout, token)
+    }
+
+    fn readiness_with_token_timeout(
+        &self,
+        timeout: Duration,
+        token: String,
+    ) -> Result<SessionReadiness, String> {
+        let (status_code, response) = self.request_with_token_status::<ReadinessResponse>(
+            "GET", "/readyz", None, timeout, token,
+        )?;
+        validate_readiness(status_code, response)
     }
 
     pub fn create_api_key(&self, label: &str) -> Result<CreatedApiKey, String> {
@@ -202,14 +249,40 @@ impl AdminClient {
         timeout: Duration,
         token: String,
     ) -> Result<T, String> {
+        let response = self.request_bytes_with_token(method, path, body, timeout, token)?;
+        parse_json_response(&response)
+    }
+
+    fn request_with_token_status<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        timeout: Duration,
+        token: String,
+    ) -> Result<(u16, T), String> {
+        let response = self.request_bytes_with_token(method, path, body, timeout, token)?;
+        parse_json_response_with_status(&response)
+    }
+
+    fn request_bytes_with_token(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        timeout: Duration,
+        token: String,
+    ) -> Result<Vec<u8>, String> {
+        let deadline = Instant::now() + timeout;
         let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, self.port);
         let mut stream = TcpStream::connect_timeout(&address.into(), timeout)
             .map_err(|_| "the local service is unavailable for administration")?;
+        let remaining = remaining_request_timeout(deadline)?;
         stream
-            .set_read_timeout(Some(timeout))
+            .set_read_timeout(Some(remaining))
             .map_err(|_| "could not configure the local administration connection")?;
         stream
-            .set_write_timeout(Some(timeout))
+            .set_write_timeout(Some(remaining))
             .map_err(|_| "could not configure the local administration connection")?;
         let body = body.unwrap_or_default();
         let request = format!(
@@ -225,15 +298,46 @@ impl AdminClient {
         drop(request);
         drop(token);
         let mut response = Vec::new();
-        stream
-            .take(MAX_ADMIN_RESPONSE_BYTES + 1)
-            .read_to_end(&mut response)
-            .map_err(|_| "the local administration request timed out")?;
-        if response.len() as u64 > MAX_ADMIN_RESPONSE_BYTES {
-            return Err("the local administration response was too large".into());
+        let mut chunk = [0_u8; 8192];
+        loop {
+            stream
+                .set_read_timeout(Some(remaining_request_timeout(deadline)?))
+                .map_err(|_| "could not configure the local administration connection")?;
+            let read = stream
+                .read(&mut chunk)
+                .map_err(|_| "the local administration request timed out")?;
+            if read == 0 {
+                return Ok(response);
+            }
+            if response.len().saturating_add(read) > MAX_ADMIN_RESPONSE_BYTES as usize {
+                return Err("the local administration response was too large".into());
+            }
+            response.extend_from_slice(&chunk[..read]);
         }
-        parse_json_response(&response)
     }
+}
+
+fn remaining_request_timeout(deadline: Instant) -> Result<Duration, String> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| "the local administration request timed out".into())
+}
+
+fn validate_readiness(
+    status_code: u16,
+    response: ReadinessResponse,
+) -> Result<SessionReadiness, String> {
+    let ready = response.session == SessionState::Ready;
+    let expected_status = if ready { "ready" } else { "not_ready" };
+    let expected_status_code = if ready { 200 } else { 503 };
+    if response.status != expected_status || status_code != expected_status_code {
+        return Err("the local service returned an inconsistent readiness result".into());
+    }
+    Ok(SessionReadiness {
+        ready,
+        session: response.session,
+    })
 }
 
 fn load_admin_token(data_dir: &Path) -> Result<String, String> {
@@ -254,6 +358,26 @@ fn load_admin_token(data_dir: &Path) -> Result<String, String> {
 }
 
 fn parse_json_response<T: DeserializeOwned>(response: &[u8]) -> Result<T, String> {
+    let (status, body) = parse_http_response(response)?;
+    if !(200..300).contains(&status) {
+        return Err(format!(
+            "the local administration request failed with HTTP {status}"
+        ));
+    }
+    serde_json::from_slice(&body)
+        .map_err(|_| "the local administration response contained invalid JSON".into())
+}
+
+fn parse_json_response_with_status<T: DeserializeOwned>(
+    response: &[u8],
+) -> Result<(u16, T), String> {
+    let (status, body) = parse_http_response(response)?;
+    let parsed = serde_json::from_slice(&body)
+        .map_err(|_| "the local administration response contained invalid JSON".to_string())?;
+    Ok((status, parsed))
+}
+
+fn parse_http_response(response: &[u8]) -> Result<(u16, Cow<'_, [u8]>), String> {
     let separator = response
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
@@ -266,11 +390,6 @@ fn parse_json_response<T: DeserializeOwned>(response: &[u8]) -> Result<T, String
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|value| value.parse::<u16>().ok())
         .ok_or("the local administration response was malformed")?;
-    if !(200..300).contains(&status) {
-        return Err(format!(
-            "the local administration request failed with HTTP {status}"
-        ));
-    }
     let body = &response[separator + 4..];
     let chunked = headers.lines().skip(1).any(|line| {
         line.split_once(':').is_some_and(|(name, value)| {
@@ -280,15 +399,12 @@ fn parse_json_response<T: DeserializeOwned>(response: &[u8]) -> Result<T, String
                     .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
         })
     });
-    let decoded;
     let body = if chunked {
-        decoded = decode_chunked(body)?;
-        decoded.as_slice()
+        Cow::Owned(decode_chunked(body)?)
     } else {
-        body
+        Cow::Borrowed(body)
     };
-    serde_json::from_slice(body)
-        .map_err(|_| "the local administration response contained invalid JSON".into())
+    Ok((status, body))
 }
 
 fn decode_chunked(encoded: &[u8]) -> Result<Vec<u8>, String> {
@@ -429,6 +545,49 @@ mod tests {
     }
 
     #[test]
+    fn readiness_contract_accepts_every_typed_session_state() {
+        for (session, status_code, status, ready) in [
+            (SessionState::Ready, 200, "ready", true),
+            (SessionState::LoginRequired, 503, "not_ready", false),
+            (SessionState::SecurityChallenge, 503, "not_ready", false),
+            (SessionState::GenerationInProgress, 503, "not_ready", false),
+            (SessionState::RateLimited, 503, "not_ready", false),
+            (SessionState::UiChanged, 503, "not_ready", false),
+            (SessionState::BrowserDisconnected, 503, "not_ready", false),
+        ] {
+            let result = validate_readiness(
+                status_code,
+                ReadinessResponse {
+                    status: status.into(),
+                    session: session.clone(),
+                },
+            )
+            .unwrap();
+            assert_eq!(result, SessionReadiness { ready, session });
+        }
+    }
+
+    #[test]
+    fn readiness_contract_rejects_inconsistent_or_unknown_results() {
+        assert!(
+            validate_readiness(
+                503,
+                ReadinessResponse {
+                    status: "not_ready".into(),
+                    session: SessionState::Ready,
+                },
+            )
+            .is_err()
+        );
+        assert!(
+            parse_json_response_with_status::<ReadinessResponse>(
+                b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 49\r\n\r\n{\"status\":\"not_ready\",\"session\":\"unknown_state\"}",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn client_identifiers_and_labels_are_strict() {
         assert!(valid_client_id("0123456789abcdef"));
         assert!(!valid_client_id("../../api-token"));
@@ -509,6 +668,64 @@ mod tests {
             )
             .unwrap();
         assert!(result.data.is_empty());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn readiness_request_accepts_a_typed_non_ready_response_without_exposing_the_key() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let read = stream.read(&mut request).unwrap();
+            let request = std::str::from_utf8(&request[..read]).unwrap();
+            assert!(request.starts_with("GET /readyz HTTP/1.1\r\n"));
+            assert!(request.contains("\r\nHost: 127.0.0.1:"));
+            assert!(
+                request
+                    .contains("\r\nAuthorization: Bearer test-administrator-key-never-report\r\n")
+            );
+            stream
+                .write_all(
+                    b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n{\"status\":\"not_ready\",\"session\":\"login_required\"}",
+                )
+                .unwrap();
+        });
+        let client = AdminClient::new(port, PathBuf::new());
+        let result = client
+            .readiness_with_token_timeout(
+                Duration::from_secs(1),
+                "test-administrator-key-never-report".to_owned(),
+            )
+            .unwrap();
+        assert_eq!(
+            result,
+            SessionReadiness {
+                ready: false,
+                session: SessionState::LoginRequired,
+            }
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn readiness_request_is_bounded_and_never_leaks_the_key() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request);
+            thread::sleep(Duration::from_millis(150));
+        });
+        let client = AdminClient::new(port, PathBuf::new());
+        let secret = "test-readiness-key-never-report";
+        let error = client
+            .readiness_with_token_timeout(Duration::from_millis(30), secret.to_owned())
+            .unwrap_err();
+        assert!(error.contains("timed out"));
+        assert!(!error.contains(secret));
         server.join().unwrap();
     }
 }
