@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 const scripts = new URL('../scripts/windows/', import.meta.url);
+const installWorkflow = new URL('../.github/workflows/desktop-install-smoke.yml', import.meta.url);
 
 describe('Windows desktop packaging contract', () => {
   it('builds a complete hashed inventory and production dependency SBOM', async () => {
@@ -35,6 +36,7 @@ describe('Windows desktop packaging contract', () => {
     expect(smoke).toContain('integrity check found an unexpected file hash');
     expect(smoke).toContain('contains files absent from its integrity manifest');
     expect(smoke).toContain("$start.Arguments = 'dist/cli/index.js smoke'");
+    expect(smoke).toContain('[string]$SidecarDirectory');
     expect(smoke).toContain("$start.EnvironmentVariables['HTTPS_PROXY'] = 'http://127.0.0.1:9'");
     expect(smoke).not.toMatch(/chatgpt\.com/i);
   });
@@ -50,6 +52,36 @@ describe('Windows desktop packaging contract', () => {
     expect(smoke).toMatch(/finally \{[\s\S]*\$process\.Kill\(\)[\s\S]*\$process\.WaitForExit\(\)/);
     expect(smoke).toMatch(
       /finally \{[\s\S]*Remove-Item -LiteralPath \$smokeDirectory -Recurse -Force/,
+    );
+  });
+
+  it('installs and uninstalls the NSIS artifact inside a bounded approved root', async () => {
+    const installerSmoke = await readFile(new URL('smoke-desktop-installer.ps1', scripts), 'utf8');
+
+    expect(installerSmoke).toContain('must be a strict child of its approved root');
+    expect(installerSmoke).toContain('The isolated install directory must not already exist.');
+    expect(installerSmoke).toContain("@('/S', '/NS', \"/D=$installDirectoryPath\")");
+    expect(installerSmoke).toContain('$process.WaitForExit($TimeoutMilliseconds)');
+    expect(installerSmoke).toContain('-SidecarDirectory $sidecar');
+    expect(installerSmoke).toContain('@(\'/S\', "_?=$installDirectoryPath")');
+    expect(installerSmoke).toContain('removed app-local data without explicit deletion consent');
+    expect(installerSmoke).toMatch(
+      /finally \{[\s\S]*Remove-Item -LiteralPath \$installDirectoryPath -Recurse -Force/,
+    );
+    expect(installerSmoke).not.toMatch(/chatgpt\.com/i);
+  });
+
+  it('keeps clean-install verification manual, ephemeral, and artifact-free', async () => {
+    const workflow = await readFile(installWorkflow, 'utf8');
+
+    expect(workflow).toMatch(/on:\s*\n\s+workflow_dispatch:/);
+    expect(workflow).toContain('permissions:\n  contents: read');
+    expect(workflow).toContain('runs-on: windows-latest');
+    expect(workflow).toContain('timeout-minutes: 60');
+    expect(workflow).toContain('npm run desktop:build:windows');
+    expect(workflow).toContain('smoke-desktop-installer.ps1');
+    expect(workflow).not.toMatch(
+      /actions\/upload-artifact|gh\s+release|action-gh-release|chatgpt\.com/i,
     );
   });
 });

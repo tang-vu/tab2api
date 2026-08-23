@@ -1,0 +1,53 @@
+name: Desktop install smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-install-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-clean-install:
+    name: Windows clean install
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build unsigned ephemeral NSIS installer
+        run: npm run desktop:build:windows
+
+      - name: Install, smoke, and uninstall in isolation
+        shell: powershell
+        run: |
+          $installers = @(Get-ChildItem -LiteralPath 'desktop/target/release/bundle/nsis' -Filter '*-setup.exe' -File)
+          if ($installers.Count -ne 1) {
+            throw 'Expected exactly one NSIS installer.'
+          }
+          $installDirectory = Join-Path $env:RUNNER_TEMP "tab2api-install-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/smoke-desktop-installer.ps1 `
+            -InstallerPath $installers[0].FullName `
+            -InstallDirectory $installDirectory `
+            -AllowedRoot $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer smoke failed with exit code $LASTEXITCODE."
+          }

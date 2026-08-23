@@ -6,6 +6,9 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Added
 
+- A manual, artifact-free Windows clean-install workflow that builds the unsigned NSIS preview,
+  installs it silently in an isolated runner directory, verifies the installed sidecar offline,
+  uninstalls it, and proves app-local profile data is retained by default.
 - Windows desktop staging now emits a CycloneDX SBOM for bundled production npm dependencies and a
   SHA-256/size inventory covering every sidecar resource, and clears stale Tauri resource copies
   before packaging. The packaged smoke verifies that inventory before executing anything, runs the

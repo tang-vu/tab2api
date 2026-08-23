@@ -74,4 +74,10 @@ resources; it never copies a personal browser installation or profile. Staging e
 SBOM for production Node dependencies and a SHA-256/size inventory for every sidecar file. The
 packaged smoke verifies both before running the compiled fake-adapter request offline and checking
 the real sidecar's loopback health and graceful shutdown. This integrity inventory does not replace
-signing, externally published installer checksums, full native SBOM/provenance, or clean-machine tests.
+signing, externally published installer checksums, full native SBOM/provenance, or a signed release's
+broader clean-machine matrix.
+
+The manual `Desktop install smoke` workflow adds an ephemeral Windows install/uninstall gate without
+publishing its unsigned installer. It installs under a strict runner-temporary root, runs the same
+offline smoke against the installed `sidecar/`, uninstalls with bounded waits, and confirms the
+default uninstaller preserves app-local profile data.

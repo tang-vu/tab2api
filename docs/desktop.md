@@ -4,7 +4,7 @@
 
 The `desktop/` directory is a Tauri 2 developer preview, not a signed end-user release. It provides a native window and system tray for status, start, stop, and manual login. The existing TypeScript service and Playwright adapter remain the source of truth for the API and browser automation.
 
-Development mode uses the repository Node.js runtime and Playwright installation. The Windows packaging pipeline is self-contained: it stages the current Node runtime, audited production npm dependencies, compiled service, and only the headed Chromium revision matched to Playwright, then creates an unsigned NSIS installer. Staging also creates a CycloneDX SBOM for the production Node dependency graph and a SHA-256/size inventory for every bundled sidecar file. CI compiles with `--no-bundle` and deliberately uploads nothing; signing and clean-machine installer validation remain release gates.
+Development mode uses the repository Node.js runtime and Playwright installation. The Windows packaging pipeline is self-contained: it stages the current Node runtime, audited production npm dependencies, compiled service, and only the headed Chromium revision matched to Playwright, then creates an unsigned NSIS installer. Staging also creates a CycloneDX SBOM for the production Node dependency graph and a SHA-256/size inventory for every bundled sidecar file. Pull-request CI compiles with `--no-bundle` and deliberately uploads nothing. A separate manual workflow performs an ephemeral Windows install/uninstall smoke without retaining the unsigned artifact; signing and broader clean-VM validation remain release gates.
 
 ## Architecture
 
@@ -73,6 +73,8 @@ npx tauri build --no-bundle --config desktop/tauri.conf.json
 
 `desktop.yml` runs those checks on Windows, macOS, and Ubuntu 22.04. It skips the Playwright browser download, has read-only repository permissions, supplies no production secrets, creates no installer, and publishes no artifact or release. The build proves compilation; it is not an installation test.
 
+`desktop-install-smoke.yml` is a separate `workflow_dispatch` gate on a fresh Windows runner. It builds the unsigned NSIS preview, installs silently with shortcuts disabled into a unique directory under `RUNNER_TEMP`, verifies the installed manifest/SBOM and offline fake-adapter plus loopback lifecycle, then silently uninstalls. The test confirms installation files are removed while an app-local profile marker is retained because profile deletion was never requested. Every installer, uninstaller, startup, shutdown, and cleanup wait is bounded. The workflow has read-only repository permissions and uploads no installer or other artifact.
+
 ## Self-contained Windows packaging
 
 The preferred OSS distribution is a Tauri/Rust shell around the existing Node.js/Playwright implementation. Rewriting browser automation in Rust or loading ChatGPT inside the system WebView would add platform-specific behavior without eliminating the need to maintain a browser engine.
@@ -85,6 +87,8 @@ npm run desktop:smoke:windows
 ```
 
 `desktop:prepare:windows` creates the ignored `desktop/generated/sidecar/` resource tree from a clean production dependency install and uses Playwright's `--no-shell` option because the application is always headed. It requires the Node runtime license, retains project notices and Chromium's bundled attribution files, writes `sidecar-sbom.cdx.json`, then writes `bundle-manifest.json` with the byte length and SHA-256 of every other staged file. Before Tauri runs, preparation removes the previous `target/release/sidecar` copy because Tauri overlays directory resources and would otherwise retain obsolete files. Tauri bundles the clean tree under `sidecar/`; the Rust process never accepts a binary path from the WebView. `desktop:smoke:windows` first rejects missing, extra, resized, rehashed, duplicate, rooted, or traversal paths and validates the SBOM. It then runs the compiled CLI fake provider through authentication, validation, mapping, and the FIFO queue with external proxy variables pointed at a closed loopback port, followed by the real packaged sidecar's loopback liveness and graceful-shutdown lifecycle. All child waits are bounded and the ignored smoke runtime is removed in `finally`. The generated installer is under `desktop/target/release/bundle/nsis/` and must not be committed.
+
+The installer workflow passes the installed `sidecar/` path explicitly to that same smoke script only after the strict manifest check. `smoke-desktop-installer.ps1` refuses an existing or out-of-root install directory, uses the documented NSIS silent `/S` and no-shortcut `/NS` modes, keeps `/D` as the final unquoted installer argument, and uses `_?=` for a fully waitable silent uninstall. Cleanup is limited to the validated runner-temporary directory and a non-sensitive, uniquely named profile-retention probe.
 
 The implemented Windows staging layout contains all executable dependencies needed at runtime. Other platforms must implement the equivalent native staging before distributing installers:
 

@@ -1,3 +1,7 @@
+param(
+    [string]$SidecarDirectory
+)
+
 $ErrorActionPreference = 'Stop'
 
 function Read-LifecycleEvent {
@@ -162,7 +166,13 @@ function Invoke-FakeAdapterSmoke {
 }
 
 $repository = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$sidecar = (Resolve-Path (Join-Path $repository 'desktop\target\release\sidecar')).Path
+$sidecarCandidate = if ([string]::IsNullOrWhiteSpace($SidecarDirectory)) {
+    Join-Path $repository 'desktop\target\release\sidecar'
+}
+else {
+    $SidecarDirectory
+}
+$sidecar = (Resolve-Path -LiteralPath $sidecarCandidate).Path
 $runtimeRoot = Join-Path $repository '.tab2api'
 $smokeDirectory = Join-Path $runtimeRoot 'desktop-packaged-smoke'
 if (-not $smokeDirectory.StartsWith($runtimeRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
