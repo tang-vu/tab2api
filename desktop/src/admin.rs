@@ -609,12 +609,39 @@ mod tests {
 
     fn accept_request(listener: &TcpListener) -> (TcpStream, String) {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 2048];
-        let read = stream.read(&mut request).unwrap();
-        (
-            stream,
-            std::str::from_utf8(&request[..read]).unwrap().to_owned(),
-        )
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let mut request = Vec::with_capacity(2048);
+        let mut chunk = [0_u8; 512];
+        loop {
+            let read = stream.read(&mut chunk).unwrap();
+            assert!(read > 0, "the test request ended before it was complete");
+            request.extend_from_slice(&chunk[..read]);
+            assert!(request.len() <= 2048, "the test request was too large");
+
+            let Some(header_end) = request
+                .windows(4)
+                .position(|candidate| candidate == b"\r\n\r\n")
+                .map(|index| index + 4)
+            else {
+                continue;
+            };
+            let headers = std::str::from_utf8(&request[..header_end]).unwrap();
+            let content_length = headers
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Length: "))
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            let request_end = header_end.checked_add(content_length).unwrap();
+            assert!(request_end <= 2048, "the test request was too large");
+            if request.len() >= request_end {
+                request.truncate(request_end);
+                break;
+            }
+        }
+        (stream, std::str::from_utf8(&request).unwrap().to_owned())
     }
 
     fn assert_identity_probe(request: &str) {
@@ -896,6 +923,7 @@ mod tests {
             assert!(request.starts_with("POST /admin/api-keys HTTP/1.1\r\n"));
             assert!(request.contains("\r\nContent-Type: application/json\r\n"));
             assert!(request.contains("\r\nContent-Length: 18\r\n"));
+            assert!(request.ends_with("\r\n\r\n{\"label\":\"Laptop\"}"));
             stream
                 .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{}")
                 .unwrap();
