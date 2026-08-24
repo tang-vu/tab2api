@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import type { BigIntStats } from 'node:fs';
+import { lstat, open, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -24,6 +25,58 @@ export interface WorkflowActionReference {
   reference: string;
   lineNumber: number;
   version?: string;
+}
+
+function sameFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function readBoundedWorkflow(workflowPath: string, fileName: string): Promise<string> {
+  const handle = await open(workflowPath, 'r');
+  try {
+    const openedMetadata = await handle.stat({ bigint: true });
+    const linkedMetadata = await lstat(workflowPath, { bigint: true });
+    if (
+      !openedMetadata.isFile() ||
+      !linkedMetadata.isFile() ||
+      openedMetadata.size > BigInt(MAX_WORKFLOW_BYTES) ||
+      !sameFileIdentity(openedMetadata, linkedMetadata)
+    ) {
+      throw new Error(`Workflow ${fileName} is not a bounded ordinary file.`);
+    }
+
+    const buffer = Buffer.allocUnsafe(MAX_WORKFLOW_BYTES + 1);
+    let totalBytesRead = 0;
+    while (totalBytesRead < buffer.length) {
+      const result = await handle.read(
+        buffer,
+        totalBytesRead,
+        buffer.length - totalBytesRead,
+        null,
+      );
+      if (result.bytesRead === 0) break;
+      totalBytesRead += result.bytesRead;
+    }
+
+    const finalOpenedMetadata = await handle.stat({ bigint: true });
+    const finalLinkedMetadata = await lstat(workflowPath, { bigint: true });
+    if (
+      totalBytesRead > MAX_WORKFLOW_BYTES ||
+      BigInt(totalBytesRead) !== finalOpenedMetadata.size ||
+      !finalOpenedMetadata.isFile() ||
+      !finalLinkedMetadata.isFile() ||
+      !sameFileIdentity(openedMetadata, finalOpenedMetadata) ||
+      !sameFileIdentity(finalOpenedMetadata, finalLinkedMetadata) ||
+      openedMetadata.size !== finalOpenedMetadata.size ||
+      openedMetadata.mtimeNs !== finalOpenedMetadata.mtimeNs ||
+      openedMetadata.ctimeNs !== finalOpenedMetadata.ctimeNs
+    ) {
+      throw new Error(`Workflow ${fileName} changed while it was being read.`);
+    }
+    return buffer.subarray(0, totalBytesRead).toString('utf8');
+  } finally {
+    await handle.close();
+  }
 }
 
 export function collectActionReferences(source: WorkflowSource): WorkflowActionReference[] {
@@ -127,11 +180,10 @@ export async function readWorkflowSources(rootDirectory: string): Promise<Workfl
   for (const entry of entries) {
     if (!entry.isFile()) throw new Error(`Workflow ${entry.name} must be an ordinary file.`);
     const workflowPath = path.join(workflowDirectory, entry.name);
-    const metadata = await lstat(workflowPath);
-    if (!metadata.isFile() || metadata.size > MAX_WORKFLOW_BYTES) {
-      throw new Error(`Workflow ${entry.name} is not a bounded ordinary file.`);
-    }
-    sources.push({ fileName: entry.name, contents: await readFile(workflowPath, 'utf8') });
+    sources.push({
+      fileName: entry.name,
+      contents: await readBoundedWorkflow(workflowPath, entry.name),
+    });
   }
   return sources;
 }

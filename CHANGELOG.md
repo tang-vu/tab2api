@@ -26,11 +26,18 @@ All notable user-facing changes are documented here. This project follows semant
 - Source-package checksum manifests now use artifact-portable basenames, so the documented direct
   verification command works after GitHub flattens the uploaded staging directory. The `v0.2.1`
   path-prefix workaround remains documented without moving or replacing that public tag.
+- Workflow pin verification now reads through a bounded, identity-checked file descriptor and
+  fails closed if a workflow is replaced or changed during inspection.
 
 ### Security
 
 - CI now enforces V8 source coverage and runs the pinned CodeQL extended security suite across
   GitHub Actions workflows, JavaScript/TypeScript, and Rust.
+- Security-scanner findings are resolved without weakening authentication: high-entropy API-key
+  digests remain constant-time SHA-256 comparisons and are explicitly distinguished from password
+  hashing.
+- The locked transitive `serde_with` dependency is updated to 3.21.0 to address its current
+  deserialization denial-of-service advisory.
 - Anthropic tool calls are parsed from a bounded envelope, restricted to exact caller-declared tool
   names and safe object inputs, assigned server-generated ids, and returned for the client's own
   permission checks; tab2api never executes them. Protected routes accept `x-api-key` for Anthropic

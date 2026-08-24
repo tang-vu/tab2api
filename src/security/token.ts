@@ -68,6 +68,8 @@ export async function loadOrCreateToken(dataDir: string, configured?: string): P
 }
 
 export function secureTokenEqual(actual: string, expected: string): boolean {
+  // SHA-256 normalizes API-token lengths for a constant-time comparison.
+  // codeql[js/insufficient-password-hash] This is not a password-storage construction.
   const actualDigest = createHash('sha256').update(actual).digest();
   const expectedDigest = createHash('sha256').update(expected).digest();
   return timingSafeEqual(actualDigest, expectedDigest);

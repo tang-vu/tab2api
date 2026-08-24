@@ -53,6 +53,8 @@ export interface CreatedApiKey extends ApiKeySummary {
 }
 
 function digest(value: string): Buffer {
+  // Client keys have 256 bits of random entropy.
+  // codeql[js/insufficient-password-hash] This is a lookup digest, not a password verifier.
   return createHash('sha256').update(value).digest();
 }
 

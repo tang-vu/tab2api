@@ -42,7 +42,7 @@ describe('Windows desktop packaging contract', () => {
     expect(smoke).toContain("$start.Arguments = 'dist/cli/index.js smoke'");
     expect(smoke).toContain('[string]$SidecarDirectory');
     expect(smoke).toContain("$start.EnvironmentVariables['HTTPS_PROXY'] = 'http://127.0.0.1:9'");
-    expect(smoke).not.toMatch(/chatgpt\.com/i);
+    expect(smoke.toLowerCase()).not.toContain('chatgpt.com');
   });
 
   it('bounds startup, fake smoke, and shutdown failure paths', async () => {
@@ -96,7 +96,7 @@ describe('Windows desktop packaging contract', () => {
     expect(installerSmoke).toMatch(
       /finally \{[\s\S]*Remove-Item -LiteralPath \$installDirectoryPath -Recurse -Force/,
     );
-    expect(installerSmoke).not.toMatch(/chatgpt\.com/i);
+    expect(installerSmoke.toLowerCase()).not.toContain('chatgpt.com');
   });
 
   it('keeps clean-install verification manual, ephemeral, and artifact-free', async () => {

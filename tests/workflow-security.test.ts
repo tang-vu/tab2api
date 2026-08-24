@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -69,6 +71,22 @@ describe('workflow action pinning', () => {
     expect(sources.map(({ fileName }) => fileName).sort()).toContain('codeql.yml');
     expect(sources.map(({ fileName }) => fileName)).toContain('source-package.yml');
     expect(verifyWorkflowActionPins(sources)).toBeGreaterThan(0);
+  });
+
+  it('rejects workflow files that exceed the bounded descriptor read', async () => {
+    const rootDirectory = await mkdtemp(path.join(tmpdir(), 'tab2api-workflows-'));
+    const workflowDirectory = path.join(rootDirectory, '.github', 'workflows');
+    try {
+      await mkdir(workflowDirectory, { recursive: true });
+      const workflowPath = path.join(workflowDirectory, 'bounded.yml');
+      await writeFile(workflowPath, `- uses: actions/checkout@${commit} # v7.0.1\n`, 'utf8');
+      await expect(readWorkflowSources(rootDirectory)).resolves.toHaveLength(1);
+
+      await writeFile(workflowPath, 'a'.repeat(1024 * 1024 + 1), 'utf8');
+      await expect(readWorkflowSources(rootDirectory)).rejects.toThrow(/bounded ordinary file/u);
+    } finally {
+      await rm(rootDirectory, { recursive: true, force: true });
+    }
   });
 
   it('scans application, native, and workflow code with the extended CodeQL suite', async () => {
