@@ -1,0 +1,236 @@
+name: Publish npm package
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated semantic-version tag to publish
+        required: true
+        type: string
+      confirmation:
+        description: Type publish-tab2api to authorize the irreversible registry publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish verified npm package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    environment: npm
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      CARGO_TERM_COLOR: always
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      PUBLISH_CONFIRMATION: ${{ inputs.confirmation }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      TAB2API_API_TOKEN: ci-only-token-with-at-least-24-characters
+    steps:
+      - name: Check out the tagged source without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+
+      - name: Verify explicit authorization and tagged source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLISH_CONFIRMATION" != 'publish-tab2api' ]]; then
+            echo 'The npm publish confirmation did not match.' >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo 'Release tag must be a canonical semantic version.' >&2
+            exit 1
+          fi
+          if [[ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" != 'tag' ]]; then
+            echo 'npm publication requires an annotated tag.' >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tag_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+          if [[ "$tag_commit" != "$(git rev-parse HEAD)" ]]; then
+            echo 'The checked-out commit does not match the requested tag.' >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo 'The release tag is not reachable from origin/main.' >&2
+            exit 1
+          fi
+          echo "tag_commit=$tag_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js for registry publication
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+
+      - name: Require successful source provenance and a public GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.tag_commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/source-package.yml/runs?event=push&per_page=100" \
+            > source-runs.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > github-release.json
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const runsDocument = JSON.parse(readFileSync('source-runs.json', 'utf8'));
+          const release = JSON.parse(readFileSync('github-release.json', 'utf8'));
+          const runs = Array.isArray(runsDocument.workflow_runs) ? runsDocument.workflow_runs : [];
+          const provenanceSucceeded = runs.some(
+            (run) =>
+              run !== null &&
+              typeof run === 'object' &&
+              run.event === 'push' &&
+              run.head_branch === process.env.RELEASE_TAG &&
+              run.head_sha === process.env.SOURCE_COMMIT &&
+              run.status === 'completed' &&
+              run.conclusion === 'success',
+          );
+          if (!provenanceSucceeded) {
+            throw new Error('No successful source provenance run matches this tag and commit.');
+          }
+          if (
+            release === null ||
+            typeof release !== 'object' ||
+            release.tag_name !== process.env.RELEASE_TAG ||
+            release.draft !== false
+          ) {
+            throw new Error('The matching GitHub Release is absent or still a draft.');
+          }
+          NODE
+
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install pinned Rust verification tools
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup component add rustfmt clippy
+          cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Install exact Node dependencies
+        run: npm ci
+
+      - name: Verify synchronized release metadata
+        run: npm run release:verify -- --tag "$RELEASE_TAG"
+
+      - name: Run source and desktop gates before packing
+        run: |
+          npm run check
+          npm test
+          npm run test:coverage
+          npm run build
+          npm run smoke
+          npm audit
+          npm run desktop:check
+          npm run desktop:audit
+
+      - name: Pack and inspect the exact registry candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --ignore-scripts --json > package-result.json
+          npm run release:verify -- --tag "$RELEASE_TAG" --pack-json package-result.json
+          version="${RELEASE_TAG#v}"
+          package_name="tab2api-${version}.tgz"
+          package_path="release-candidate/${package_name}"
+          mkdir -- 'release-candidate'
+          mv -- "$package_name" "$package_path"
+          integrity="$(node --input-type=module -e \
+            "import {readFileSync} from 'node:fs'; const result=JSON.parse(readFileSync('package-result.json','utf8')); process.stdout.write(result[0].integrity);")"
+          echo "package_path=$package_path" >> "$GITHUB_OUTPUT"
+          echo "integrity=$integrity" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the reviewed tarball with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGE_PATH: ${{ steps.candidate.outputs.package_path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            unset NODE_AUTH_TOKEN
+          fi
+          npm publish "$PACKAGE_PATH" \
+            --provenance --access public --ignore-scripts
+
+      - name: Verify the public registry copy and digest
+        env:
+          EXPECTED_INTEGRITY: ${{ steps.candidate.outputs.integrity }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          registry_ready=false
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if npm view "tab2api@$version" version dist.integrity --json > registry-view.json 2>/dev/null; then
+              if VERSION="$version" node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const view = JSON.parse(readFileSync('registry-view.json', 'utf8'));
+          if (view.version !== process.env.VERSION || typeof view.dist?.integrity !== 'string') {
+            process.exit(1);
+          }
+          NODE
+              then
+                registry_ready=true
+                break
+              fi
+            fi
+            if [[ "$attempt" == '8' ]]; then
+              break
+            fi
+            sleep "$((attempt * 2))"
+          done
+          if [[ "$registry_ready" != 'true' ]]; then
+            echo 'The published version did not become readable within the bounded retry window.' >&2
+            exit 1
+          fi
+          registry_integrity="$(node --input-type=module -e \
+            "import {readFileSync} from 'node:fs'; const view=JSON.parse(readFileSync('registry-view.json','utf8')); process.stdout.write(view.dist.integrity);")"
+          if [[ "$registry_integrity" != "$EXPECTED_INTEGRITY" ]]; then
+            echo 'The registry integrity does not match the reviewed tarball.' >&2
+            exit 1
+          fi
+          mkdir -- 'registry-copy'
+          (
+            cd -- 'registry-copy'
+            npm pack "tab2api@$version" --ignore-scripts --json > '../registry-package-result.json'
+          )
+          npm run release:verify -- \
+            --tag "$RELEASE_TAG" \
+            --pack-json registry-package-result.json
+          registry_pack_integrity="$(node --input-type=module -e \
+            "import {readFileSync} from 'node:fs'; const result=JSON.parse(readFileSync('registry-package-result.json','utf8')); process.stdout.write(result[0].integrity);")"
+          if [[ "$registry_pack_integrity" != "$EXPECTED_INTEGRITY" ]]; then
+            echo 'The downloaded registry tarball does not match the reviewed candidate.' >&2
+            exit 1
+          fi

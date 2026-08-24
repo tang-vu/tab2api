@@ -9,12 +9,25 @@ Only maintainers may publish a release. Releases must come from a clean, reviewe
 3. Run `npm pack --dry-run --json` and inspect every included path. Confirm the generated `dist/` has no stale modules.
 4. Review the complete diff and tracked-file list for sensitive or machine-specific data.
 5. Create an annotated `vX.Y.Z` tag from the verified commit and publish source release notes derived from `CHANGELOG.md`.
-6. If publishing to npm, require maintainer 2FA or trusted publishing, use provenance, and verify the registry tarball and digest after publication.
+6. If publishing to npm, use maintainer 2FA, trusted publishing, or a short-lived granular token
+   with bypass 2FA. Always publish with provenance and verify the registry tarball and digest.
 
-The npm package is optional for a source preview. If the maintainer is not authenticated with 2FA
-or a trusted publisher is not configured, publish only the GitHub source prerelease and record npm as
-not published. Never weaken authentication or use an unprotected automation token to make the two
-channels appear synchronized.
+The npm package is optional for a source preview. `Publish npm package` supports both npm trusted
+publishing and an initial/backup granular access token with bypass 2FA. A token must be short-lived,
+stored only as the `NPM_TOKEN` secret in the protected `npm` GitHub Environment, and revoked after
+use. Remove the environment secret after revocation. Never paste it into chat, issues, workflow
+files, repository secrets shared with pull-request jobs, command arguments, or logs. The workflow
+exposes it only to `npm publish`; all builds, tests, packing, and post-publish verification run
+without that credential.
+
+The publish workflow is manual and requires the exact annotated tag plus the literal
+`publish-tab2api` confirmation. Before receiving the environment secret, it proves the tag belongs
+to `main`, requires a successful matching `Source package provenance` run and a non-draft GitHub
+Release, re-runs the complete source/desktop gates, and validates the tarball allowlist. It publishes
+that reviewed tarball with provenance, then downloads the public registry copy and requires its
+integrity and manifest to match. Configure npm trusted publishing for future releases whenever the
+package already exists; the same workflow can then authenticate through OIDC without a long-lived
+write token when the `NPM_TOKEN` environment secret is absent.
 
 Pushing an annotated semantic-version tag also runs `Source package provenance`. The workflow
 checks that the tag is reachable from `main`, re-runs the complete source and desktop verification
