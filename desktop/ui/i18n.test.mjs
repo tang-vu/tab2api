@@ -113,6 +113,7 @@ test('every translated DOM key exists and locale selection performs no network l
   assert.match(html, /id="check-session"/);
   assert.match(html, /id="export-api-docs"/);
   assert.match(html, /id="created-key-dialog"/);
+  assert.match(html, /id="copy-claude-setup"/);
   assert.match(html, /class="method post">POST/);
   assert.match(html, /<code>\/v1\/projects/);
   assert.match(html, /<code>\/v1\/messages<\/code\s*>/);
@@ -125,6 +126,7 @@ test('every translated DOM key exists and locale selection performs no network l
   assert.match(app, /reset_usage/);
   assert.match(app, /export_api_docs/);
   assert.match(app, /check_session_readiness/);
+  assert.match(app, /claudeCodePowerShellSetup/);
   assert.match(app, /created\.token = ''/);
   assert.equal(app.match(/settingsStorage\?\.setItem/g)?.length, 1);
   assert.match(styles, /dialog \{[\s\S]*width: min\(340px/);

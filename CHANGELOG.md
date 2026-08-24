@@ -10,6 +10,8 @@ All notable user-facing changes are documented here. This project follows semant
   estimated `/v1/messages/count_tokens`, model discovery, immediate SSE start/keepalives, inline
   images, client-side tool-use/result loops, Anthropic error envelopes, and an offline smoke that
   exercises the installed Claude Code binary through a real two-turn `Read` call.
+- A one-click, non-persistent Claude Code PowerShell setup in the desktop app's one-time client-key
+  dialog.
 
 ### Fixed
 

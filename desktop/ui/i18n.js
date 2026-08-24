@@ -190,7 +190,9 @@ const en = {
   createdKeyBody:
     'This plaintext client key is shown once. It is not stored by the desktop UI and cannot be recovered later.',
   copyKey: 'Copy key',
+  copyClaudeSetup: 'Copy Claude Code setup',
   copied: 'Copied to the system clipboard.',
+  copiedClaudeSetup: 'Claude Code setup copied. The client key is in your clipboard.',
   copyFailed: 'Clipboard access failed. Select and copy the key manually.',
   done: 'Done',
   usageTitle: 'Usage',
@@ -1479,7 +1481,9 @@ const managementTranslations = {
     createdKeyBody:
       'Client key plaintext chỉ hiện một lần. Desktop UI không lưu key và không thể khôi phục sau đó.',
     copyKey: 'Copy key',
+    copyClaudeSetup: 'Sao chép cấu hình Claude Code',
     copied: 'Đã copy vào clipboard hệ thống.',
+    copiedClaudeSetup: 'Đã sao chép cấu hình Claude Code. Client key đang nằm trong clipboard.',
     copyFailed: 'Không truy cập được clipboard. Hãy chọn và copy key thủ công.',
     done: 'Xong',
     usageTitle: 'Usage',
@@ -1530,7 +1534,9 @@ const managementTranslations = {
     createdKeyTitle: '立即复制此密钥',
     createdKeyBody: '客户端密钥明文只显示一次。桌面 UI 不会存储，也无法恢复。',
     copyKey: '复制密钥',
+    copyClaudeSetup: '复制 Claude Code 配置',
     copied: '已复制到系统剪贴板。',
+    copiedClaudeSetup: '已复制 Claude Code 配置。客户端密钥现位于剪贴板中。',
     copyFailed: '无法访问剪贴板。请手动选择并复制密钥。',
     done: '完成',
     usageTitle: '用量',
@@ -1581,7 +1587,10 @@ const managementTranslations = {
     createdKeyBody:
       '平文のクライアントキーは一度だけ表示されます。デスクトップ UI は保存せず、復元できません。',
     copyKey: 'キーをコピー',
+    copyClaudeSetup: 'Claude Code 設定をコピー',
     copied: 'システムのクリップボードにコピーしました。',
+    copiedClaudeSetup:
+      'Claude Code 設定をコピーしました。クライアントキーはクリップボードにあります。',
     copyFailed: 'クリップボードを利用できません。手動で選択してコピーしてください。',
     done: '完了',
     usageTitle: '使用量',
@@ -1632,7 +1641,9 @@ const managementTranslations = {
     createdKeyBody:
       '클라이언트 키 평문은 한 번만 표시됩니다. 데스크톱 UI는 저장하지 않으며 복구할 수 없습니다.',
     copyKey: '키 복사',
+    copyClaudeSetup: 'Claude Code 설정 복사',
     copied: '시스템 클립보드에 복사했습니다.',
+    copiedClaudeSetup: 'Claude Code 설정을 복사했습니다. 클라이언트 키가 클립보드에 있습니다.',
     copyFailed: '클립보드에 접근할 수 없습니다. 키를 직접 선택해 복사하세요.',
     done: '완료',
     usageTitle: '사용량',
@@ -1684,7 +1695,10 @@ const managementTranslations = {
     createdKeyBody:
       'La clave en texto plano se muestra una sola vez. La UI no la guarda y no puede recuperarse.',
     copyKey: 'Copiar clave',
+    copyClaudeSetup: 'Copiar configuración de Claude Code',
     copied: 'Copiada al portapapeles del sistema.',
+    copiedClaudeSetup:
+      'Configuración de Claude Code copiada. La clave de cliente está en el portapapeles.',
     copyFailed: 'No se pudo acceder al portapapeles. Selecciona y copia la clave manualmente.',
     done: 'Listo',
     usageTitle: 'Uso',
@@ -1737,7 +1751,10 @@ const managementTranslations = {
     createdKeyBody:
       "La clé en clair n'est affichée qu'une fois. L'UI ne la stocke pas et elle est irrécupérable.",
     copyKey: 'Copier la clé',
+    copyClaudeSetup: 'Copier la configuration Claude Code',
     copied: 'Copiée dans le presse-papiers système.',
+    copiedClaudeSetup:
+      'Configuration Claude Code copiée. La clé client est dans le presse-papiers.',
     copyFailed: 'Accès au presse-papiers impossible. Sélectionnez et copiez la clé manuellement.',
     done: 'Terminé',
     usageTitle: 'Usage',
@@ -1790,7 +1807,10 @@ const managementTranslations = {
     createdKeyBody:
       'Der Klartext-Key wird nur einmal angezeigt. Die Desktop-UI speichert ihn nicht und kann ihn nicht wiederherstellen.',
     copyKey: 'Key kopieren',
+    copyClaudeSetup: 'Claude-Code-Konfiguration kopieren',
     copied: 'In die Systemzwischenablage kopiert.',
+    copiedClaudeSetup:
+      'Claude-Code-Konfiguration kopiert. Der Client-Key befindet sich in der Zwischenablage.',
     copyFailed: 'Kein Zugriff auf die Zwischenablage. Wählen und kopieren Sie den Key manuell.',
     done: 'Fertig',
     usageTitle: 'Nutzung',

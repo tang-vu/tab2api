@@ -1,5 +1,10 @@
 /* global document, navigator, window */
-import { administrationControls, usageTotals, validKeyLabel } from './admin-view.js';
+import {
+  administrationControls,
+  claudeCodePowerShellSetup,
+  usageTotals,
+  validKeyLabel,
+} from './admin-view.js';
 import { languageOptions, loadLanguage, saveLanguage, translate } from './i18n.js';
 import { readinessPresentation, shouldApplyReadinessResult } from './session-readiness.js';
 import { autostartPresentation, validAutostartStatus } from './startup-controls.js';
@@ -43,6 +48,7 @@ const elements = {
   createdKeyDialog: document.querySelector('#created-key-dialog'),
   createdKeyValue: document.querySelector('#created-key-value'),
   copyCreatedKey: document.querySelector('#copy-created-key'),
+  copyClaudeSetup: document.querySelector('#copy-claude-setup'),
   copyKeyStatus: document.querySelector('#copy-key-status'),
   revokeKeyDialog: document.querySelector('#revoke-key-dialog'),
   revokeKeyMessage: document.querySelector('#revoke-key-message'),
@@ -741,6 +747,17 @@ if (typeof invoke !== 'function') {
     try {
       await navigator.clipboard.writeText(elements.createdKeyValue.textContent);
       elements.copyKeyStatus.textContent = t('copied');
+    } catch {
+      elements.copyKeyStatus.textContent = t('copyFailed');
+    }
+    elements.copyKeyStatus.hidden = false;
+  });
+  elements.copyClaudeSetup.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(
+        claudeCodePowerShellSetup(elements.createdKeyValue.textContent),
+      );
+      elements.copyKeyStatus.textContent = t('copiedClaudeSetup');
     } catch {
       elements.copyKeyStatus.textContent = t('copyFailed');
     }
