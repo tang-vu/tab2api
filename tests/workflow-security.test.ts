@@ -106,6 +106,9 @@ describe('workflow action pinning', () => {
     const sources = await readWorkflowSources(rootDirectory);
     const sourcePackage = sources.find(({ fileName }) => fileName === 'source-package.yml');
     expect(sourcePackage).toBeDefined();
+    expect(sourcePackage?.contents).toContain('npm run test:coverage');
+    expect(sourcePackage?.contents).toContain('\n          npm audit\n');
+    expect(sourcePackage?.contents).not.toContain('npm audit --audit-level');
     expect(sourcePackage?.contents).toContain("cd -- 'release-candidate'");
     expect(sourcePackage?.contents).toContain(
       `sha256sum -- "$package_name" "$sbom_name" > 'SHA256SUMS'`,

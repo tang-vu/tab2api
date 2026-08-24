@@ -32,7 +32,8 @@ All notable user-facing changes are documented here. This project follows semant
 ### Security
 
 - CI now enforces V8 source coverage and runs the pinned CodeQL extended security suite across
-  GitHub Actions workflows, JavaScript/TypeScript, and Rust.
+  GitHub Actions workflows, JavaScript/TypeScript, and Rust. Tagged source candidates rerun the
+  coverage floor and a full npm advisory audit before provenance is issued.
 - Security-scanner findings are resolved without weakening authentication: high-entropy API-key
   digests remain constant-time SHA-256 comparisons and are explicitly distinguished from password
   hashing.
