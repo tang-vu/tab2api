@@ -292,5 +292,7 @@ describe('Anthropic Messages compatibility', () => {
 
     controller.abort();
     await vi.waitFor(() => expect(provider.active).toBe(0));
+    await app.close();
+    openApps.splice(openApps.indexOf(app), 1);
   });
 });

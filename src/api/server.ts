@@ -448,7 +448,13 @@ export function buildServer(dependencies: ServerDependencies) {
 
     const messageId = createAnthropicMessageId();
     const stream = new PassThrough();
-    const onStreamAbort = () => observe(request, { successful: false });
+    const onStreamAbort = () => {
+      observe(request, { successful: false });
+      const reason: unknown = lifecycle.controller.signal.reason;
+      if (reason instanceof AppError && reason.code === 'cancelled' && !stream.destroyed) {
+        stream.destroy();
+      }
+    };
     lifecycle.controller.signal.addEventListener('abort', onStreamAbort, { once: true });
     stream.write(anthropicMessageStartSse(messageId));
     const heartbeat = setInterval(() => {
