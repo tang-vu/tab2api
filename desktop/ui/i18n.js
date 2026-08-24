@@ -124,18 +124,24 @@ const en = {
   browserTab: 'Browser',
   apiDocsTab: 'API Docs',
   apiDocsTitle: 'API documentation',
-  apiDocsSubtitle: 'OpenAI-compatible routes available in this app',
+  apiDocsSubtitle: 'OpenAI and Anthropic-compatible routes available in this app',
   authenticationTitle: 'Authentication',
   authenticationBody:
-    'Only healthz is public. Every other route requires a revocable tab2api bearer key; administrator routes require the original administrator key.',
+    'Only healthz is public. Protected routes accept a revocable tab2api bearer or x-api-key; administrator routes require the original key.',
   quickStartTitle: 'Quick start',
   quickStartBody:
     'Replace the placeholder key, then send an OpenAI-shaped Chat Completions request.',
+  claudeCodeTitle: 'Claude Code',
+  claudeCodeBody:
+    'Create a dedicated revocable key in Keys & Usage, then configure only the shell that launches Claude Code.',
+  claudeCodeCaveat:
+    'This is an Anthropic protocol bridge to ChatGPT Web, not a Claude model. Tool calls remain subject to Claude Code permissions and UI reliability.',
   coreEndpointsTitle: 'Core endpoints',
   coreEndpointsBody:
     'Check process/browser readiness, discover capabilities, and generate text through Chat Completions or Responses.',
   publicAccess: 'Public',
   bearerAccess: 'Bearer key',
+  estimatedAccess: 'Local estimate',
   projectEndpointsTitle: 'Projects and persistent sources',
   projectEndpointsBody:
     'Create or list projects, upload source files once, and continue project-scoped conversations with conversation_id.',
@@ -1168,17 +1174,23 @@ const documentationTranslations = {
     browserTab: 'Trình duyệt',
     apiDocsTab: 'Tài liệu API',
     apiDocsTitle: 'Tài liệu API',
-    apiDocsSubtitle: 'Các route tương thích OpenAI có trong ứng dụng',
+    apiDocsSubtitle: 'Các route tương thích OpenAI và Anthropic có trong ứng dụng',
     authenticationTitle: 'Xác thực',
     authenticationBody:
-      'Chỉ healthz là public. Mọi route khác cần tab2api bearer key có thể thu hồi; route quản trị cần administrator key gốc.',
+      'Chỉ healthz là public. Route được bảo vệ nhận tab2api bearer hoặc x-api-key có thể thu hồi; route quản trị cần key gốc.',
     quickStartTitle: 'Bắt đầu nhanh',
     quickStartBody: 'Thay key mẫu rồi gửi request Chat Completions theo định dạng OpenAI.',
+    claudeCodeTitle: 'Claude Code',
+    claudeCodeBody:
+      'Tạo key riêng có thể thu hồi trong Key & Usage, rồi chỉ cấu hình shell dùng để mở Claude Code.',
+    claudeCodeCaveat:
+      'Đây là bridge giao thức Anthropic tới ChatGPT Web, không phải model Claude. Tool call vẫn phụ thuộc permission của Claude Code và độ ổn định UI.',
     coreEndpointsTitle: 'Endpoint cốt lõi',
     coreEndpointsBody:
       'Kiểm tra tiến trình/trình duyệt, xem capability và tạo văn bản qua Chat Completions hoặc Responses.',
     publicAccess: 'Public',
     bearerAccess: 'Bearer key',
+    estimatedAccess: 'Ước lượng cục bộ',
     projectEndpointsTitle: 'Projects và nguồn lưu lâu dài',
     projectEndpointsBody:
       'Tạo hoặc liệt kê project, upload source một lần và tiếp tục hội thoại trong project bằng conversation_id.',
@@ -1201,17 +1213,22 @@ const documentationTranslations = {
     browserTab: '浏览器',
     apiDocsTab: 'API 文档',
     apiDocsTitle: 'API 文档',
-    apiDocsSubtitle: '此应用提供的 OpenAI 兼容路由',
+    apiDocsSubtitle: '此应用提供的 OpenAI 和 Anthropic 兼容路由',
     authenticationTitle: '身份验证',
     authenticationBody:
-      '只有 healthz 是公开的。其他路由需要可撤销的 tab2api bearer key；管理路由需要原始管理员密钥。',
+      '只有 healthz 是公开的。受保护路由接受可撤销的 tab2api bearer 或 x-api-key；管理路由需要原始密钥。',
     quickStartTitle: '快速开始',
     quickStartBody: '替换示例密钥，然后发送 OpenAI 格式的 Chat Completions 请求。',
+    claudeCodeTitle: 'Claude Code',
+    claudeCodeBody: '在密钥与用量中创建专用可撤销密钥，然后只配置启动 Claude Code 的 shell。',
+    claudeCodeCaveat:
+      '这是连接 ChatGPT Web 的 Anthropic 协议桥，不是 Claude 模型。工具调用仍受 Claude Code 权限和 UI 可靠性约束。',
     coreEndpointsTitle: '核心端点',
     coreEndpointsBody:
       '检查进程和浏览器状态、发现能力，并通过 Chat Completions 或 Responses 生成文本。',
     publicAccess: '公开',
     bearerAccess: 'Bearer 密钥',
+    estimatedAccess: '本地估算',
     projectEndpointsTitle: '项目与持久源文件',
     projectEndpointsBody: '创建或列出项目，一次上传源文件，并使用 conversation_id 继续项目会话。',
     deleteConfirmAccess: 'Bearer + 确认',
@@ -1231,18 +1248,24 @@ const documentationTranslations = {
     browserTab: 'ブラウザー',
     apiDocsTab: 'API ドキュメント',
     apiDocsTitle: 'API ドキュメント',
-    apiDocsSubtitle: 'このアプリで利用できる OpenAI 互換ルート',
+    apiDocsSubtitle: 'このアプリで利用できる OpenAI / Anthropic 互換ルート',
     authenticationTitle: '認証',
     authenticationBody:
-      '公開されるのは healthz だけです。その他は失効可能な tab2api bearer key、管理ルートは元の管理者キーが必要です。',
+      '公開されるのは healthz だけです。保護ルートは失効可能な bearer または x-api-key、管理ルートは元のキーが必要です。',
     quickStartTitle: 'クイックスタート',
     quickStartBody:
       'プレースホルダーのキーを置き換え、OpenAI 形式の Chat Completions リクエストを送信します。',
+    claudeCodeTitle: 'Claude Code',
+    claudeCodeBody:
+      '「キーと使用量」で専用の失効可能キーを作成し、Claude Code を起動するシェルだけに設定します。',
+    claudeCodeCaveat:
+      'これは ChatGPT Web への Anthropic プロトコルブリッジであり、Claude モデルではありません。ツール呼び出しは Claude Code の権限と UI の信頼性に従います。',
     coreEndpointsTitle: 'コアエンドポイント',
     coreEndpointsBody:
       'プロセスとブラウザーの状態、機能一覧を確認し、Chat Completions または Responses でテキストを生成します。',
     publicAccess: '公開',
     bearerAccess: 'Bearer キー',
+    estimatedAccess: 'ローカル推定',
     projectEndpointsTitle: 'プロジェクトと永続ソース',
     projectEndpointsBody:
       'プロジェクトを作成・一覧表示し、ソースを一度アップロードして conversation_id で会話を継続します。',
@@ -1265,17 +1288,23 @@ const documentationTranslations = {
     browserTab: '브라우저',
     apiDocsTab: 'API 문서',
     apiDocsTitle: 'API 문서',
-    apiDocsSubtitle: '이 앱에서 제공하는 OpenAI 호환 경로',
+    apiDocsSubtitle: '이 앱에서 제공하는 OpenAI 및 Anthropic 호환 경로',
     authenticationTitle: '인증',
     authenticationBody:
-      'healthz만 공개됩니다. 다른 경로에는 폐기 가능한 tab2api bearer key가, 관리자 경로에는 원본 관리자 키가 필요합니다.',
+      'healthz만 공개됩니다. 보호 경로는 폐기 가능한 bearer 또는 x-api-key를 받고 관리자 경로는 원본 키가 필요합니다.',
     quickStartTitle: '빠른 시작',
     quickStartBody: '예시 키를 바꾸고 OpenAI 형식의 Chat Completions 요청을 보내세요.',
+    claudeCodeTitle: 'Claude Code',
+    claudeCodeBody:
+      '키 및 사용량에서 전용 폐기 가능 키를 만든 뒤 Claude Code를 실행하는 셸에만 설정하세요.',
+    claudeCodeCaveat:
+      'ChatGPT Web용 Anthropic 프로토콜 브리지이며 Claude 모델이 아닙니다. 도구 호출은 Claude Code 권한과 UI 안정성의 적용을 받습니다.',
     coreEndpointsTitle: '핵심 엔드포인트',
     coreEndpointsBody:
       '프로세스와 브라우저 상태, 기능을 확인하고 Chat Completions 또는 Responses로 텍스트를 생성합니다.',
     publicAccess: '공개',
     bearerAccess: 'Bearer 키',
+    estimatedAccess: '로컬 추정',
     projectEndpointsTitle: '프로젝트와 영구 소스',
     projectEndpointsBody:
       '프로젝트를 만들거나 조회하고 소스를 한 번 업로드한 뒤 conversation_id로 대화를 계속합니다.',
@@ -1298,18 +1327,24 @@ const documentationTranslations = {
     browserTab: 'Navegador',
     apiDocsTab: 'Documentación API',
     apiDocsTitle: 'Documentación de la API',
-    apiDocsSubtitle: 'Rutas compatibles con OpenAI disponibles en esta aplicación',
+    apiDocsSubtitle: 'Rutas compatibles con OpenAI y Anthropic disponibles en esta aplicación',
     authenticationTitle: 'Autenticación',
     authenticationBody:
-      'Solo healthz es público. Las demás rutas requieren una clave bearer revocable de tab2api; las rutas administrativas requieren la clave original.',
+      'Solo healthz es público. Las rutas protegidas aceptan bearer o x-api-key revocables; las administrativas requieren la clave original.',
     quickStartTitle: 'Inicio rápido',
     quickStartBody:
       'Sustituye la clave de ejemplo y envía una solicitud Chat Completions con formato OpenAI.',
+    claudeCodeTitle: 'Claude Code',
+    claudeCodeBody:
+      'Crea una clave revocable dedicada en Claves y uso y configura solo la shell que inicia Claude Code.',
+    claudeCodeCaveat:
+      'Es un puente del protocolo Anthropic hacia ChatGPT Web, no un modelo Claude. Las herramientas siguen sujetas a permisos de Claude Code y a la fiabilidad de la UI.',
     coreEndpointsTitle: 'Endpoints principales',
     coreEndpointsBody:
       'Comprueba el proceso y navegador, consulta capacidades y genera texto mediante Chat Completions o Responses.',
     publicAccess: 'Público',
     bearerAccess: 'Clave bearer',
+    estimatedAccess: 'Estimación local',
     projectEndpointsTitle: 'Proyectos y fuentes persistentes',
     projectEndpointsBody:
       'Crea o lista proyectos, sube las fuentes una vez y continúa conversaciones con conversation_id.',
@@ -1332,18 +1367,24 @@ const documentationTranslations = {
     browserTab: 'Navigateur',
     apiDocsTab: 'Documentation API',
     apiDocsTitle: "Documentation de l'API",
-    apiDocsSubtitle: 'Routes compatibles OpenAI disponibles dans cette application',
+    apiDocsSubtitle: 'Routes compatibles OpenAI et Anthropic disponibles dans cette application',
     authenticationTitle: 'Authentification',
     authenticationBody:
-      "Seul healthz est public. Les autres routes exigent une clé bearer tab2api révocable ; les routes d'administration exigent la clé administrateur d'origine.",
+      "Seul healthz est public. Les routes protégées acceptent un bearer ou x-api-key révocable ; l'administration exige la clé d'origine.",
     quickStartTitle: 'Démarrage rapide',
     quickStartBody:
       'Remplacez la clé exemple puis envoyez une requête Chat Completions au format OpenAI.',
+    claudeCodeTitle: 'Claude Code',
+    claudeCodeBody:
+      'Créez une clé révocable dédiée dans Clés et utilisation, puis configurez uniquement le shell qui lance Claude Code.',
+    claudeCodeCaveat:
+      "C'est un pont du protocole Anthropic vers ChatGPT Web, pas un modèle Claude. Les outils restent soumis aux permissions de Claude Code et à la fiabilité de l'UI.",
     coreEndpointsTitle: 'Endpoints principaux',
     coreEndpointsBody:
       'Vérifiez le processus et le navigateur, découvrez les capacités et générez du texte via Chat Completions ou Responses.',
     publicAccess: 'Public',
     bearerAccess: 'Clé bearer',
+    estimatedAccess: 'Estimation locale',
     projectEndpointsTitle: 'Projets et sources persistantes',
     projectEndpointsBody:
       'Créez ou listez les projets, chargez les sources une fois et poursuivez les conversations avec conversation_id.',
@@ -1366,18 +1407,24 @@ const documentationTranslations = {
     browserTab: 'Browser',
     apiDocsTab: 'API-Dokumentation',
     apiDocsTitle: 'API-Dokumentation',
-    apiDocsSubtitle: 'In dieser App verfügbare OpenAI-kompatible Routen',
+    apiDocsSubtitle: 'In dieser App verfügbare OpenAI- und Anthropic-kompatible Routen',
     authenticationTitle: 'Authentifizierung',
     authenticationBody:
-      'Nur healthz ist öffentlich. Alle anderen Routen benötigen einen widerrufbaren tab2api-Bearer-Key; Admin-Routen den ursprünglichen Administrator-Key.',
+      'Nur healthz ist öffentlich. Geschützte Routen akzeptieren widerrufbare Bearer- oder x-api-Keys; Admin-Routen benötigen den ursprünglichen Key.',
     quickStartTitle: 'Schnellstart',
     quickStartBody:
       'Ersetzen Sie den Beispiel-Key und senden Sie eine OpenAI-formatierte Chat-Completions-Anfrage.',
+    claudeCodeTitle: 'Claude Code',
+    claudeCodeBody:
+      'Erstellen Sie unter Keys & Nutzung einen eigenen widerrufbaren Key und konfigurieren Sie nur die Shell, die Claude Code startet.',
+    claudeCodeCaveat:
+      'Dies ist eine Anthropic-Protokollbrücke zu ChatGPT Web, kein Claude-Modell. Tool-Aufrufe unterliegen weiterhin Claude-Code-Berechtigungen und der UI-Zuverlässigkeit.',
     coreEndpointsTitle: 'Kern-Endpunkte',
     coreEndpointsBody:
       'Prüfen Sie Prozess und Browser, entdecken Sie Funktionen und erzeugen Sie Text über Chat Completions oder Responses.',
     publicAccess: 'Öffentlich',
     bearerAccess: 'Bearer-Key',
+    estimatedAccess: 'Lokale Schätzung',
     projectEndpointsTitle: 'Projekte und persistente Quellen',
     projectEndpointsBody:
       'Erstellen oder listen Sie Projekte, laden Sie Quellen einmal hoch und setzen Sie Gespräche mit conversation_id fort.',

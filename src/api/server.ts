@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { PassThrough } from 'node:stream';
 import multipart from '@fastify/multipart';
 import Fastify, { LogController, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { Logger } from 'pino';
@@ -10,10 +11,25 @@ import type { AudioMimeType, DocumentMimeType, MediaAttachment } from '../provid
 import { FifoQueue } from '../queue/fifo.js';
 import { SystemSpeechSynthesizer, type SpeechSynthesizer } from '../audio/system-speech.js';
 import { ApiKeyStore, type ApiPrincipal } from '../security/api-keys.js';
-import { parseBearer } from '../security/token.js';
+import { parseBearer, secureTokenEqual } from '../security/token.js';
 import { MetadataStore } from '../store/metadata.js';
 import { UsageStore } from '../store/usage.js';
 import { API_MODEL, chatSse, mapChatCompletion, mapResponse, responsesSse } from './mappers.js';
+import {
+  ANTHROPIC_API_MODEL,
+  anthropicAttachments,
+  anthropicErrorEnvelope,
+  anthropicErrorSse,
+  anthropicMessageContentSse,
+  anthropicMessageStartSse,
+  anthropicMessagesRequestSchema,
+  anthropicPingSse,
+  anthropicTokenCountRequestSchema,
+  createAnthropicMessageId,
+  estimateAnthropicInputTokens,
+  mapAnthropicMessage,
+  serializeAnthropicRequest,
+} from './anthropic.js';
 import {
   chatCompletionRequestSchema,
   createProjectRequestSchema,
@@ -46,7 +62,20 @@ function errorEnvelope(error: AppError): ErrorEnvelope {
 }
 
 function authenticate(request: FastifyRequest, keys: ApiKeyStore): ApiPrincipal {
-  const presented = parseBearer(request.headers.authorization);
+  const authorization = request.headers.authorization;
+  const bearer = parseBearer(authorization);
+  if (authorization !== undefined && bearer === undefined) {
+    throw new AppError('authentication_error', 'A valid tab2api bearer key is required.');
+  }
+  const rawApiKey = request.headers['x-api-key'];
+  if (Array.isArray(rawApiKey)) {
+    throw new AppError('authentication_error', 'Only one tab2api API key may be presented.');
+  }
+  const apiKey = typeof rawApiKey === 'string' && rawApiKey.length > 0 ? rawApiKey : undefined;
+  if (bearer !== undefined && apiKey !== undefined && !secureTokenEqual(bearer, apiKey)) {
+    throw new AppError('authentication_error', 'Conflicting tab2api credentials were presented.');
+  }
+  const presented = bearer ?? apiKey;
   const principal = presented === undefined ? undefined : keys.authenticate(presented);
   if (principal === undefined) {
     throw new AppError('authentication_error', 'A valid tab2api bearer key is required.');
@@ -92,6 +121,8 @@ export interface ServerDependencies {
   speech?: SpeechSynthesizer;
   apiKeys?: ApiKeyStore;
   usage?: UsageStore;
+  /** Internal injection point for deterministic SSE heartbeat tests. */
+  anthropicHeartbeatMs?: number;
 }
 
 interface UsageDraft {
@@ -100,6 +131,7 @@ interface UsageDraft {
   outputText?: string;
   inputBytes: number;
   outputBytes: number;
+  successful?: boolean;
 }
 
 const AUDIO_MIME_TYPES = new Set<AudioMimeType>([
@@ -172,6 +204,10 @@ export function buildServer(dependencies: ServerDependencies) {
   const speech = dependencies.speech ?? new SystemSpeechSynthesizer(config);
   const apiKeys = dependencies.apiKeys ?? ApiKeyStore.memory(config.apiToken);
   const usage = dependencies.usage ?? UsageStore.memory();
+  const anthropicHeartbeatMs = dependencies.anthropicHeartbeatMs ?? 15_000;
+  if (!Number.isInteger(anthropicHeartbeatMs) || anthropicHeartbeatMs < 1) {
+    throw new Error('anthropicHeartbeatMs must be a positive integer');
+  }
   const principals = new WeakMap<FastifyRequest, ApiPrincipal>();
   const usageDrafts = new WeakMap<FastifyRequest, UsageDraft>();
   const app = Fastify({
@@ -220,7 +256,7 @@ export function buildServer(dependencies: ServerDependencies) {
       void usage
         .record(principal, {
           endpoint: request.routeOptions.url ?? request.url.split('?')[0] ?? 'unknown',
-          successful: reply.statusCode < 400,
+          successful: draft.successful ?? reply.statusCode < 400,
           latencyMs: performance.now() - draft.startedAt,
           ...(draft.inputText === undefined ? {} : { inputText: draft.inputText }),
           ...(draft.outputText === undefined ? {} : { outputText: draft.outputText }),
@@ -249,6 +285,9 @@ export function buildServer(dependencies: ServerDependencies) {
   };
 
   app.get('/healthz', async () => ({ status: 'ok', service: 'tab2api' }));
+  app.head('/api/hello', { preHandler: authenticated }, async (_request, reply) =>
+    reply.code(204).send(),
+  );
   app.get('/readyz', { preHandler: authenticated }, async (_request, reply) => {
     const session = await provider.health();
     const ready = session === 'ready';
@@ -260,6 +299,13 @@ export function buildServer(dependencies: ServerDependencies) {
     data: [
       {
         id: API_MODEL,
+        object: 'model',
+        created: 0,
+        owned_by: 'user-browser-session',
+      },
+      {
+        id: ANTHROPIC_API_MODEL,
+        display_name: 'tab2api ChatGPT Web (Anthropic compatibility)',
         object: 'model',
         created: 0,
         owned_by: 'user-browser-session',
@@ -362,6 +408,86 @@ export function buildServer(dependencies: ServerDependencies) {
     }
   }
 
+  async function runAnthropicMessages(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<unknown> {
+    const body = anthropicMessagesRequestSchema.parse(request.body);
+    const prompt = serializeAnthropicRequest(body);
+    const attachments = anthropicAttachments(body, config.mediaLimitBytes);
+    const allowedToolNames = new Set(body.tools.map(({ name }) => name));
+    observe(request, { inputText: prompt });
+    const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
+    const generate = () =>
+      queue.enqueue(
+        () =>
+          provider.generate({
+            prompt,
+            signal: lifecycle.controller.signal,
+            requestId: request.id,
+            attachments,
+          }),
+        lifecycle.controller.signal,
+      );
+
+    if (!body.stream) {
+      try {
+        const result = await generate();
+        const response = mapAnthropicMessage(result.text, allowedToolNames);
+        observe(request, { outputText: result.text });
+        store.set({
+          id: response.id,
+          createdAt: Math.floor(Date.now() / 1000),
+          status: 'completed',
+        });
+        return response;
+      } finally {
+        lifecycle.dispose();
+      }
+    }
+
+    const messageId = createAnthropicMessageId();
+    const stream = new PassThrough();
+    const onStreamAbort = () => observe(request, { successful: false });
+    lifecycle.controller.signal.addEventListener('abort', onStreamAbort, { once: true });
+    stream.write(anthropicMessageStartSse(messageId));
+    const heartbeat = setInterval(() => {
+      if (!stream.destroyed && !stream.writableEnded) stream.write(anthropicPingSse());
+    }, anthropicHeartbeatMs);
+    heartbeat.unref();
+
+    void generate()
+      .then((result) => {
+        const response = mapAnthropicMessage(result.text, allowedToolNames, messageId);
+        observe(request, { outputText: result.text });
+        store.set({
+          id: response.id,
+          createdAt: Math.floor(Date.now() / 1000),
+          status: 'completed',
+        });
+        if (!stream.destroyed && !stream.writableEnded) {
+          stream.end(anthropicMessageContentSse(response));
+        }
+      })
+      .catch((error: unknown) => {
+        const safe = asSafeAppError(error);
+        observe(request, { successful: false });
+        request.log.warn({ requestId: request.id, code: safe.code }, 'request stream failed');
+        if (!stream.destroyed && !stream.writableEnded) stream.end(anthropicErrorSse(safe));
+      })
+      .finally(() => {
+        clearInterval(heartbeat);
+        lifecycle.controller.signal.removeEventListener('abort', onStreamAbort);
+        lifecycle.dispose();
+      });
+
+    return reply
+      .header('content-type', 'text/event-stream; charset=utf-8')
+      .header('cache-control', 'no-cache')
+      .header('x-tab2api-stream-mode', 'buffered-with-keepalive')
+      .send(stream);
+  }
+
   const generationRouteOptions = {
     preHandler: authenticated,
     bodyLimit: Math.ceil((config.mediaLimitBytes * 4) / 3) + 262_144,
@@ -374,6 +500,17 @@ export function buildServer(dependencies: ServerDependencies) {
   app.post('/v1/responses', generationRouteOptions, async (request, reply) =>
     runResponses(request, reply),
   );
+
+  app.post('/v1/messages', generationRouteOptions, async (request, reply) =>
+    runAnthropicMessages(request, reply),
+  );
+
+  app.post('/v1/messages/count_tokens', generationRouteOptions, async (request, reply) => {
+    const body = anthropicTokenCountRequestSchema.parse(request.body);
+    return reply
+      .header('x-tab2api-token-count-mode', 'estimated')
+      .send({ input_tokens: estimateAnthropicInputTokens(body) });
+  });
 
   app.post('/v1/projects', { preHandler: authenticated }, async (request, reply) => {
     const body = createProjectRequestSchema.parse(request.body);
@@ -667,7 +804,12 @@ export function buildServer(dependencies: ServerDependencies) {
       safe = new AppError('invalid_request', 'Request body exceeds TAB2API_BODY_LIMIT_BYTES.');
     } else safe = asSafeAppError(error);
     request.log.warn({ requestId: request.id, code: safe.code }, 'request failed');
-    void reply.code(safe.statusCode).send(errorEnvelope(safe));
+    const path = request.url.split('?')[0];
+    const payload =
+      path === '/v1/messages' || path === '/v1/messages/count_tokens'
+        ? anthropicErrorEnvelope(safe)
+        : errorEnvelope(safe);
+    void reply.code(safe.statusCode).send(payload);
   });
 
   app.addHook('onClose', async () => {

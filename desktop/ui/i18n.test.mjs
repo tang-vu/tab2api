@@ -42,6 +42,7 @@ test('all advertised languages provide the complete English key set', () => {
       'confirmBearerTitle',
       'apiDocsTab',
       'authenticationTitle',
+      'claudeCodeBody',
       'limitsTitle',
       'adminTab',
       'keyManagementTitle',
@@ -114,6 +115,8 @@ test('every translated DOM key exists and locale selection performs no network l
   assert.match(html, /id="created-key-dialog"/);
   assert.match(html, /class="method post">POST/);
   assert.match(html, /<code>\/v1\/projects/);
+  assert.match(html, /<code>\/v1\/messages<\/code\s*>/);
+  assert.match(html, /claude --model claude-tab2api-chatgpt-web/);
   assert.match(html, /X-Tab2api-Confirm-Delete/);
   assert.match(app, /set_browser_visibility/);
   assert.match(app, /create_api_key/);

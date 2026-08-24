@@ -6,13 +6,13 @@ tab2api is a single-user desktop bridge, not a shared API service. It automates 
 
 ## Components
 
-- `api/`: Fastify routes, strict Zod/multipart parsing, transcript/media serialization, JSON/SSE/binary mapping, authentication integration.
+- `api/`: Fastify routes, bounded Zod/multipart parsing, OpenAI/Anthropic transcript and media translation, JSON/SSE/binary mapping, authentication integration.
 - `audio/`: local operating-system WAV synthesis with restrictive temporary files and cleanup.
 - `browser/`: one persistent Chromium context and fresh request tabs. Closing the context closes the browser.
 - `adapters/chatgpt/`: all URL/UI assumptions, selector candidates, state classification, visible-text extraction, and completion state machine.
 - `queue/`: bounded FIFO scheduler with configurable browser concurrency from one through four.
 - `config/`: environment parsing and runtime token loading/creation.
-- `security/`: loopback, safe path, bearer parsing, and digest-only per-device API-key registry.
+- `security/`: loopback, safe path, bearer/x-api-key parsing, and digest-only per-device API-key registry.
 - `observability/`: Pino configuration with allowlisted request serialization and redaction.
 - `store/`: bounded response metadata plus content-free usage counters. No transcript persistence.
 - `cli/`: start, login, doctor, reset-session, and offline smoke commands.
@@ -24,12 +24,12 @@ Creating, listing, deleting, and uploading to a ChatGPT project are provider cap
 ## Request lifecycle
 
 1. Fastify accepts at most the configured body size and authenticates protected routes.
-2. Strict schemas reject unknown fields; media parsers enforce MIME, data-URL, count, and byte limits and reject remote image URLs.
-3. The serializer converts messages to an ordered, role-labelled XML-like envelope and entity-escapes boundary characters.
+2. OpenAI schemas reject unknown fields. The Anthropic translator strictly validates every field it consumes while leaving the top-level capability list open because Claude Code adds versioned hints; unsupported hints are ignored rather than passed to a hidden endpoint. Media parsers enforce MIME, data-URL, count, and byte limits and reject remote image URLs.
+3. The serializer converts messages to an ordered, role-labelled XML-like envelope and entity-escapes boundary characters. Anthropic requests also carry bounded tool definitions. A model-produced tool envelope is accepted only for an exact caller-declared name and safe object input, receives a server-generated id, and is returned to the caller; tab2api never executes it.
 4. The bounded FIFO admits or rejects work. Configurable concurrency is constrained to 1–4 browser tabs and defaults to 1; a request timeout/abort signal applies while queued and running.
 5. The adapter opens a new page, navigates to the public ChatGPT root (a new conversation), classifies state, records the assistant-message baseline, fills the visible composer, and submits once. A project-scoped route navigates to that project instead, and a supplied conversation id continues that thread; both identifiers are validated against anchored, charset-restricted patterns before any navigation, in the API layer and again in the adapter.
 6. A state machine waits for a new assistant node and stable visible text. Completion additionally requires either the generation control to disappear or a new completed-turn action to appear; this handles UI variants that leave a stale Stop control visible. A turn still carrying a working marker is never complete, because ChatGPT renders the completed-turn action before the answer exists and shows a stable status line in the meantime. No fixed one-shot sleep decides completion.
-7. Text is mapped to `chatgpt-web`; generated image elements are temporarily rendered at their intrinsic dimensions and captured as bounded lossless PNG without reading or fetching their private URL, while STT uses a bounded audio attachment. The page closes in `finally` for success, error, timeout, and cancellation. TTS is a separate, labelled OS backend but still enters the bounded work queue for flood control.
+7. Text is mapped to `chatgpt-web` or the explicitly named Anthropic compatibility shape; generated image elements are temporarily rendered at their intrinsic dimensions and captured as bounded lossless PNG without reading or fetching their private URL, while STT uses a bounded audio attachment. The page closes in `finally` for success, error, timeout, and cancellation. TTS is a separate, labelled OS backend but still enters the bounded work queue for flood control.
 
 ## Decisions
 
@@ -51,7 +51,7 @@ Browser acquisition may relaunch once only before a request obtains a tab. After
 
 ### Streaming and usage
 
-Visible UI text can change non-monotonically while ChatGPT formats an answer. Version 0.1 therefore uses a documented buffered SSE fallback rather than claiming reliable token streaming. It emits compatible event/chunk shapes only after completion and ends with `[DONE]`. Token counts and exact UI-selected model are not observable. Chat usage zeros are explicitly annotated unavailable; Responses usage is `null`.
+Visible UI text can change non-monotonically while ChatGPT formats an answer, so the bridge uses a documented buffered SSE fallback rather than claiming reliable token streaming. OpenAI routes emit compatible event/chunk shapes only after completion. The Anthropic route opens immediately with `message_start` and bounded keepalive pings so Claude Code can hold the connection while queued/UI work continues, then emits one buffered text or tool-input delta. An error after headers becomes a typed SSE error event and marks operational usage failed. Token counts and the exact UI-selected model are not observable. Chat usage zeros are explicitly annotated unavailable, Responses usage is `null`, and Anthropic count-tokens uses a labelled local byte estimate without opening a browser tab.
 
 An independent administrative usage store aggregates requests by key and route. Input/output estimates use UTF-8 byte length divided by four and are explicitly named `estimatedInputTokens`/`estimatedOutputTokens`; they are operational trends, not billing data. Persistence is serialized and contains no prompt or response text.
 

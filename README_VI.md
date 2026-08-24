@@ -5,7 +5,7 @@
 [![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)](package.json)
 [![Giấy phép: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-`tab2api` là REST bridge local-first, tương thích một phần với OpenAI, dùng **phiên ChatGPT.com do chính bạn đăng nhập thủ công**. Sản phẩm hỗ trợ chat text, vision qua ảnh upload, tạo ảnh qua UI và transcription audio qua UI. Endpoint TTS WAV dùng engine giọng nói cục bộ của hệ điều hành và được ghi nhãn trung thực.
+`tab2api` là REST bridge local-first, tương thích một phần với OpenAI và Anthropic Messages, dùng **phiên ChatGPT.com do chính bạn đăng nhập thủ công**. Sản phẩm hỗ trợ chat text, vòng lặp client tool của Claude Code, vision qua ảnh upload, tạo ảnh qua UI và transcription audio qua UI. Endpoint TTS WAV dùng engine giọng nói cục bộ của hệ điều hành và được ghi nhãn trung thực.
 
 Đây là browser automation không chính thức, không phải OpenAI API chính thức. Giao diện ChatGPT thay đổi có thể làm công cụ hỏng. Công cụ chỉ dành cho một người trên máy cá nhân, không phù hợp production và không được triển khai thành proxy public/shared.
 
@@ -15,7 +15,7 @@ tab2api là dự án cộng đồng độc lập, không liên kết, được b
 
 ```mermaid
 flowchart LR
-    C[Client local] -->|Bearer key / 127.0.0.1| A[Fastify API]
+    C[Client OpenAI hoặc Anthropic local] -->|Bearer hoặc x-api-key / loopback| A[Fastify API]
     R[Thiết bị cá nhân từ xa] -->|Bearer key<br/>khuyến nghị Access| F[Cloudflare Tunnel riêng]
     F --> A
     A --> V[Validate + serialize]
@@ -112,6 +112,21 @@ curl.exe http://127.0.0.1:3210/v1/responses `
   -d '{"model":"chatgpt-web","instructions":"Trả lời ngắn.","input":"Local-first là gì?"}'
 ```
 
+### Dùng với Claude Code
+
+Tạo một client key riêng có thể thu hồi trong tab **Key & Usage** của app desktop hoặc bằng `npm run keys -- create "Claude Code"`, rồi chỉ cấu hình cửa sổ PowerShell hiện tại:
+
+```powershell
+$env:ANTHROPIC_BASE_URL = 'http://127.0.0.1:3210'
+$env:ANTHROPIC_AUTH_TOKEN = '<client-key-chỉ-hiện-một-lần>'
+$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+claude --model claude-tab2api-chatgpt-web
+```
+
+Không lưu key trong `.claude/settings.json` có commit. Route `/v1/messages` chuyển text, ảnh và client tool do Claude Code khai báo thành prompt qua UI ChatGPT; chỉ tool name nằm trong request mới có thể được trả về, ID tool do server tự cấp, còn permission và việc thực thi vẫn do Claude Code kiểm soát. `/v1/messages/count_tokens` chỉ ước lượng cục bộ theo byte nên không tốn một browser request. SSE mở ngay và gửi heartbeat, nhưng nội dung/tool block vẫn chỉ xuất hiện sau khi UI hoàn tất.
+
+Chế độ này **không biến ChatGPT Web thành model Claude** và Anthropic không hỗ trợ gateway dùng model không phải Claude. Độ tin cậy tool, context và giới hạn output vẫn phụ thuộc UI/model ChatGPT đang nhìn thấy. Chạy `npm run smoke:claude` để test binary Claude Code thật cùng vòng `Read package.json` hai lượt hoàn toàn offline qua fake adapter.
+
 Tạo ảnh:
 
 ```powershell
@@ -178,12 +193,12 @@ Task chạy nền khi user đăng nhập Windows và dùng watchdog có giới h
 - Nhóm endpoint project (`/v1/projects`, `/v1/projects/:projectId/files`, `/v1/projects/:projectId/chat/completions`, `/v1/projects/:projectId/responses`) điều khiển chính UI công khai của ChatGPT. `GET /v1/projects` đọc trạng thái thật của trình duyệt chứ không phải database của tab2api; do lưới danh sách không lộ id nên phải mở từng project để lấy id — tốn khoảng một lần điều hướng cho mỗi project, tối đa 25.
 - `DELETE /v1/projects/:projectId` tác động lên đúng id client gửi lên nên có thể xoá cả project bạn tự tạo tay, và **không hoàn tác được**. Nó quy id về tên rồi xoá dòng mang tên đó; không dùng vị trí dòng vì việc mở project làm danh sách sắp xếp lại theo thời gian sửa. Nếu có hai project trùng tên, request bị từ chối thay vì đoán.
 - Project giữ file và instructions đã upload, nhưng ChatGPT vẫn quyết định dùng bao nhiêu trong đó cho mỗi câu trả lời. Project không thay thế được context window lớn, và memory ở cấp tài khoản không bị cô lập theo project.
-- Model trả về luôn là `chatgpt-web`; tên model client gửi không điều khiển model picker trên UI.
-- Không hỗ trợ tool calling, sửa ảnh, voice realtime, MP3 TTS, structured output hoặc logprobs.
+- Provider thật luôn là `chatgpt-web`; id tương thích `claude-tab2api-chatgpt-web` chỉ phục vụ Claude Code discovery. Không id nào điều khiển model picker hoặc khẳng định Claude đã xử lý request.
+- OpenAI tool calling, sửa ảnh, voice realtime, MP3 TTS, structured output và logprobs chưa được hỗ trợ. Anthropic client tool-use là bridge qua prompt có giới hạn và có thể thất bại nếu model hiển thị không tuân theo output envelope.
 - Ảnh output là PNG lossless được render từ phần tử UI ở đúng kích thước pixel nội tại, không phải preview nhỏ trong chat. Pixel do UI cung cấp được giữ nguyên, nhưng file không giống byte-for-byte với asset nguồn và có thể thiếu metadata. Chỉ hỗ trợ `n=1`, `size=auto`, `quality=auto`, `b64_json`.
 - TTS dùng engine OS và không giả là giọng OpenAI/ChatGPT. STT upload audio qua UI nên không khẳng định model transcription cụ thể.
-- UI không cho biết token usage: Chat Completions dùng số 0 kèm `usage_available=false`; Responses dùng `usage: null`. Đây là “không biết”, không phải usage thực bằng 0.
-- `stream: true` là buffered fallback: đợi browser hoàn tất rồi mới gửi một delta. Chat Completions kết thúc bằng `[DONE]`, Responses bằng `response.completed`; đây không phải token streaming thời gian thực.
+- UI không cho biết token usage: Chat Completions dùng số 0 kèm `usage_available=false`; Responses dùng `usage: null`; Anthropic Messages trả usage 0 và ghi rõ token count là ước lượng. Đây là “không biết”, không phải usage thực bằng 0.
+- `stream: true` là buffered fallback: đợi browser hoàn tất rồi mới gửi một delta. Chat Completions kết thúc bằng `[DONE]`, Responses bằng `response.completed`; Anthropic Messages mở SSE ngay và gửi heartbeat trước khi trả event nội dung cuối. Đây không phải token streaming thời gian thực.
 - Không bypass CAPTCHA, Cloudflare, rate limit hay security challenge; không stealth/fingerprint spoofing; không retry prompt sau lỗi mơ hồ.
 - Profile `.tab2api` tương đương thông tin đăng nhập nhạy cảm. Không chia sẻ/sync/commit thư mục này và không dùng profile Chrome cá nhân mặc định. Khi khởi động, app kiểm tra đích filesystem thật, từ chối đường dẫn thoát khỏi data root, directory link/reparse point, symlink hoặc hard link của file riêng tư, và các chuỗi thành phần profile mặc định của Chrome/Chromium/Edge. File trạng thái có giới hạn kích thước và được thay thế theo cơ chế nguyên tử; nếu ghi key/usage thất bại, trạng thái trong bộ nhớ vẫn giữ bản đã commit gần nhất. Malware cùng user vẫn có quyền đọc hoặc tạo race, nên chỉ chạy trong tài khoản tin cậy và bật mã hóa ổ đĩa.
 
@@ -200,6 +215,7 @@ npm run check
 npm run login
 npm run doctor
 npm run smoke
+npm run smoke:claude
 npm run keys -- create "tên thiết bị"
 npm run keys -- list
 npm run usage

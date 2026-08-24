@@ -5,7 +5,7 @@
 [![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)](package.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-`tab2api` is a local-first, unofficial OpenAI-compatible REST bridge to **your own manually logged-in ChatGPT.com browser session**. It supports text chat, image input, UI image generation, and UI-mediated audio transcription. Local OS speech synthesis provides a clearly labelled WAV compatibility endpoint.
+`tab2api` is a local-first, unofficial OpenAI- and Anthropic-Messages-compatible REST bridge to **your own manually logged-in ChatGPT.com browser session**. It supports text chat, Claude Code client-side tool loops, image input, UI image generation, and UI-mediated audio transcription. Local OS speech synthesis provides a clearly labelled WAV compatibility endpoint.
 
 This is browser automation, not the official OpenAI API. It may break whenever ChatGPT's UI changes. It is intended for one user on a personal computer, is not suitable for production, and must never be hosted as a shared or public proxy.
 
@@ -15,7 +15,7 @@ tab2api is an independent community project. It is not affiliated with, endorsed
 
 ```mermaid
 flowchart LR
-    C[Local OpenAI-compatible client] -->|Bearer key / 127.0.0.1| A[Fastify API]
+    C[Local OpenAI or Anthropic client] -->|Bearer or x-api-key / loopback| A[Fastify API]
     R[Owner's remote device] -->|Bearer key<br/>Access recommended| F[Dedicated Cloudflare Tunnel]
     F --> A
     A --> V[Strict validation + prompt serializer]
@@ -24,7 +24,7 @@ flowchart LR
     P --> G[ChatGPT UI adapter]
     G --> U[Playwright dedicated profile]
     U --> W[ChatGPT.com public web UI]
-    G --> M[OpenAI JSON / buffered SSE mapper]
+    G --> M[OpenAI / Anthropic JSON and buffered SSE mappers]
 ```
 
 No private ChatGPT endpoint is called. Direct Playwright uses its private transport, while the desktop shell exposes only an ephemeral loopback CDP endpoint to its own sidecar. The REST server rejects every host except `127.0.0.1` and `::1`.
@@ -111,6 +111,21 @@ const result = await client.chat.completions.create({
 
 The `openai` package is only an example client and is not a tab2api dependency.
 
+### Claude Code
+
+Create a dedicated revocable client key with the desktop app's **Keys & Usage** tab or `npm run keys -- create "Claude Code"`. Then configure only the current PowerShell process:
+
+```powershell
+$env:ANTHROPIC_BASE_URL = 'http://127.0.0.1:3210'
+$env:ANTHROPIC_AUTH_TOKEN = '<one-time-revocable-client-key>'
+$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+claude --model claude-tab2api-chatgpt-web
+```
+
+Do not put the key in a committed `.claude/settings.json`. `POST /v1/messages` translates Claude Code's text, image, and declared client-tool blocks to the public ChatGPT UI; tool requests are parsed from a bounded envelope, restricted to names the client supplied, assigned server-generated ids, and returned to Claude Code for its normal permission checks and execution. `POST /v1/messages/count_tokens` is a local byte-based estimate and does not spend a browser request. Streaming starts immediately with keepalive pings but the answer/tool block remains buffered until the UI finishes.
+
+This compatibility mode does **not** turn ChatGPT Web into a Claude model and is not supported by Anthropic as a non-Claude gateway. Model behavior, tool reliability, context handling, and output limits remain those of the visible ChatGPT UI and may change. Run `npm run smoke:claude` to exercise the installed Claude Code binary, SSE protocol, and a harmless two-turn `Read package.json` tool loop entirely against the offline fake adapter.
+
 Image generation:
 
 ```powershell
@@ -187,8 +202,8 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 
 ## Supported API and limitations
 
-- `GET /healthz`, `GET /readyz`, `GET /v1/models`
-- `POST /v1/chat/completions`, `POST /v1/responses`
+- `GET /healthz`, `HEAD /api/hello`, `GET /readyz`, `GET /v1/models`
+- `POST /v1/chat/completions`, `POST /v1/responses`, `POST /v1/messages`, `POST /v1/messages/count_tokens`
 - `POST /v1/images/generations`
 - `POST /v1/audio/speech`, `POST /v1/audio/transcriptions`
 - `POST/GET /v1/projects`, `DELETE /v1/projects/:projectId`, `POST /v1/projects/:projectId/files`
@@ -196,12 +211,12 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 - `POST /admin/session/reset`
 - `GET/POST/DELETE /admin/api-keys`, `GET/DELETE /admin/usage` (administrator only)
 - Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs. Remote image URLs are rejected.
-- The truthful model is always `chatgpt-web`. A different incoming model string is client metadata and does not control the ChatGPT UI model picker.
-- Tool calls, image editing, live voice/realtime audio, MP3 TTS, JSON schema output, logprobs, and accurate sampling/model controls are not supported.
+- The truthful provider is always `chatgpt-web`. The Anthropic compatibility id `claude-tab2api-chatgpt-web` exists for Claude Code discovery; neither incoming id controls the ChatGPT UI model picker or claims that Claude served the request.
+- OpenAI tool calls, image editing, live voice/realtime audio, MP3 TTS, JSON schema output, logprobs, and accurate sampling/model controls are not supported. Anthropic client-side tool use is a prompt-mediated compatibility bridge and can fail if the visible model does not follow its bounded output envelope.
 - Image output is a lossless PNG rendered from the UI element at its intrinsic pixel dimensions, not the smaller chat preview. It preserves UI-exposed pixels but is not the source asset byte-for-byte and may omit metadata. Only `n=1`, `size=auto`, `quality=auto`, and `b64_json` are accepted.
 - TTS uses the local OS voice engine and returns WAV; it is not ChatGPT/OpenAI speech. STT uploads the audio through the UI and therefore cannot assert an exact transcription model.
-- Token counts are not visible in the UI. Chat Completions returns zero counts with `tab2api.usage_available=false`; Responses returns `usage: null`. These values mean “unknown,” not zero actual usage.
-- `stream: true` is a **buffered fallback**: generation finishes in the browser, then one text delta is sent. Chat Completions ends with `[DONE]`; Responses ends with `response.completed`. It is not live token streaming.
+- Token counts are not visible in the UI. Chat Completions returns zero counts with `tab2api.usage_available=false`; Responses returns `usage: null`; Anthropic Messages returns zero usage and labels token counting as estimated. These values mean “unknown,” not zero actual usage.
+- `stream: true` is a **buffered fallback**: generation finishes in the browser, then one text/tool delta is sent. Chat Completions ends with `[DONE]`; Responses ends with `response.completed`; Anthropic Messages opens immediately and sends bounded keepalive pings before its terminal events. None is live token streaming.
 - UI text extraction preserves visible multiline/code/list text but may differ from original Markdown source.
 - Project routes drive the same public UI. `GET /v1/projects` reads live browser state rather than a tab2api database, and because the grid exposes no identifier it opens each project to learn its id: roughly one navigation per project, capped at 25.
 - `DELETE /v1/projects/:projectId` acts on whatever id the client supplies, so it can remove a project created outside tab2api, and deletion is irreversible. It resolves the id to a name and deletes the row with that name; two projects sharing a name are rejected rather than guessed between.
@@ -227,6 +242,7 @@ npm run check        typecheck, lint, formatting check
 npm run login        manual dedicated-profile login
 npm run doctor       environment/session diagnostics
 npm run smoke        offline fake-adapter API smoke test
+npm run smoke:claude installed Claude Code + offline two-turn Read tool smoke
 npm run keys -- create "device label" # print one revocable client key once
 npm run keys -- list                  # list key metadata, never secrets
 npm run usage                         # per-key content-free usage estimates

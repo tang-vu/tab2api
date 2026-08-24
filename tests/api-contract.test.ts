@@ -120,6 +120,7 @@ describe('Fastify API contract', () => {
       .parse(response.json());
     expect(body.data.map((model) => model.id)).toEqual([
       'chatgpt-web',
+      'claude-tab2api-chatgpt-web',
       'chatgpt-web-image',
       'chatgpt-web-transcribe',
       'system-tts',

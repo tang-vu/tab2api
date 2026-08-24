@@ -1,6 +1,6 @@
 # API contract
 
-Local base URL: `http://127.0.0.1:3210`. Protected endpoints require `Authorization: Bearer <tab2api-key>`. Only `/healthz` is unauthenticated; `/readyz` performs browser work and therefore requires a key. Cloudflare Access is recommended for the optional remote hostname, with explicitly selected bearer-only operation also supported for one owner.
+Local base URL: `http://127.0.0.1:3210`. Protected endpoints accept either `Authorization: Bearer <tab2api-key>` or `x-api-key: <tab2api-key>`; if both are present they must match. Only `/healthz` is unauthenticated. `/readyz` performs browser work and therefore requires a key. Cloudflare Access is recommended for the optional remote hostname, with explicitly selected bearer-only operation also supported for one owner.
 
 ## Endpoints
 
@@ -8,13 +8,17 @@ Local base URL: `http://127.0.0.1:3210`. Protected endpoints require `Authorizat
 
 Process liveness only: `{"status":"ok","service":"tab2api"}`. It does not launch/check ChatGPT.
 
+### `HEAD /api/hello`
+
+Requires a key, returns HTTP 204 with no body, and performs no browser work. Claude Code may send this best-effort connection-warming probe before inference.
+
 ### `GET /readyz`
 
 Requires a bearer key. Checks browser/UI state. HTTP 200 only for `ready`; otherwise 503 with `session` set to `login_required`, `security_challenge`, `generation_in_progress`, `rate_limited`, `ui_changed`, or `browser_disconnected`.
 
 ### `GET /v1/models`
 
-Returns honest capability identifiers: `chatgpt-web`, `chatgpt-web-image`, `chatgpt-web-transcribe`, and `system-tts`. Incoming model strings remain client metadata and do not select a hidden ChatGPT model.
+Returns honest capability identifiers: `chatgpt-web`, `claude-tab2api-chatgpt-web`, `chatgpt-web-image`, `chatgpt-web-transcribe`, and `system-tts`. `claude-tab2api-chatgpt-web` lets Anthropic-format clients discover the compatibility route; it does not claim that Claude served the request. Incoming model strings remain client metadata and do not select a hidden ChatGPT model.
 
 ### `POST /v1/chat/completions`
 
@@ -31,6 +35,31 @@ For `stream: true`, `Content-Type` is `text/event-stream`, `X-Tab2api-Stream-Mod
 Required: `model` and `input`. Input is a non-empty string or ordered message array. Message content may contain `input_text` and `input_image` data-URL parts. Optional `instructions` becomes a leading developer message. Accepted optional fields are `stream` and client metadata `user`.
 
 Non-stream responses contain one completed assistant `message`/`output_text`; `usage` is `null`. Optional `conversation_id` behaves as it does for Chat Completions, and the resulting conversation is reported as `metadata.tab2api_conversation_id`. Buffered streaming emits sequenced `response.created`, item/content events, one `response.output_text.delta`, and finally `response.completed`; unlike Chat Completions, the typed Responses event stream does not add `[DONE]`.
+
+### `POST /v1/messages`
+
+Anthropic Messages compatibility for local clients such as Claude Code. Required fields are `model`, positive bounded `max_tokens`, and one or more `messages`; `stream` defaults to false. `system` may be a string or bounded text-block array. Message content may be a string or ordered `text`, inline base64 `image`, `tool_use`, and `tool_result` blocks. At most four PNG/JPEG/WebP images are decoded and uploaded through the public UI. Standard client tools contain a bounded `name`, optional `description`, and object `input_schema`; at most 128 are accepted.
+
+Claude Code capability hints such as `thinking`, `output_config`, `context_management`, cache-control metadata, and future top-level fields are accepted so a harmless client upgrade does not break the route, but tab2api does not claim to implement those model features. The complete ordered transcript and tool definitions are entity-escaped inside a bridge envelope and submitted once through ChatGPT's visible composer.
+
+When tools are available, the prompt asks the visible model for one bounded JSON envelope. A returned tool call is accepted only when its name exactly matches a tool declared by the request, its input is an object without prototype-sensitive keys, and the envelope is structurally valid. tab2api assigns a fresh `toolu_` id and returns the block to the client; it never runs the tool. Claude Code retains its normal permissions and executes or denies the call, then sends a `tool_result` in the next request. Malformed, duplicated, unsafe, or unknown-tool envelopes become inert assistant text rather than executable tool calls.
+
+Non-stream responses use an Anthropic-shaped `message` with model `claude-tab2api-chatgpt-web`, `stop_reason` of `end_turn` or `tool_use`, and zero token fields. The zeros mean unavailable, not zero real ChatGPT usage. With `stream: true`, the route opens SSE immediately with `message_start`, emits bounded `ping` events while queued/browser work continues, then emits one buffered text or tool-input delta and terminal `message_delta`/`message_stop` events. `X-Tab2api-Stream-Mode: buffered-with-keepalive` discloses that this is not live token streaming. Errors after SSE has started arrive as Anthropic `event: error` blocks and cancel/timeout still closes the request page.
+
+Configure Claude Code with one revocable client key in a temporary shell rather than a committed project setting:
+
+```powershell
+$env:ANTHROPIC_BASE_URL = 'http://127.0.0.1:3210'
+$env:ANTHROPIC_AUTH_TOKEN = '<one-time-revocable-client-key>'
+$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+claude --model claude-tab2api-chatgpt-web
+```
+
+This is protocol compatibility, not a Claude model: Anthropic does not support routing Claude Code to non-Claude models through a gateway. ChatGPT UI behavior and its ability to follow the tool envelope determine reliability. `npm run smoke:claude` tests the installed Claude Code executable, SSE parsing, and a two-turn allowlisted `Read package.json` loop against the offline fake adapter; it never contacts ChatGPT.com or Anthropic.
+
+### `POST /v1/messages/count_tokens`
+
+Accepts the same `model`, `system`, `messages`, and `tools` inputs without requiring `max_tokens`. Returns `{ "input_tokens": number }` with `X-Tab2api-Token-Count-Mode: estimated`. The value is the serialized UTF-8 byte length divided by four, rounded up; it is useful for client context heuristics but not billing. No browser tab or generation is used.
 
 ### Projects
 
@@ -104,7 +133,7 @@ the content-free counters before that point if historical per-device totals matt
 
 ## Errors
 
-Errors are consistent OpenAI-like envelopes:
+OpenAI-shaped routes use consistent OpenAI-like envelopes:
 
 ```json
 {
@@ -119,6 +148,8 @@ Errors are consistent OpenAI-like envelopes:
 ```
 
 Codes: `authentication_error` (401), `invalid_request` (400), `cancelled` (499), `queue_full`/`rate_limited` (429), `login_required`/`security_challenge`/`ui_changed`/`browser_disconnected`/`audio_unavailable`/`storage_unavailable` (503), and `timeout` (504). `storage_unavailable` means a private key/usage mutation was not durably committed; retry only after fixing the dedicated data directory.
+
+Anthropic routes instead return `{ "type":"error", "error": { "type", "message", "tab2api_code", "remediation"? } }`. Their public `error.type` is `authentication_error`, `invalid_request_error`, `rate_limit_error`, or `api_error`; `tab2api_code` preserves the typed code above. Once a stream has opened, the same envelope is sent in an SSE `error` event because its HTTP status is already 200.
 
 ## Request IDs and limits
 

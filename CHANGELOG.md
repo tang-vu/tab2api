@@ -4,11 +4,25 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+### Added
+
+- Anthropic Messages compatibility for Claude Code, including `/v1/messages`, a no-browser
+  estimated `/v1/messages/count_tokens`, model discovery, immediate SSE start/keepalives, inline
+  images, client-side tool-use/result loops, Anthropic error envelopes, and an offline smoke that
+  exercises the installed Claude Code binary through a real two-turn `Read` call.
+
 ### Fixed
 
 - Source-package checksum manifests now use artifact-portable basenames, so the documented direct
   verification command works after GitHub flattens the uploaded staging directory. The `v0.2.1`
   path-prefix workaround remains documented without moving or replacing that public tag.
+
+### Security
+
+- Anthropic tool calls are parsed from a bounded envelope, restricted to exact caller-declared tool
+  names and safe object inputs, assigned server-generated ids, and returned for the client's own
+  permission checks; tab2api never executes them. Protected routes accept `x-api-key` for Anthropic
+  clients and reject conflicting dual credentials.
 
 ## [0.2.1] - 2026-08-24
 

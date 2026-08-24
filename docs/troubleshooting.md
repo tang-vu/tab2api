@@ -46,6 +46,14 @@ CLI fails before sending the administrator key when the public health identity d
 
 Read `.tab2api/api-token` without adding whitespace and send it as `Authorization: Bearer ...`. Do not put it in a committed `.env`, shell history, issue, or log. Restart the client after token rotation.
 
+## Claude Code cannot connect or exits before answering
+
+First run `npm run smoke:claude`. It uses the installed Claude Code executable against an offline fake adapter and verifies the actual `/v1/messages?beta=true` SSE and a two-turn `Read` tool loop. A pass isolates the problem to the live service/session rather than the client protocol.
+
+For a live run, start tab2api, create a separate revocable client key, and set `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, and model `claude-tab2api-chatgpt-web` in the same shell that launches `claude`. Do not use a committed project settings file. HTTP 401 means the key/header is wrong or revoked; `login_required`, `security_challenge`, and `ui_changed` still refer to the dedicated ChatGPT browser. Claude Code voice/Remote Control and other features that require a claude.ai identity are unavailable while a gateway credential is active.
+
+The first SSE event is immediate, but answer and tool deltas remain buffered until ChatGPT UI generation completes. A normal wait below `TAB2API_REQUEST_TIMEOUT_MS` is expected. If a tool request appears as plain text, the visible model returned a malformed, unsafe, or unlisted tool envelope; tab2api deliberately refused to make it executable. Keep Claude Code's normal permission checks enabled because prompt injection can still request any tool the client allowed.
+
 ## Timeout or cancellation
 
 The request tab is closed and the prompt is not resubmitted automatically. Check ChatGPT manually because a submitted prompt may have generated before the failure. Increase `TAB2API_REQUEST_TIMEOUT_MS` only within its validated maximum if normal answers genuinely need longer.

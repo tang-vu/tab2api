@@ -204,7 +204,9 @@
         <div class="api-docs-toolbar">
           <div>
             <strong id="api-docs-title" data-i18n="apiDocsTitle">API documentation</strong>
-            <span data-i18n="apiDocsSubtitle">OpenAI-compatible routes available in this app</span>
+            <span data-i18n="apiDocsSubtitle"
+              >OpenAI and Anthropic-compatible routes available in this app</span
+            >
           </div>
           <div class="docs-toolbar-actions">
             <code>http://127.0.0.1:3210</code>
@@ -218,10 +220,26 @@
           <section class="docs-callout">
             <h2 data-i18n="authenticationTitle">Authentication</h2>
             <p data-i18n="authenticationBody">
-              Only healthz is public. Every other route requires a revocable tab2api bearer key;
-              administrator routes require the original administrator key.
+              Only healthz is public. Protected routes accept a revocable tab2api bearer or
+              x-api-key; administrator routes require the original key.
             </p>
             <pre><code>Authorization: Bearer &lt;tab2api-key&gt;</code></pre>
+          </section>
+
+          <section class="docs-section">
+            <h2 data-i18n="claudeCodeTitle">Claude Code</h2>
+            <p data-i18n="claudeCodeBody">
+              Create a dedicated revocable key in Keys &amp; Usage, then configure only the shell
+              that launches Claude Code.
+            </p>
+            <pre><code>$env:ANTHROPIC_BASE_URL = 'http://127.0.0.1:3210'
+$env:ANTHROPIC_AUTH_TOKEN = '&lt;revocable-client-key&gt;'
+$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
+claude --model claude-tab2api-chatgpt-web</code></pre>
+            <p data-i18n="claudeCodeCaveat">
+              This is an Anthropic protocol bridge to ChatGPT Web, not a Claude model. Tool calls
+              remain subject to Claude Code permissions and UI reliability.
+            </p>
           </section>
 
           <section class="docs-section">
@@ -274,6 +292,14 @@
               <div>
                 <span class="method post">POST</span><code>/v1/responses</code
                 ><small data-i18n="bearerAccess">Bearer key</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/v1/messages</code
+                ><small data-i18n="bearerAccess">Bearer key</small>
+              </div>
+              <div>
+                <span class="method post">POST</span><code>/v1/messages/count_tokens</code
+                ><small data-i18n="estimatedAccess">Local estimate</small>
               </div>
             </div>
           </section>
