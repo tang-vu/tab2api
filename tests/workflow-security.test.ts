@@ -69,6 +69,7 @@ describe('workflow action pinning', () => {
     const rootDirectory = path.resolve(import.meta.dirname, '..');
     const sources = await readWorkflowSources(rootDirectory);
     expect(sources.map(({ fileName }) => fileName).sort()).toContain('codeql.yml');
+    expect(sources.map(({ fileName }) => fileName)).toContain('npm-publish.yml');
     expect(sources.map(({ fileName }) => fileName)).toContain('source-package.yml');
     expect(verifyWorkflowActionPins(sources)).toBeGreaterThan(0);
   });
@@ -114,5 +115,33 @@ describe('workflow action pinning', () => {
       `sha256sum -- "$package_name" "$sbom_name" > 'SHA256SUMS'`,
     );
     expect(sourcePackage?.contents).not.toContain('sha256sum -- "$package_path" "$sbom_path"');
+  });
+
+  it('keeps npm publication manual, environment-scoped, attested, and content-verified', async () => {
+    const rootDirectory = path.resolve(import.meta.dirname, '..');
+    const sources = await readWorkflowSources(rootDirectory);
+    const publish = sources.find(({ fileName }) => fileName === 'npm-publish.yml')?.contents;
+    if (publish === undefined) {
+      throw new Error('npm-publish.yml was not found');
+    }
+    expect(publish).toContain('workflow_dispatch:');
+    expect(publish).not.toMatch(/\n\s+(?:push|pull_request|release):/u);
+    expect(publish).toContain('environment: npm');
+    expect(publish).toContain('actions: read');
+    expect(publish).toContain('contents: read');
+    expect(publish).toContain('id-token: write');
+    expect(publish).toContain('PUBLISH_CONFIRMATION: ${{ inputs.confirmation }}');
+    expect(publish).toContain('[[ "$PUBLISH_CONFIRMATION" != \'publish-tab2api\' ]]');
+    expect(publish).not.toContain("[[ '${{ inputs.confirmation }}'");
+    expect(publish).toContain('source-package.yml/runs?event=push&per_page=100');
+    expect(publish).toContain('npm run test:coverage');
+    expect(publish).toContain('npm run desktop:check');
+    expect(publish).toContain('npm run desktop:audit');
+    expect(publish).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}');
+    expect(publish.match(/secrets\.NPM_TOKEN/gu)).toHaveLength(1);
+    expect(publish).toContain('unset NODE_AUTH_TOKEN');
+    expect(publish).toContain('--provenance --access public --ignore-scripts');
+    expect(publish).toContain('The registry integrity does not match the reviewed tarball.');
+    expect(publish).toContain('--pack-json registry-package-result.json');
   });
 });
