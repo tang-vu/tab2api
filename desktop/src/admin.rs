@@ -318,9 +318,14 @@ impl AdminClient {
             .set_write_timeout(Some(remaining))
             .map_err(|_| "could not configure the local administration connection")?;
         let body = body.unwrap_or_default();
+        let content_type = if body.is_empty() {
+            ""
+        } else {
+            "Content-Type: application/json\r\n"
+        };
         let request = match token.as_deref() {
             Some(token) => format!(
-                "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAccept: application/json\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAccept: application/json\r\nAuthorization: Bearer {token}\r\n{content_type}Content-Length: {}\r\nConnection: close\r\n\r\n",
                 self.port,
                 body.len()
             ),
@@ -817,6 +822,7 @@ mod tests {
             assert!(request.starts_with("GET /admin/api-keys HTTP/1.1\r\n"));
             assert!(request.contains("\r\nHost: 127.0.0.1:"));
             assert!(request.contains("\r\nAccept: application/json\r\n"));
+            assert!(!request.contains("\r\nContent-Type:"));
             assert!(
                 request
                     .contains("\r\nAuthorization: Bearer test-administrator-key-never-report\r\n")
@@ -838,6 +844,73 @@ mod tests {
             )
             .unwrap();
         assert!(result.data.is_empty());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn empty_authenticated_delete_omits_json_content_type() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut identity_stream, identity_request) = accept_request(&listener);
+            assert_identity_probe(&identity_request);
+            respond_with_identity(&mut identity_stream);
+            drop(identity_stream);
+
+            let (mut stream, request) = accept_request(&listener);
+            assert!(request.starts_with("DELETE /admin/api-keys/0123456789abcdef HTTP/1.1\r\n"));
+            assert!(request.contains("\r\nContent-Length: 0\r\n"));
+            assert!(!request.contains("\r\nContent-Type:"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{\"status\":\"revoked\",\"id\":\"0123456789abcdef\"}",
+                )
+                .unwrap();
+        });
+        let client = AdminClient::new(port, PathBuf::new());
+        let result = client
+            .request_with_token::<RevokedApiKey>(
+                "DELETE",
+                "/admin/api-keys/0123456789abcdef",
+                None,
+                Duration::from_secs(1),
+                "test-administrator-key-never-report".to_owned(),
+            )
+            .unwrap();
+        assert_eq!(result.status, "revoked");
+        assert_eq!(result.id, "0123456789abcdef");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn nonempty_authenticated_request_keeps_json_content_type() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut identity_stream, identity_request) = accept_request(&listener);
+            assert_identity_probe(&identity_request);
+            respond_with_identity(&mut identity_stream);
+            drop(identity_stream);
+
+            let (mut stream, request) = accept_request(&listener);
+            assert!(request.starts_with("POST /admin/api-keys HTTP/1.1\r\n"));
+            assert!(request.contains("\r\nContent-Type: application/json\r\n"));
+            assert!(request.contains("\r\nContent-Length: 18\r\n"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{}")
+                .unwrap();
+        });
+        let client = AdminClient::new(port, PathBuf::new());
+        let result = client
+            .request_with_token::<serde_json::Value>(
+                "POST",
+                "/admin/api-keys",
+                Some(b"{\"label\":\"Laptop\"}"),
+                Duration::from_secs(1),
+                "test-administrator-key-never-report".to_owned(),
+            )
+            .unwrap();
+        assert_eq!(result, serde_json::json!({}));
         server.join().unwrap();
     }
 

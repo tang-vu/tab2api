@@ -17,6 +17,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Fixed
 
+- Desktop API-key revocation and usage reset no longer send an empty body marked as JSON, which
+  Fastify rejected before the authenticated `DELETE` route could run.
 - Anthropic SSE streams now release the server-side pipe immediately when a client disconnects,
   preventing graceful shutdown from waiting on an abandoned response.
 - Source-package checksum manifests now use artifact-portable basenames, so the documented direct
