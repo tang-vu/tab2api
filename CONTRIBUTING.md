@@ -19,6 +19,7 @@ Before opening a pull request:
 ```text
 npm run check
 npm test
+npm run test:coverage
 npm run build
 npm run smoke
 npm audit --audit-level=high

@@ -240,6 +240,7 @@ npm run dev          watch-mode server
 npm run build        production TypeScript build
 npm start            run built server; keep it running for CLI administration
 npm test             offline unit/integration tests
+npm run test:coverage offline tests plus enforced source-coverage thresholds
 npm run check        typecheck, lint, formatting check
 npm run login        manual dedicated-profile login
 npm run doctor       environment/session diagnostics

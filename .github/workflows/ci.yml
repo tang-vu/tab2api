@@ -39,6 +39,9 @@ jobs:
           }
       - run: npm run check
       - run: npm test
+      - name: Enforce source coverage thresholds
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: npm run test:coverage
       - run: npm run build
       - run: npm run smoke
       - if: matrix.os == 'ubuntu-latest' && matrix.node == 22

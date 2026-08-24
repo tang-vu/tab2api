@@ -66,8 +66,21 @@ describe('workflow action pinning', () => {
   it('keeps every tracked repository workflow pinned', async () => {
     const rootDirectory = path.resolve(import.meta.dirname, '..');
     const sources = await readWorkflowSources(rootDirectory);
+    expect(sources.map(({ fileName }) => fileName).sort()).toContain('codeql.yml');
     expect(sources.map(({ fileName }) => fileName)).toContain('source-package.yml');
     expect(verifyWorkflowActionPins(sources)).toBeGreaterThan(0);
+  });
+
+  it('scans application, native, and workflow code with the extended CodeQL suite', async () => {
+    const rootDirectory = path.resolve(import.meta.dirname, '..');
+    const sources = await readWorkflowSources(rootDirectory);
+    const codeql = sources.find(({ fileName }) => fileName === 'codeql.yml')?.contents;
+    expect(codeql).toBeDefined();
+    expect(codeql).toContain('- language: actions');
+    expect(codeql).toContain('- language: javascript-typescript');
+    expect(codeql).toContain('- language: rust');
+    expect(codeql).toContain('queries: security-extended');
+    expect(codeql).toContain('security-events: write');
   });
 
   it('writes source-package checksums with artifact-portable basenames', async () => {

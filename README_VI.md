@@ -213,6 +213,7 @@ npm run dev
 npm run build
 npm start
 npm test
+npm run test:coverage
 npm run check
 npm run login
 npm run doctor

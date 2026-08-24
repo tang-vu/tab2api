@@ -5,7 +5,7 @@ Only maintainers may publish a release. Releases must come from a clean, reviewe
 ## Source and npm release checklist
 
 1. Keep `package.json`, `desktop/Cargo.toml`, `desktop/tauri.conf.json`, and `CHANGELOG.md` on the same semantic version.
-2. Install the pinned Rust auditor with `cargo install cargo-audit --version 0.22.2 --locked`, then run `npm ci`, `npm run check`, `npm test`, `npm run build`, `npm run smoke`, `npm audit`, `npm run desktop:check`, and `npm run desktop:audit`.
+2. Install the pinned Rust auditor with `cargo install cargo-audit --version 0.22.2 --locked`, then run `npm ci`, `npm run check`, `npm test`, `npm run test:coverage`, `npm run build`, `npm run smoke`, `npm audit`, `npm run desktop:check`, and `npm run desktop:audit`.
 3. Run `npm pack --dry-run --json` and inspect every included path. Confirm the generated `dist/` has no stale modules.
 4. Review the complete diff and tracked-file list for sensitive or machine-specific data.
 5. Create an annotated `vX.Y.Z` tag from the verified commit and publish source release notes derived from `CHANGELOG.md`.

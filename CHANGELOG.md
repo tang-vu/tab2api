@@ -27,6 +27,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Security
 
+- CI now enforces V8 source coverage and runs the pinned CodeQL extended security suite across
+  GitHub Actions workflows, JavaScript/TypeScript, and Rust.
 - Anthropic tool calls are parsed from a bounded envelope, restricted to exact caller-declared tool
   names and safe object inputs, assigned server-generated ids, and returned for the client's own
   permission checks; tab2api never executes them. Protected routes accept `x-api-key` for Anthropic
