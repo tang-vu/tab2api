@@ -217,6 +217,10 @@ export function buildServer(dependencies: ServerDependencies) {
     requestTimeout: config.requestTimeoutMs + 5_000,
     genReqId: () => randomUUID(),
     trustProxy: false,
+    // Shutdown owns the loopback service lifecycle. Closing client sockets makes every active
+    // request run through the existing disconnect cancellation path instead of letting Node 22
+    // retain an abandoned streamed response until its keep-alive timeout.
+    forceCloseConnections: true,
     onProtoPoisoning: 'error',
     onConstructorPoisoning: 'error',
   });

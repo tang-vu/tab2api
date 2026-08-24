@@ -295,4 +295,22 @@ describe('Anthropic Messages compatibility', () => {
     await app.close();
     openApps.splice(openApps.indexOf(app), 1);
   });
+
+  it('cancels an active Claude Code stream when the loopback server shuts down', async () => {
+    const provider = new FakeProvider(finalEnvelope, 60_000);
+    const app = server(provider, 5_000, 5);
+    openApps.push(app);
+    const origin = await app.listen({ host: '127.0.0.1', port: 0 });
+    const response = await fetch(`${origin}/v1/messages?beta=true`, {
+      method: 'POST',
+      headers: { ...bearer, 'content-type': 'application/json' },
+      body: JSON.stringify(request()),
+    });
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(provider.active).toBe(1));
+
+    await app.close();
+    openApps.splice(openApps.indexOf(app), 1);
+    await vi.waitFor(() => expect(provider.active).toBe(0));
+  });
 });
