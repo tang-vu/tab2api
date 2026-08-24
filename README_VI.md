@@ -127,6 +127,8 @@ Không lưu key trong `.claude/settings.json` có commit. Route `/v1/messages` c
 
 Chế độ này **không biến ChatGPT Web thành model Claude** và Anthropic không hỗ trợ gateway dùng model không phải Claude. Độ tin cậy tool, context và giới hạn output vẫn phụ thuộc UI/model ChatGPT đang nhìn thấy. Chạy `npm run smoke:claude` để test binary Claude Code thật cùng vòng `Read package.json` hai lượt hoàn toàn offline qua fake adapter.
 
+Khi service desktop đã ready và current shell có client key tạm, chủ động cho phép bài test UI live tương đương bằng `$env:TAB2API_MANUAL_E2E = '1'; npm run smoke:claude:live`. Script chỉ nhận origin loopback, dùng cấu hình Claude tạm cô lập cùng sentinel không thể đoán trước, chỉ cho phép một lệnh `Read`, giới hạn thời gian/output và không in key hay response body. Thu hồi key tạm sau khi chạy.
+
 Tạo ảnh:
 
 ```powershell

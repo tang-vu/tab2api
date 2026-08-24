@@ -12,6 +12,8 @@ All notable user-facing changes are documented here. This project follows semant
   exercises the installed Claude Code binary through a real two-turn `Read` call.
 - A one-click, non-persistent Claude Code PowerShell setup in the desktop app's one-time client-key
   dialog.
+- An explicit manual Claude Code live smoke with isolated configuration, one allowlisted `Read`,
+  bounded output/time, loopback identity checks, and no credential or response-body output.
 
 ### Fixed
 

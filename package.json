@@ -46,6 +46,7 @@
     "doctor": "tsx src/cli/index.ts doctor",
     "smoke": "tsx src/cli/index.ts smoke",
     "smoke:claude": "tsx scripts/smoke-claude-code.ts",
+    "smoke:claude:live": "tsx scripts/manual-claude-code.ts",
     "reset-session": "tsx src/cli/index.ts reset-session",
     "keys": "tsx src/cli/index.ts keys",
     "usage": "tsx src/cli/index.ts usage",

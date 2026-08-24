@@ -126,6 +126,8 @@ Do not put the key in a committed `.claude/settings.json`. `POST /v1/messages` t
 
 This compatibility mode does **not** turn ChatGPT Web into a Claude model and is not supported by Anthropic as a non-Claude gateway. Model behavior, tool reliability, context handling, and output limits remain those of the visible ChatGPT UI and may change. Run `npm run smoke:claude` to exercise the installed Claude Code binary, SSE protocol, and a harmless two-turn `Read package.json` tool loop entirely against the offline fake adapter.
 
+With the desktop service ready and a temporary client key in the current shell, explicitly opt in to the equivalent live UI test with `$env:TAB2API_MANUAL_E2E = '1'; npm run smoke:claude:live`. The script accepts only the loopback origin, uses an isolated temporary Claude configuration and unpredictable sentinel, permits only one `Read`, bounds time and captured output, and never prints the key or response body. Revoke the temporary key after the run.
+
 Image generation:
 
 ```powershell
