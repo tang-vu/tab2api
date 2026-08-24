@@ -4,6 +4,8 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-24
+
 ### Added
 
 - Anthropic Messages compatibility for Claude Code, including `/v1/messages`, a no-browser
@@ -165,7 +167,8 @@ All notable user-facing changes are documented here. This project follows semant
 - ChatGPT UI changes, rate limits, challenges, experiments, and account policy can interrupt operation.
 - Windows desktop builds are unsigned previews; public binaries require code signing and clean-machine validation.
 
-[Unreleased]: https://github.com/tang-vu/tab2api/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/tang-vu/tab2api/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/tang-vu/tab2api/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/tang-vu/tab2api/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/tang-vu/tab2api/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tang-vu/tab2api/releases/tag/v0.1.0

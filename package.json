@@ -1,6 +1,6 @@
 {
   "name": "tab2api",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Local-only, unofficial OpenAI-compatible bridge to a user-owned ChatGPT web session",
   "author": "Tang Vu",
   "homepage": "https://github.com/tang-vu/tab2api#readme",
