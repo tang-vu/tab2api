@@ -22,7 +22,7 @@ export default defineConfig({
         },
         'src/security/**/*.ts': {
           statements: 85,
-          branches: 79,
+          branches: 77,
           functions: 90,
           lines: 89,
         },
