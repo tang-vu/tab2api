@@ -29,6 +29,10 @@ integrity and manifest to match. Configure npm trusted publishing for future rel
 package already exists; the same workflow can then authenticate through OIDC without a long-lived
 write token when the `NPM_TOKEN` environment secret is absent.
 
+If npm accepts an immutable version but post-publish verification is interrupted, a retry repacks
+the tag and requires the registry integrity to match exactly. Only then does it skip `npm publish`
+and resume public download verification; an existing version with different bytes fails closed.
+
 Pushing an annotated semantic-version tag also runs `Source package provenance`. The workflow
 checks that the tag is reachable from `main`, re-runs the complete source and desktop verification
 set, validates the actual `npm pack` file list against a narrow allowlist, generates a production

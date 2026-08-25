@@ -171,7 +171,40 @@ jobs:
           echo "package_path=$package_path" >> "$GITHUB_OUTPUT"
           echo "integrity=$integrity" >> "$GITHUB_OUTPUT"
 
+      - name: Classify the immutable registry version
+        id: registry
+        env:
+          EXPECTED_INTEGRITY: ${{ steps.candidate.outputs.integrity }}
+          REGISTRY_ERROR_PATH: ${{ runner.temp }}/registry-prepublish.stderr
+          REGISTRY_VIEW_PATH: ${{ runner.temp }}/registry-prepublish.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          if npm view "tab2api@$version" --json > "$REGISTRY_VIEW_PATH" 2> "$REGISTRY_ERROR_PATH"; then
+            VERSION="$version" node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const view = JSON.parse(readFileSync(process.env.REGISTRY_VIEW_PATH, 'utf8'));
+          if (
+            view.version !== process.env.VERSION ||
+            view.dist?.integrity !== process.env.EXPECTED_INTEGRITY
+          ) {
+            throw new Error('The immutable registry version differs from the reviewed candidate.');
+          }
+          NODE
+            echo 'already_published=true' >> "$GITHUB_OUTPUT"
+            echo 'The registry already contains the reviewed immutable version.'
+          else
+            if ! grep -Fq 'E404' "$REGISTRY_ERROR_PATH"; then
+              echo 'The registry state could not be determined safely.' >&2
+              exit 1
+            fi
+            echo 'already_published=false' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish the reviewed tarball with provenance
+        if: steps.registry.outputs.already_published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_PATH: ${{ steps.candidate.outputs.package_path }}
@@ -187,17 +220,19 @@ jobs:
       - name: Verify the public registry copy and digest
         env:
           EXPECTED_INTEGRITY: ${{ steps.candidate.outputs.integrity }}
+          REGISTRY_PACK_RESULT_PATH: ${{ runner.temp }}/registry-package-result.json
+          REGISTRY_VIEW_PATH: ${{ runner.temp }}/registry-view.json
         shell: bash
         run: |
           set -euo pipefail
           version="${RELEASE_TAG#v}"
           registry_ready=false
           for attempt in 1 2 3 4 5 6 7 8; do
-            if npm view "tab2api@$version" version dist.integrity --json > registry-view.json 2>/dev/null; then
+            if npm view "tab2api@$version" --json > "$REGISTRY_VIEW_PATH" 2>/dev/null; then
               if VERSION="$version" node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
 
-          const view = JSON.parse(readFileSync('registry-view.json', 'utf8'));
+          const view = JSON.parse(readFileSync(process.env.REGISTRY_VIEW_PATH, 'utf8'));
           if (view.version !== process.env.VERSION || typeof view.dist?.integrity !== 'string') {
             process.exit(1);
           }
@@ -217,7 +252,7 @@ jobs:
             exit 1
           fi
           registry_integrity="$(node --input-type=module -e \
-            "import {readFileSync} from 'node:fs'; const view=JSON.parse(readFileSync('registry-view.json','utf8')); process.stdout.write(view.dist.integrity);")"
+            "import {readFileSync} from 'node:fs'; const view=JSON.parse(readFileSync(process.env.REGISTRY_VIEW_PATH,'utf8')); process.stdout.write(view.dist.integrity);")"
           if [[ "$registry_integrity" != "$EXPECTED_INTEGRITY" ]]; then
             echo 'The registry integrity does not match the reviewed tarball.' >&2
             exit 1
@@ -225,13 +260,13 @@ jobs:
           mkdir -- 'registry-copy'
           (
             cd -- 'registry-copy'
-            npm pack "tab2api@$version" --ignore-scripts --json > '../registry-package-result.json'
+            npm pack "tab2api@$version" --ignore-scripts --json > "$REGISTRY_PACK_RESULT_PATH"
           )
           npm run release:verify -- \
             --tag "$RELEASE_TAG" \
-            --pack-json registry-package-result.json
+            --pack-json "$REGISTRY_PACK_RESULT_PATH"
           registry_pack_integrity="$(node --input-type=module -e \
-            "import {readFileSync} from 'node:fs'; const result=JSON.parse(readFileSync('registry-package-result.json','utf8')); process.stdout.write(result[0].integrity);")"
+            "import {readFileSync} from 'node:fs'; const result=JSON.parse(readFileSync(process.env.REGISTRY_PACK_RESULT_PATH,'utf8')); process.stdout.write(result[0].integrity);")"
           if [[ "$registry_pack_integrity" != "$EXPECTED_INTEGRITY" ]]; then
             echo 'The downloaded registry tarball does not match the reviewed candidate.' >&2
             exit 1
