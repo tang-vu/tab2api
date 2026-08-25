@@ -145,8 +145,16 @@ describe('workflow action pinning', () => {
     expect(publish.match(/secrets\.NPM_TOKEN/gu)).toHaveLength(1);
     expect(publish).toContain('unset NODE_AUTH_TOKEN');
     expect(publish).toContain('package_path="$PWD/release-candidate/${package_name}"');
+    expect(publish).toContain('Classify the immutable registry version');
+    expect(publish).toContain("if: steps.registry.outputs.already_published != 'true'");
+    expect(publish).toContain('already_published=true');
+    expect(publish).toContain('npm view "tab2api@$version" --json');
+    expect(publish).not.toContain('version dist.integrity --json');
     expect(publish).toContain('--provenance --access public --ignore-scripts');
     expect(publish).toContain('The registry integrity does not match the reviewed tarball.');
-    expect(publish).toContain('--pack-json registry-package-result.json');
+    expect(publish).toContain(
+      'REGISTRY_PACK_RESULT_PATH: ${{ runner.temp }}/registry-package-result.json',
+    );
+    expect(publish).toContain('--pack-json "$REGISTRY_PACK_RESULT_PATH"');
   });
 });
