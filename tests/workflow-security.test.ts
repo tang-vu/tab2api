@@ -144,6 +144,7 @@ describe('workflow action pinning', () => {
     expect(publish).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}');
     expect(publish.match(/secrets\.NPM_TOKEN/gu)).toHaveLength(1);
     expect(publish).toContain('unset NODE_AUTH_TOKEN');
+    expect(publish).toContain('package_path="$PWD/release-candidate/${package_name}"');
     expect(publish).toContain('--provenance --access public --ignore-scripts');
     expect(publish).toContain('The registry integrity does not match the reviewed tarball.');
     expect(publish).toContain('--pack-json registry-package-result.json');

@@ -163,7 +163,7 @@ jobs:
           npm run release:verify -- --tag "$RELEASE_TAG" --pack-json package-result.json
           version="${RELEASE_TAG#v}"
           package_name="tab2api-${version}.tgz"
-          package_path="release-candidate/${package_name}"
+          package_path="$PWD/release-candidate/${package_name}"
           mkdir -- 'release-candidate'
           mv -- "$package_name" "$package_path"
           integrity="$(node --input-type=module -e \
