@@ -82,19 +82,21 @@ jobs:
       - name: Require successful source provenance and a public GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_RELEASE_PATH: ${{ runner.temp }}/github-release.json
           SOURCE_COMMIT: ${{ steps.source.outputs.tag_commit }}
+          SOURCE_RUNS_PATH: ${{ runner.temp }}/source-runs.json
         shell: bash
         run: |
           set -euo pipefail
           gh api \
             "repos/$GITHUB_REPOSITORY/actions/workflows/source-package.yml/runs?event=push&per_page=100" \
-            > source-runs.json
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > github-release.json
+            > "$SOURCE_RUNS_PATH"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$GITHUB_RELEASE_PATH"
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
 
-          const runsDocument = JSON.parse(readFileSync('source-runs.json', 'utf8'));
-          const release = JSON.parse(readFileSync('github-release.json', 'utf8'));
+          const runsDocument = JSON.parse(readFileSync(process.env.SOURCE_RUNS_PATH, 'utf8'));
+          const release = JSON.parse(readFileSync(process.env.GITHUB_RELEASE_PATH, 'utf8'));
           const runs = Array.isArray(runsDocument.workflow_runs) ? runsDocument.workflow_runs : [];
           const provenanceSucceeded = runs.some(
             (run) =>

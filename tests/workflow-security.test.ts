@@ -134,6 +134,10 @@ describe('workflow action pinning', () => {
     expect(publish).toContain('[[ "$PUBLISH_CONFIRMATION" != \'publish-tab2api\' ]]');
     expect(publish).not.toContain("[[ '${{ inputs.confirmation }}'");
     expect(publish).toContain('source-package.yml/runs?event=push&per_page=100');
+    expect(publish).toContain('SOURCE_RUNS_PATH: ${{ runner.temp }}/source-runs.json');
+    expect(publish).toContain('GITHUB_RELEASE_PATH: ${{ runner.temp }}/github-release.json');
+    expect(publish).not.toContain('> source-runs.json');
+    expect(publish).not.toContain('> github-release.json');
     expect(publish).toContain('npm run test:coverage');
     expect(publish).toContain('npm run desktop:check');
     expect(publish).toContain('npm run desktop:audit');
