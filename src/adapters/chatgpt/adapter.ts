@@ -11,6 +11,7 @@ import type {
   GenerateRequest,
   GenerateResult,
   ListProjectsRequest,
+  MediaAttachment,
   ProjectSummary,
   SessionState,
   UploadProjectFilesRequest,
@@ -149,6 +150,28 @@ async function lastAssistantText(page: Page): Promise<string> {
   return '';
 }
 
+/**
+ * A turn that uploaded references puts the user's own images into the transcript, where the
+ * author-agnostic fallback cannot tell them apart from the answer. Such a turn is matched by
+ * assistant-scoped selectors only, so a reference is never captured as the generated image.
+ */
+function generatedImageSelectors(references: number): readonly string[] {
+  return references === 0
+    ? [...UI_SELECTORS.generatedImage, ...UI_SELECTORS.generatedImageFallback]
+    : UI_SELECTORS.generatedImage;
+}
+
+/**
+ * Keeps the single-image constraint that `waitForGeneratedImage` counts on, and names the
+ * uploads so the model treats them as references rather than as the subject to describe.
+ */
+function imagePrompt(request: GenerateImageRequest): string {
+  const references = request.attachments?.length ?? 0;
+  if (references === 0) return `Create exactly one image from this request:\n\n${request.prompt}`;
+  const noun = references === 1 ? 'the attached image' : `the ${references} attached images`;
+  return `Create exactly one image from this request, using ${noun} as visual references:\n\n${request.prompt}`;
+}
+
 export class ChatGptAdapter implements WebChatProvider {
   readonly id = 'chatgpt-web' as const;
 
@@ -174,18 +197,7 @@ export class ChatGptAdapter implements WebChatProvider {
       if (composer === undefined) throw this.uiChanged();
       const baseline = await countAll(page, UI_SELECTORS.assistantMessage);
       const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
-      if (request.attachments !== undefined && request.attachments.length > 0) {
-        const fileInput = page.locator(UI_SELECTORS.fileInput[0]).first();
-        if ((await fileInput.count()) === 0)
-          throw new AppError('ui_changed', 'The ChatGPT file input is unavailable.');
-        await fileInput.setInputFiles(
-          request.attachments.map((attachment) => ({
-            name: attachment.filename,
-            mimeType: attachment.mimeType,
-            buffer: attachment.data,
-          })),
-        );
-      }
+      await this.attachFiles(page, request.attachments);
       await composer.fill(request.prompt);
       const send = await firstVisible(page, UI_SELECTORS.sendButton);
       if (send !== undefined) await send.click();
@@ -245,6 +257,27 @@ export class ChatGptAdapter implements WebChatProvider {
     }
   }
 
+  /**
+   * Uploads attachments through the composer's hidden file input. Doing nothing for an empty
+   * list keeps callers free of the guard and leaves attachment-free turns untouched.
+   */
+  private async attachFiles(
+    page: Page,
+    attachments: readonly MediaAttachment[] | undefined,
+  ): Promise<void> {
+    if (attachments === undefined || attachments.length === 0) return;
+    const fileInput = page.locator(UI_SELECTORS.fileInput[0]).first();
+    if ((await fileInput.count()) === 0)
+      throw new AppError('ui_changed', 'The ChatGPT file input is unavailable.');
+    await fileInput.setInputFiles(
+      attachments.map((attachment) => ({
+        name: attachment.filename,
+        mimeType: attachment.mimeType,
+        buffer: attachment.data,
+      })),
+    );
+  }
+
   async generateImage(request: GenerateImageRequest): Promise<GenerateImageResult> {
     let page: Page | undefined;
     let submitted = false;
@@ -256,15 +289,18 @@ export class ChatGptAdapter implements WebChatProvider {
       this.assertReady(await this.waitForInitialState(page));
       const composer = await firstVisible(page, UI_SELECTORS.composer);
       if (composer === undefined) throw this.uiChanged();
-      const baselineImages = await countEach(page, UI_SELECTORS.generatedImage);
+      const imageSelectors = generatedImageSelectors(request.attachments?.length ?? 0);
+      const baselineImages = await countEach(page, imageSelectors);
       const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
-      await composer.fill(`Create exactly one image from this request:\n\n${request.prompt}`);
+      await this.attachFiles(page, request.attachments);
+      await composer.fill(imagePrompt(request));
       const send = await firstVisible(page, UI_SELECTORS.sendButton);
       if (send !== undefined) await send.click();
       else await composer.press('Enter');
       submitted = true;
       const data = await this.waitForGeneratedImage(
         page,
+        imageSelectors,
         baselineImages,
         baselineCompletionActions,
         request.signal,
@@ -726,6 +762,7 @@ export class ChatGptAdapter implements WebChatProvider {
 
   private async waitForGeneratedImage(
     page: Page,
+    selectors: readonly string[],
     baselineImages: readonly number[],
     baselineCompletionActions: number,
     signal: AbortSignal,
@@ -737,7 +774,7 @@ export class ChatGptAdapter implements WebChatProvider {
       if (state === 'rate_limited' || state === 'security_challenge' || state === 'login_required')
         this.assertReady(state);
       let image: Locator | undefined;
-      for (const [index, selector] of UI_SELECTORS.generatedImage.entries()) {
+      for (const [index, selector] of selectors.entries()) {
         const candidates = page.locator(selector);
         const count = await candidates.count();
         if (count > (baselineImages[index] ?? 0)) {

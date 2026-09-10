@@ -27,13 +27,21 @@ export const UI_SELECTORS = {
     'button[aria-label*="Xóa tệp"]',
     '[class*="file-preview"]',
   ],
+  /**
+   * Assistant-scoped candidates for a generated image. They stay correct even when the same
+   * conversation also carries images the request uploaded.
+   */
   generatedImage: [
     'main img[alt^="Generated image"]',
     'main img[alt^="Ảnh đã tạo"]',
     'main [class*="imagegen-image"] img[alt]:not([alt=""])',
     '[data-message-author-role="assistant"] img:not([alt="ChatGPT"])',
-    'article[data-testid^="conversation-turn-"] img[src]',
   ],
+  /**
+   * Author-agnostic last resort. It matches the user's own turn as well, so it is only
+   * consulted for a request that uploaded no reference images.
+   */
+  generatedImageFallback: ['article[data-testid^="conversation-turn-"] img[src]'],
   assistantMessage: [
     '[data-message-author-role="assistant"]',
     'article[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',
