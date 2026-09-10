@@ -22,6 +22,8 @@ export class FakeProvider implements WebChatProvider {
   state: SessionState = 'ready';
   prompts: string[] = [];
   attachmentCounts: number[] = [];
+  imagePrompts: string[] = [];
+  imageAttachmentCounts: number[] = [];
   projectIds: (string | undefined)[] = [];
   conversationIds: (string | undefined)[] = [];
   createdProjectNames: string[] = [];
@@ -68,7 +70,9 @@ export class FakeProvider implements WebChatProvider {
     }
   }
 
-  async generateImage(_request: GenerateImageRequest): Promise<GenerateImageResult> {
+  async generateImage(request: GenerateImageRequest): Promise<GenerateImageResult> {
+    this.imagePrompts.push(request.prompt);
+    this.imageAttachmentCounts.push(request.attachments?.length ?? 0);
     return { data: Buffer.from('fake-png'), mimeType: 'image/png' };
   }
 

@@ -137,6 +137,15 @@ curl.exe http://127.0.0.1:3210/v1/images/generations `
   -d '{"model":"chatgpt-web-image","prompt":"A blue circle on white","response_format":"b64_json"}'
 ```
 
+Optional `reference_images` attaches up to four PNG/JPEG/WebP data URLs as visual references, so the new image can follow images you already have:
+
+```powershell
+curl.exe http://127.0.0.1:3210/v1/images/generations `
+  -H "Authorization: Bearer $token" `
+  -H "Content-Type: application/json" `
+  -d '{"prompt":"The same character, now in the rain","reference_images":["data:image/png;base64,iVBORw0KGgo..."]}'
+```
+
 Speech and transcription use `/v1/audio/speech` (JSON, WAV output) and `/v1/audio/transcriptions` (multipart). See [the API reference](docs/api.md) for exact schemas and media limits.
 
 Working against a large codebase uses ChatGPT projects, so the sources are uploaded once instead of resent with every request:
@@ -212,7 +221,7 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 - `POST /v1/projects/:projectId/chat/completions`, `POST /v1/projects/:projectId/responses`
 - `POST /admin/session/reset`
 - `GET/POST/DELETE /admin/api-keys`, `GET/DELETE /admin/usage` (administrator only)
-- Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs. Remote image URLs are rejected.
+- Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs, and image generation accepts the same data URLs as `reference_images`. Remote image URLs are rejected.
 - The truthful provider is always `chatgpt-web`. The Anthropic compatibility id `claude-tab2api-chatgpt-web` exists for Claude Code discovery; neither incoming id controls the ChatGPT UI model picker or claims that Claude served the request.
 - OpenAI tool calls, image editing, live voice/realtime audio, MP3 TTS, JSON schema output, logprobs, and accurate sampling/model controls are not supported. Anthropic client-side tool use is a prompt-mediated compatibility bridge and can fail if the visible model does not follow its bounded output envelope.
 - Image output is a lossless PNG rendered from the UI element at its intrinsic pixel dimensions, not the smaller chat preview. It preserves UI-exposed pixels but is not the source asset byte-for-byte and may omit metadata. Only `n=1`, `size=auto`, `quality=auto`, and `b64_json` are accepted.

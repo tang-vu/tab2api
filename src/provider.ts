@@ -66,6 +66,8 @@ export interface GenerateImageRequest {
   prompt: string;
   signal: AbortSignal;
   requestId: string;
+  /** Visual references uploaded with the prompt so the generated image can follow them. */
+  attachments?: readonly MediaAttachment[];
 }
 
 export interface GenerateImageResult {
