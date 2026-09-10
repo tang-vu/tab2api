@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chatAttachments,
+  imageGenerationAttachments,
   serializeChatRequest,
   serializeMessages,
   serializeResponsesRequest,
@@ -62,5 +63,18 @@ describe('prompt serializer', () => {
     expect(attachments).toHaveLength(1);
     expect(attachments[0]?.mimeType).toBe('image/png');
     expect(attachments[0]?.data.length).toBeGreaterThan(0);
+  });
+
+  it('decodes image-generation references and enforces the combined media limit', () => {
+    const attachments = imageGenerationAttachments({ reference_images: [pixel, pixel] }, 1024);
+    expect(attachments).toHaveLength(2);
+    expect(attachments.map((attachment) => attachment.filename)).toStrictEqual([
+      'image-1.png',
+      'image-2.png',
+    ]);
+    expect(imageGenerationAttachments({}, 1024)).toStrictEqual([]);
+    expect(() => imageGenerationAttachments({ reference_images: [pixel, pixel] }, 100)).toThrow(
+      /TAB2API_MEDIA_LIMIT_BYTES/,
+    );
   });
 });

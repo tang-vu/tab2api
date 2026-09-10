@@ -3,6 +3,8 @@ import { z } from 'zod';
 const dataImageUrl = z
   .string()
   .regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/);
+/** Bound shared by every route that uploads images through the public UI. */
+export const MAX_IMAGE_ATTACHMENTS = 4;
 const textPart = z.object({ type: z.literal('text'), text: z.string().min(1) }).strict();
 const imagePart = z
   .object({
@@ -80,9 +82,16 @@ export const imageGenerationRequestSchema = z
     size: z.literal('auto').default('auto'),
     quality: z.literal('auto').default('auto'),
     response_format: z.literal('b64_json').default('b64_json'),
+    /**
+     * Optional visual references uploaded alongside the prompt. The bound matches the chat
+     * routes so one code path governs how many images a single turn may carry.
+     */
+    reference_images: z.array(dataImageUrl).min(1).max(MAX_IMAGE_ATTACHMENTS).optional(),
     user: z.string().optional(),
   })
   .strict();
+
+export type ImageGenerationRequest = z.infer<typeof imageGenerationRequestSchema>;
 
 export const speechRequestSchema = z
   .object({

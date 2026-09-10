@@ -262,6 +262,57 @@ describe('Fastify API contract', () => {
       .object({ data: z.array(z.object({ b64_json: z.string() })).min(1) })
       .parse(image.json());
     expect(Buffer.from(imageBody.data[0]?.b64_json ?? '', 'base64').toString()).toBe('fake-png');
+    expect(provider.imageAttachmentCounts).toEqual([0]);
+    await app.close();
+  });
+
+  it('uploads reference images with an image generation request', async () => {
+    const provider = new FakeProvider();
+    const app = server(provider);
+    const pixel =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const generated = await app.inject({
+      method: 'POST',
+      url: '/v1/images/generations',
+      headers: auth,
+      payload: {
+        model: 'chatgpt-web-image',
+        prompt: 'a cat in this style',
+        reference_images: [pixel, pixel],
+      },
+    });
+    expect(generated.statusCode).toBe(200);
+    expect(provider.imageAttachmentCounts).toEqual([2]);
+    expect(provider.imagePrompts).toEqual(['a cat in this style']);
+    await app.close();
+  });
+
+  it('rejects reference images the public UI cannot accept', async () => {
+    const provider = new FakeProvider();
+    const app = buildServer({
+      config: testConfig({ mediaLimitBytes: 16 }),
+      provider,
+      logger: createLogger('silent'),
+    });
+    const remote = await app.inject({
+      method: 'POST',
+      url: '/v1/images/generations',
+      headers: auth,
+      payload: { prompt: 'remote reference', reference_images: ['https://example.com/logo.png'] },
+    });
+    expect(remote.statusCode).toBe(400);
+    const oversized = await app.inject({
+      method: 'POST',
+      url: '/v1/images/generations',
+      headers: auth,
+      payload: {
+        prompt: 'oversized reference',
+        reference_images: [`data:image/png;base64,${'A'.repeat(40)}`],
+      },
+    });
+    expect(oversized.statusCode).toBe(400);
+    expect(oversized.json().error.message).toMatch(/TAB2API_MEDIA_LIMIT_BYTES/);
+    expect(provider.imageAttachmentCounts).toEqual([]);
     await app.close();
   });
 
