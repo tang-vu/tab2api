@@ -16,6 +16,12 @@ All notable user-facing changes are documented here. This project follows semant
 - Generated-image detection no longer relies on an author-agnostic selector when a request uploads
   its own images, so a reference can never be captured in place of the generated image.
 
+### Security
+
+- `fast-uri` is pinned forward to 3.1.7/4.1.4, clearing the high-severity host-confusion and SSRF
+  advisories it carried as a transitive Fastify dependency (GHSA-5jgf-p345-68v8,
+  GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf, GHSA-jqff-g426-hqxp).
+
 ## [0.3.0] - 2026-08-24
 
 ### Added
