@@ -102,6 +102,21 @@ describe('workflow action pinning', () => {
     expect(codeql).toContain('security-events: write');
   });
 
+  it('keeps CodeQL initialization and analysis on the same immutable release', async () => {
+    const sources = await readWorkflowSources(path.resolve(import.meta.dirname, '..'));
+    const codeql = sources.find(({ fileName }) => fileName === 'codeql.yml');
+    if (codeql === undefined) throw new Error('codeql.yml was not found');
+    const references = collectActionReferences(codeql).filter(({ reference }) =>
+      reference.startsWith('github/codeql-action/'),
+    );
+    expect(references.map(({ reference }) => reference.split('@')[0]).sort()).toEqual([
+      'github/codeql-action/analyze',
+      'github/codeql-action/init',
+    ]);
+    expect(new Set(references.map(({ reference }) => reference.split('@')[1])).size).toBe(1);
+    expect(new Set(references.map(({ version }) => version)).size).toBe(1);
+  });
+
   it('writes source-package checksums with artifact-portable basenames', async () => {
     const rootDirectory = path.resolve(import.meta.dirname, '..');
     const sources = await readWorkflowSources(rootDirectory);
