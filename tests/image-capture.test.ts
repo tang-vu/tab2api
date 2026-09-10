@@ -1,8 +1,10 @@
 import type { Locator, Page } from 'playwright';
+import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
 import { ChatGptAdapter, validateIntrinsicPng } from '../src/adapters/chatgpt/adapter.js';
 import { UI_SELECTORS } from '../src/adapters/chatgpt/selectors.js';
 import type { BrowserController } from '../src/browser/controller.js';
+import { AppError } from '../src/errors.js';
 import { createLogger } from '../src/observability/logger.js';
 import { testConfig } from './helpers.js';
 
@@ -87,6 +89,7 @@ class FakeCapturePage {
   readonly queried: string[] = [];
   readonly uploads: { name: string; mimeType: string; bytes: number }[][] = [];
   readonly composed: string[] = [];
+  onWait: (() => void) | undefined;
 
   /** Set to model an image that only the author-agnostic fallback selector can see. */
   fallbackImage: FakeImageLocator | undefined;
@@ -94,6 +97,7 @@ class FakeCapturePage {
   constructor(private readonly image: FakeImageLocator) {}
   async goto(): Promise<void> {}
   async waitForTimeout(): Promise<void> {
+    this.onWait?.();
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
   url(): string {
@@ -236,6 +240,49 @@ describe('image generation reference uploads', () => {
   function adapterFor(page: FakeCapturePage): ChatGptAdapter {
     return new ChatGptAdapter(new FakeCaptureBrowser(page), testConfig(), createLogger('silent'));
   }
+
+  it.each(['Generated image', 'Ảnh đã tạo', 'A reference image'])(
+    'excludes user images with alt %s from every generated-image candidate',
+    (alt) => {
+      const { document } = parseHTML(`<main>
+        <article data-message-author-role="user">
+          <div class="imagegen-image"><img id="reference" alt="${alt}"></div>
+        </article>
+        <article data-message-author-role="assistant">
+          <div class="imagegen-image"><img id="answer" alt="${alt}"></div>
+        </article>
+      </main>`);
+      const matches = UI_SELECTORS.generatedImage.flatMap((selector) =>
+        [...document.querySelectorAll(selector)].map((element) => element.id),
+      );
+      expect(matches.length).toBeGreaterThan(0);
+      expect(new Set(matches)).toEqual(new Set(['answer']));
+      document.getElementById('answer')?.remove();
+      for (const selector of UI_SELECTORS.generatedImage) {
+        expect(document.querySelectorAll(selector)).toHaveLength(0);
+      }
+    },
+  );
+
+  it.each([
+    ['cancelled', undefined],
+    ['timeout', new AppError('timeout', 'timed out')],
+  ] as const)('preserves %s while waiting for an answer with references', async (code, reason) => {
+    const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }, 1000));
+    const controller = new AbortController();
+    page.onWait = () => controller.abort(reason);
+    await expect(
+      adapterFor(page).generateImage({
+        prompt: 'use this reference',
+        signal: controller.signal,
+        requestId: 'reference-interrupted',
+        attachments: [{ data: Buffer.from('one'), mimeType: 'image/png', filename: 'image-1.png' }],
+      }),
+    ).rejects.toMatchObject({ code });
+    expect(page.uploads).toHaveLength(1);
+    expect(page.clips).toEqual([]);
+    expect(page.closed).toBe(true);
+  });
 
   it('uploads the references before submitting and names them in the prompt', async () => {
     const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }));

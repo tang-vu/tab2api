@@ -32,9 +32,9 @@ export const UI_SELECTORS = {
    * conversation also carries images the request uploaded.
    */
   generatedImage: [
-    'main img[alt^="Generated image"]',
-    'main img[alt^="Ảnh đã tạo"]',
-    'main [class*="imagegen-image"] img[alt]:not([alt=""])',
+    '[data-message-author-role="assistant"] img[alt^="Generated image"]',
+    '[data-message-author-role="assistant"] img[alt^="Ảnh đã tạo"]',
+    '[data-message-author-role="assistant"] [class*="imagegen-image"] img[alt]:not([alt=""])',
     '[data-message-author-role="assistant"] img:not([alt="ChatGPT"])',
   ],
   /**
