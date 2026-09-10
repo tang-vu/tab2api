@@ -347,13 +347,14 @@ claude --model claude-tab2api-chatgpt-web</code></pre>
           <section class="docs-section">
             <h2 data-i18n="mediaEndpointsTitle">Image and audio</h2>
             <p data-i18n="mediaEndpointsBody">
-              Image generation and transcription use the public ChatGPT UI. Speech uses the local
-              operating-system voice and returns WAV only.
+              Image generation and transcription use the public ChatGPT UI. Image generation also
+              accepts up to four PNG/JPEG/WebP data URLs in reference_images, uploaded as visual
+              references. Speech uses the local operating-system voice and returns WAV only.
             </p>
             <div class="endpoint-list">
               <div>
                 <span class="method post">POST</span><code>/v1/images/generations</code
-                ><small>JSON · PNG base64</small>
+                ><small>JSON · optional reference_images · PNG base64</small>
               </div>
               <div>
                 <span class="method post">POST</span><code>/v1/audio/transcriptions</code

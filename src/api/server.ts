@@ -40,6 +40,7 @@ import {
 } from './schemas.js';
 import {
   chatAttachments,
+  imageGenerationAttachments,
   responsesAttachments,
   serializeChatRequest,
   serializeResponsesRequest,
@@ -646,8 +647,9 @@ export function buildServer(dependencies: ServerDependencies) {
     return runResponses(request, reply, projectId);
   });
 
-  app.post('/v1/images/generations', { preHandler: authenticated }, async (request, reply) => {
+  app.post('/v1/images/generations', generationRouteOptions, async (request, reply) => {
     const body = imageGenerationRequestSchema.parse(request.body);
+    const attachments = imageGenerationAttachments(body, config.mediaLimitBytes);
     observe(request, { inputText: body.prompt });
     const lifecycle = requestAbortController(request, reply, config.imageTimeoutMs);
     try {
@@ -657,6 +659,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt: body.prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            ...(attachments.length > 0 && { attachments }),
           }),
         lifecycle.controller.signal,
       );

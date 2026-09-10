@@ -86,4 +86,4 @@ Windows uses `System.Speech`; macOS requires `say`; Linux requires `espeak`. Onl
 
 ## Audio or image upload is rejected
 
-Use a supported MIME type and stay below `TAB2API_MEDIA_LIMIT_BYTES`. Vision accepts only PNG/JPEG/WebP base64 data URLs, never remote URLs. Transcription accepts one multipart audio file. If ChatGPT itself rejects a valid file, inspect the headed UI; the bridge does not bypass account/UI restrictions.
+Use a supported MIME type and stay below `TAB2API_MEDIA_LIMIT_BYTES`. Vision and the `reference_images` field of `POST /v1/images/generations` accept only PNG/JPEG/WebP base64 data URLs, at most four per request, never remote URLs. Transcription accepts one multipart audio file. If ChatGPT itself rejects a valid file, inspect the headed UI; the bridge does not bypass account/UI restrictions.

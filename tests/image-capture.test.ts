@@ -1,8 +1,10 @@
 import type { Locator, Page } from 'playwright';
+import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
 import { ChatGptAdapter, validateIntrinsicPng } from '../src/adapters/chatgpt/adapter.js';
 import { UI_SELECTORS } from '../src/adapters/chatgpt/selectors.js';
 import type { BrowserController } from '../src/browser/controller.js';
+import { AppError } from '../src/errors.js';
 import { createLogger } from '../src/observability/logger.js';
 import { testConfig } from './helpers.js';
 
@@ -45,13 +47,15 @@ class FakeImageLocator {
     private readonly width: number,
     private readonly height: number,
     private readonly origin: { x: number; y: number },
+    /** Polls the element stays absent for, after the baseline count, before it appears. */
+    private readonly absentPolls = 0,
   ) {}
   nth(): this {
     return this;
   }
   async count(): Promise<number> {
     this.countCalls += 1;
-    return this.countCalls <= 1 ? 0 : 1;
+    return this.countCalls <= 1 + this.absentPolls ? 0 : 1;
   }
   async evaluate(_fn: unknown): Promise<unknown> {
     this.evaluateCalls += 1;
@@ -81,10 +85,19 @@ class FakeCapturePage {
   viewports: { width: number; height: number }[] = [];
   readonly cdp = new FakeCdpSession();
   screenshotPng: Buffer = Buffer.alloc(0);
+  fileInputAvailable = true;
+  readonly queried: string[] = [];
+  readonly uploads: { name: string; mimeType: string; bytes: number }[][] = [];
+  readonly composed: string[] = [];
+  onWait: (() => void) | undefined;
+
+  /** Set to model an image that only the author-agnostic fallback selector can see. */
+  fallbackImage: FakeImageLocator | undefined;
 
   constructor(private readonly image: FakeImageLocator) {}
   async goto(): Promise<void> {}
   async waitForTimeout(): Promise<void> {
+    this.onWait?.();
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
   url(): string {
@@ -94,14 +107,38 @@ class FakeCapturePage {
     return this.closed;
   }
   locator(selector: string): Locator {
+    this.queried.push(selector);
     if (selector === UI_SELECTORS.generatedImage[0]) return this.image as unknown as Locator;
+    if (selector === UI_SELECTORS.generatedImageFallback[0] && this.fallbackImage !== undefined)
+      return this.fallbackImage as unknown as Locator;
+    if (selector === UI_SELECTORS.fileInput[0]) {
+      const available = this.fileInputAvailable;
+      const uploads = this.uploads;
+      return {
+        first: () => ({
+          count: async () => (available ? 1 : 0),
+          setInputFiles: async (files: { name: string; mimeType: string; buffer: Buffer }[]) => {
+            uploads.push(
+              files.map((file) => ({
+                name: file.name,
+                mimeType: file.mimeType,
+                bytes: file.buffer.length,
+              })),
+            );
+          },
+        }),
+      } as unknown as Locator;
+    }
     const ready =
       selector === '#prompt-textarea' || selector === 'button[data-testid="send-button"]';
+    const composed = this.composed;
     return {
       first: () => ({
         isVisible: async () => ready,
         count: async () => (ready ? 1 : 0),
-        fill: async () => undefined,
+        fill: async (value: string) => {
+          if (selector === '#prompt-textarea') composed.push(value);
+        },
         press: async () => undefined,
         click: async () => undefined,
       }),
@@ -193,5 +230,153 @@ describe('intrinsic image capture isolation', () => {
     for (const call of page.cdp.calls) {
       expect(call.params).toMatchObject({ deviceScaleFactor: 1, mobile: false });
     }
+  });
+});
+
+describe('image generation reference uploads', () => {
+  const width = 512;
+  const height = 512;
+
+  function adapterFor(page: FakeCapturePage): ChatGptAdapter {
+    return new ChatGptAdapter(new FakeCaptureBrowser(page), testConfig(), createLogger('silent'));
+  }
+
+  it.each(['Generated image', 'Ảnh đã tạo', 'A reference image'])(
+    'excludes user images with alt %s from every generated-image candidate',
+    (alt) => {
+      const { document } = parseHTML(`<main>
+        <article data-message-author-role="user">
+          <div class="imagegen-image"><img id="reference" alt="${alt}"></div>
+        </article>
+        <article data-message-author-role="assistant">
+          <div class="imagegen-image"><img id="answer" alt="${alt}"></div>
+        </article>
+      </main>`);
+      const matches = UI_SELECTORS.generatedImage.flatMap((selector) =>
+        [...document.querySelectorAll(selector)].map((element) => element.id),
+      );
+      expect(matches.length).toBeGreaterThan(0);
+      expect(new Set(matches)).toEqual(new Set(['answer']));
+      document.getElementById('answer')?.remove();
+      for (const selector of UI_SELECTORS.generatedImage) {
+        expect(document.querySelectorAll(selector)).toHaveLength(0);
+      }
+    },
+  );
+
+  it.each([
+    ['cancelled', undefined],
+    ['timeout', new AppError('timeout', 'timed out')],
+  ] as const)('preserves %s while waiting for an answer with references', async (code, reason) => {
+    const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }, 1000));
+    const controller = new AbortController();
+    page.onWait = () => controller.abort(reason);
+    await expect(
+      adapterFor(page).generateImage({
+        prompt: 'use this reference',
+        signal: controller.signal,
+        requestId: 'reference-interrupted',
+        attachments: [{ data: Buffer.from('one'), mimeType: 'image/png', filename: 'image-1.png' }],
+      }),
+    ).rejects.toMatchObject({ code });
+    expect(page.uploads).toHaveLength(1);
+    expect(page.clips).toEqual([]);
+    expect(page.closed).toBe(true);
+  });
+
+  it('uploads the references before submitting and names them in the prompt', async () => {
+    const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }));
+    page.screenshotPng = pngHeader(width, height);
+
+    await adapterFor(page).generateImage({
+      prompt: 'a cat in this style',
+      signal: new AbortController().signal,
+      requestId: 'reference-upload',
+      attachments: [
+        { data: Buffer.from('one'), mimeType: 'image/png', filename: 'image-1.png' },
+        { data: Buffer.from('two'), mimeType: 'image/jpeg', filename: 'image-2.jpg' },
+      ],
+    });
+
+    expect(page.uploads).toEqual([
+      [
+        { name: 'image-1.png', mimeType: 'image/png', bytes: 3 },
+        { name: 'image-2.jpg', mimeType: 'image/jpeg', bytes: 3 },
+      ],
+    ]);
+    expect(page.composed).toEqual([
+      'Create exactly one image from this request, using the 2 attached images as visual references:\n\na cat in this style',
+    ]);
+  });
+
+  it('leaves an unreferenced request untouched', async () => {
+    const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }));
+    page.screenshotPng = pngHeader(width, height);
+
+    await adapterFor(page).generateImage({
+      prompt: 'a plain cat',
+      signal: new AbortController().signal,
+      requestId: 'reference-absent',
+    });
+
+    expect(page.uploads).toEqual([]);
+    expect(page.composed).toEqual(['Create exactly one image from this request:\n\na plain cat']);
+  });
+
+  it('never captures a reference that only the author-agnostic selector can see', async () => {
+    // With uploads in the transcript, the turn-scoped fallback also matches the user's own
+    // images. The answer therefore has to come from an assistant-scoped selector, even though
+    // the fallback would have matched several polls earlier.
+    const answer = new FakeImageLocator(width, height, { x: 0, y: 0 }, 6);
+    const page = new FakeCapturePage(answer);
+    page.fallbackImage = new FakeImageLocator(64, 64, { x: 8, y: 8 });
+    page.screenshotPng = pngHeader(width, height);
+
+    const result = await adapterFor(page).generateImage({
+      prompt: 'a cat in this style',
+      signal: new AbortController().signal,
+      requestId: 'reference-scoped-selectors',
+      attachments: [{ data: Buffer.from('one'), mimeType: 'image/png', filename: 'image-1.png' }],
+    });
+
+    expect(result.mimeType).toBe('image/png');
+    expect(page.clips).toEqual([{ x: 0, y: 0, width, height }]);
+    expect(page.queried).not.toContain(UI_SELECTORS.generatedImageFallback[0]);
+  });
+
+  it('still falls back to the author-agnostic selector without references', async () => {
+    // Nothing the request uploaded can appear in the transcript, so the broader selector stays
+    // available as the resilience it was added for.
+    const answer = new FakeImageLocator(width, height, { x: 0, y: 0 }, 6);
+    const page = new FakeCapturePage(answer);
+    page.fallbackImage = new FakeImageLocator(64, 64, { x: 8, y: 8 });
+    page.screenshotPng = pngHeader(64, 64);
+
+    await adapterFor(page).generateImage({
+      prompt: 'a plain cat',
+      signal: new AbortController().signal,
+      requestId: 'fallback-selectors',
+    });
+
+    expect(page.clips).toEqual([{ x: 8, y: 8, width: 64, height: 64 }]);
+    expect(page.queried).toContain(UI_SELECTORS.generatedImageFallback[0]);
+  });
+
+  it('reports a missing file input as a UI change instead of dropping the references', async () => {
+    const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }));
+    page.screenshotPng = pngHeader(width, height);
+    page.fileInputAvailable = false;
+
+    await expect(
+      adapterFor(page).generateImage({
+        prompt: 'a cat in this style',
+        signal: new AbortController().signal,
+        requestId: 'reference-missing-input',
+        attachments: [{ data: Buffer.from('one'), mimeType: 'image/png', filename: 'image-1.png' }],
+      }),
+    ).rejects.toMatchObject({ code: 'ui_changed' });
+    // Nothing was typed, so the prompt cannot reach ChatGPT without its references.
+    expect(page.composed).toEqual([]);
+    expect(page.closed).toBe(true);
   });
 });

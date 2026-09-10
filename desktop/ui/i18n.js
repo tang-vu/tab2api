@@ -151,7 +151,7 @@ const en = {
     'DELETE also requires X-Tab2api-Confirm-Delete to exactly equal the project ID.',
   mediaEndpointsTitle: 'Image and audio',
   mediaEndpointsBody:
-    'Image generation and transcription use the public ChatGPT UI. Speech uses the local operating-system voice and returns WAV only.',
+    'Image generation and transcription use the public ChatGPT UI. Image generation also accepts up to four PNG/JPEG/WebP data URLs in reference_images, uploaded as visual references. Speech uses the local operating-system voice and returns WAV only.',
   adminEndpointsTitle: 'Administrator endpoints',
   adminEndpointsBody:
     'Manage revocable client keys, inspect content-free usage counters, or reset the browser session. These routes reject client keys.',
@@ -1202,7 +1202,7 @@ const documentationTranslations = {
       'DELETE còn yêu cầu X-Tab2api-Confirm-Delete phải khớp chính xác project ID.',
     mediaEndpointsTitle: 'Ảnh và âm thanh',
     mediaEndpointsBody:
-      'Tạo ảnh và transcription dùng UI ChatGPT công khai. Speech dùng giọng hệ điều hành cục bộ và chỉ trả WAV.',
+      'Tạo ảnh và transcription dùng UI ChatGPT công khai. Tạo ảnh còn nhận tối đa bốn data URL PNG/JPEG/WebP trong reference_images, được upload làm ảnh tham chiếu. Speech dùng giọng hệ điều hành cục bộ và chỉ trả WAV.',
     adminEndpointsTitle: 'Endpoint quản trị',
     adminEndpointsBody:
       'Quản lý client key có thể thu hồi, xem bộ đếm usage không chứa nội dung hoặc reset phiên trình duyệt. Client key không gọi được các route này.',
@@ -1237,7 +1237,8 @@ const documentationTranslations = {
     deleteWarningTitle: '不可撤销的删除',
     deleteWarningBody: 'DELETE 还要求 X-Tab2api-Confirm-Delete 与项目 ID 完全一致。',
     mediaEndpointsTitle: '图像与音频',
-    mediaEndpointsBody: '图像生成和转录使用公开 ChatGPT UI；语音使用本地系统声音且仅返回 WAV。',
+    mediaEndpointsBody:
+      '图像生成和转录使用公开 ChatGPT UI；图像生成还可在 reference_images 中接收最多四个 PNG/JPEG/WebP data URL 作为参考图。语音使用本地系统声音且仅返回 WAV。',
     adminEndpointsTitle: '管理员端点',
     adminEndpointsBody:
       '管理可撤销客户端密钥、查看无内容用量计数或重置浏览器会话。客户端密钥不能调用这些路由。',
@@ -1277,7 +1278,7 @@ const documentationTranslations = {
       'DELETE では X-Tab2api-Confirm-Delete がプロジェクト ID と完全一致する必要があります。',
     mediaEndpointsTitle: '画像と音声',
     mediaEndpointsBody:
-      '画像生成と文字起こしは公開 ChatGPT UI を使用します。音声はローカル OS の声で WAV のみ返します。',
+      '画像生成と文字起こしは公開 ChatGPT UI を使用します。画像生成は reference_images に最大 4 件の PNG/JPEG/WebP データ URL を参照画像として受け取れます。音声はローカル OS の声で WAV のみ返します。',
     adminEndpointsTitle: '管理者エンドポイント',
     adminEndpointsBody:
       '失効可能なクライアントキー、内容を含まない使用量、ブラウザーセッションを管理します。クライアントキーは拒否されます。',
@@ -1316,7 +1317,7 @@ const documentationTranslations = {
       'DELETE에는 X-Tab2api-Confirm-Delete가 프로젝트 ID와 정확히 일치해야 합니다.',
     mediaEndpointsTitle: '이미지와 오디오',
     mediaEndpointsBody:
-      '이미지 생성과 전사는 공개 ChatGPT UI를 사용합니다. 음성은 로컬 OS 음성을 사용하며 WAV만 반환합니다.',
+      '이미지 생성과 전사는 공개 ChatGPT UI를 사용합니다. 이미지 생성은 reference_images에 최대 네 개의 PNG/JPEG/WebP data URL을 참조 이미지로 받을 수 있습니다. 음성은 로컬 OS 음성을 사용하며 WAV만 반환합니다.',
     adminEndpointsTitle: '관리자 엔드포인트',
     adminEndpointsBody:
       '폐기 가능한 클라이언트 키, 내용 없는 사용량 카운터, 브라우저 세션을 관리합니다. 클라이언트 키는 거부됩니다.',
@@ -1356,7 +1357,7 @@ const documentationTranslations = {
       'DELETE también exige que X-Tab2api-Confirm-Delete coincida exactamente con el ID del proyecto.',
     mediaEndpointsTitle: 'Imagen y audio',
     mediaEndpointsBody:
-      'La generación y transcripción usan la UI pública de ChatGPT. La voz usa el sistema operativo local y solo devuelve WAV.',
+      'La generación y transcripción usan la UI pública de ChatGPT. La generación de imágenes también acepta hasta cuatro data URL PNG/JPEG/WebP en reference_images como imágenes de referencia. La voz usa el sistema operativo local y solo devuelve WAV.',
     adminEndpointsTitle: 'Endpoints administrativos',
     adminEndpointsBody:
       'Gestiona claves revocables, contadores sin contenido o la sesión del navegador. Estas rutas rechazan claves de cliente.',
@@ -1396,7 +1397,7 @@ const documentationTranslations = {
       "DELETE exige aussi que X-Tab2api-Confirm-Delete corresponde exactement à l'ID du projet.",
     mediaEndpointsTitle: 'Image et audio',
     mediaEndpointsBody:
-      "La génération d'images et la transcription utilisent l'UI publique ChatGPT. La voix utilise le système local et renvoie uniquement du WAV.",
+      "La génération d'images et la transcription utilisent l'UI publique ChatGPT. La génération d'images accepte aussi jusqu'à quatre data URL PNG/JPEG/WebP dans reference_images comme images de référence. La voix utilise le système local et renvoie uniquement du WAV.",
     adminEndpointsTitle: "Endpoints d'administration",
     adminEndpointsBody:
       'Gérez les clés révocables, les compteurs sans contenu ou la session du navigateur. Les clés client sont refusées.',
@@ -1436,7 +1437,7 @@ const documentationTranslations = {
       'DELETE verlangt außerdem, dass X-Tab2api-Confirm-Delete exakt der Projekt-ID entspricht.',
     mediaEndpointsTitle: 'Bild und Audio',
     mediaEndpointsBody:
-      'Bilderzeugung und Transkription nutzen die öffentliche ChatGPT-UI. Sprache nutzt die lokale Systemstimme und liefert nur WAV.',
+      'Bilderzeugung und Transkription nutzen die öffentliche ChatGPT-UI. Die Bilderzeugung akzeptiert zudem bis zu vier PNG/JPEG/WebP-Data-URLs in reference_images als Referenzbilder. Sprache nutzt die lokale Systemstimme und liefert nur WAV.',
     adminEndpointsTitle: 'Administrator-Endpunkte',
     adminEndpointsBody:
       'Verwalten Sie widerrufbare Client-Keys, inhaltsfreie Nutzungszähler oder die Browsersitzung. Client-Keys werden abgewiesen.',

@@ -1,6 +1,12 @@
 import type { MediaAttachment } from '../provider.js';
 import { AppError } from '../errors.js';
-import type { ChatCompletionRequest, Message, ResponsesRequest } from './schemas.js';
+import { MAX_IMAGE_ATTACHMENTS } from './schemas.js';
+import type {
+  ChatCompletionRequest,
+  ImageGenerationRequest,
+  Message,
+  ResponsesRequest,
+} from './schemas.js';
 
 const OPEN = '<tab2api-message';
 
@@ -84,7 +90,7 @@ function decodeImage(dataUrl: string, index: number, limitBytes: number): MediaA
 }
 
 function decodeImages(urls: readonly string[], limitBytes: number): MediaAttachment[] {
-  if (urls.length > 4)
+  if (urls.length > MAX_IMAGE_ATTACHMENTS)
     throw new AppError('invalid_request', 'At most four image attachments are supported.');
   const attachments = urls.map((url, index) => decodeImage(url, index + 1, limitBytes));
   if (attachments.reduce((sum, attachment) => sum + attachment.data.length, 0) > limitBytes)
@@ -105,6 +111,18 @@ export function chatAttachments(
       : message.content.flatMap((part) => (part.type === 'image_url' ? [part.image_url.url] : [])),
   );
   return decodeImages(urls, limitBytes);
+}
+
+/**
+ * Reference images for `/v1/images/generations`. The schema already bounds the count, so this
+ * only decodes and applies the byte ceiling that every media route shares.
+ */
+export function imageGenerationAttachments(
+  request: Pick<ImageGenerationRequest, 'reference_images'>,
+  limitBytes: number,
+): MediaAttachment[] {
+  if (request.reference_images === undefined) return [];
+  return decodeImages(request.reference_images, limitBytes);
 }
 
 export function responsesAttachments(
