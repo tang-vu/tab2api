@@ -166,6 +166,22 @@ curl.exe "http://127.0.0.1:3210/v1/projects/$project/chat/completions" `
 
 The reply carries `tab2api.conversation_id`; passing it back as `conversation_id` continues that same thread instead of starting a new conversation.
 
+### MCP tools
+
+`tab2api mcp` (or `npm run mcp` from a checkout) serves the **already running** local service as a Model Context Protocol server over stdio — newline-delimited JSON-RPC, tools only. MCP hosts such as Claude Code, Cursor, or Claude Desktop can then call ChatGPT as a tool through the same queue, prompt budgets, and drain lifecycle as HTTP callers:
+
+```powershell
+claude mcp add tab2api -- tab2api mcp
+```
+
+or the equivalent JSON in Cursor/Claude Desktop:
+
+```json
+{ "mcpServers": { "tab2api": { "command": "tab2api", "args": ["mcp"] } } }
+```
+
+Exposed tools: `chat` (prompt plus optional `temporary`, `reasoning_effort`, `conversation_id`, `project_id`), `count_tokens` (local o200k estimate that does not spend a browser turn), and `status` (session and queue state). The subprocess authenticates with the loopback administrator token from your configuration, so register it only on your own machine — the same trust boundary as the CLI. If the service is not running, tool calls return `isError` results that tell you to run `tab2api start`.
+
 ## First login and normal operation
 
 `npm run login` launches the dedicated profile and waits until the composer is compatible. `npm start` reuses that profile. Each API request opens a fresh ChatGPT page/conversation and closes it afterward. `TAB2API_CONCURRENCY` controls 1–4 parallel browser tabs; the safe default is one, with a bounded FIFO queue. Start with 2 only after a live test because one account may rate-limit and UI tabs consume substantial memory. `npm run doctor` checks Node, Chromium, directory permissions, port, local token, browser connectivity, login, and selectors. `npm run reset-session` closes the bridge browser process through the authenticated admin route without deleting the profile.
@@ -219,7 +235,7 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 - `POST /v1/audio/speech`, `POST /v1/audio/transcriptions`
 - `POST/GET /v1/projects`, `DELETE /v1/projects/:projectId`, `POST /v1/projects/:projectId/files`
 - `POST /v1/projects/:projectId/chat/completions`, `POST /v1/projects/:projectId/responses`
-- `POST /admin/session/reset` (drains in-flight turns first), `POST/GET /admin/drain`, `POST /admin/resume`
+- `GET /admin/session` (last-observed session state; never opens a browser tab), `POST /admin/session/reset` (drains in-flight turns first), `POST/GET /admin/drain`, `POST /admin/resume`
 - `GET/POST/DELETE /admin/api-keys`, `GET/DELETE /admin/usage` (administrator only)
 - Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs, and image generation accepts the same data URLs as `reference_images`. Remote image URLs are rejected.
 - The truthful provider is always `chatgpt-web`. The Anthropic compatibility id `claude-tab2api-chatgpt-web` exists for Claude Code discovery; neither incoming id controls the ChatGPT UI model picker or claims that Claude served the request.
@@ -261,6 +277,12 @@ npm run smoke:claude installed Claude Code + offline two-turn Read tool smoke
 npm run keys -- create "device label" # print one revocable client key once
 npm run keys -- list                  # list key metadata, never secrets
 npm run usage                         # per-key content-free usage estimates
+npm run usage -- reset                # reset the usage counters
+npm run status                        # service, session, and queue/drain state
+npm run drain                         # stop intake; finish queued/active turns
+npm run resume                        # reopen intake after a drain
+npm run chat -- "one-shot prompt"     # send a prompt through the queue; prints the answer
+npm run mcp                           # serve the running service as an MCP stdio server
 npm run desktop:check                 # UI syntax + Rust fmt/clippy/tests
 npm run desktop:dev                   # native shell with the development sidecar
 npm run desktop:build:windows         # self-contained unsigned NSIS preview

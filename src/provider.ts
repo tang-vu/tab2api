@@ -131,6 +131,12 @@ export interface WebChatProvider {
   deleteProject(request: DeleteProjectRequest): Promise<void>;
   uploadProjectFiles(request: UploadProjectFilesRequest): Promise<UploadProjectFilesResult>;
   health(): Promise<SessionState>;
+  /**
+   * The most recent state observed by a live probe or turn. Cheap and never opens a
+   * browser tab; before the first observation the browser has not run, so this reports
+   * `browser_disconnected`. Callers needing a live probe use `health()` instead.
+   */
+  sessionState(): SessionState;
   reset(): Promise<void>;
   close(): Promise<void>;
 }

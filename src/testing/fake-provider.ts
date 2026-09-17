@@ -108,6 +108,10 @@ export class FakeProvider implements WebChatProvider {
     return this.state;
   }
 
+  sessionState(): SessionState {
+    return this.state;
+  }
+
   async reset(): Promise<void> {
     this.state = 'browser_disconnected';
   }

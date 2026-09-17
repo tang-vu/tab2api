@@ -25,6 +25,14 @@ All notable user-facing changes are documented here. This project follows semant
   data URLs are uploaded through the composer as visual references before the prompt is sent, so a
   generated image can follow images the caller already has. Remote URLs stay rejected, and the
   combined size is capped by `TAB2API_MEDIA_LIMIT_BYTES`.
+- `GET /admin/session` reports the provider session state (`ready`, `login_required`, ...) without
+  starting a turn, and `LocalAdminClient.sessionState()` exposes it to the CLI.
+- CLI completeness: `tab2api help`/`version` (plus `-h`/`--help`, `-v`/`--version`), `status`,
+  `drain`, `resume`, `usage reset`, and `chat` — a one-shot prompt through the loopback API that
+  accepts `--temporary`, `--effort`, `--conversation`, `--project`, or a piped stdin prompt.
+- `tab2api mcp` serves the running service as a tools-only MCP server over stdio (newline-delimited
+  JSON-RPC), exposing `chat`, `count_tokens`, and `status` to MCP hosts such as Claude Code,
+  Cursor, or Claude Desktop through the same queue, budgets, and drain lifecycle as HTTP callers.
 
 ### Fixed
 
