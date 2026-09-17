@@ -205,7 +205,7 @@ export async function commandStatus(config: AppConfig): Promise<void> {
   const client = new LocalAdminClient(config);
   const [session, drain] = await Promise.all([client.sessionState(), client.drainStatus()]);
   print(`Service: reachable at http://${config.host}:${config.port}`);
-  print(`Session: ${session.state}`);
+  print(`Session: ${session.state} (last observed)`);
   print(`Queue: pending=${drain.pending} active=${drain.active} draining=${drain.draining}`);
 }
 
@@ -351,7 +351,7 @@ Usage: tab2api <command> [args]
 
 Service lifecycle
   start               Start the loopback API server (default command)
-  status              Show service reachability, session state, and queue state
+  status              Show service reachability, last-observed session state, and queue state
   doctor              Run environment and session checks
   login               Open the dedicated browser profile for manual ChatGPT login
   reset-session       Restart the browser process (profile is preserved)

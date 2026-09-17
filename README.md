@@ -235,7 +235,7 @@ Usage includes real request/success/failure, latency, and byte counters. Token t
 - `POST /v1/audio/speech`, `POST /v1/audio/transcriptions`
 - `POST/GET /v1/projects`, `DELETE /v1/projects/:projectId`, `POST /v1/projects/:projectId/files`
 - `POST /v1/projects/:projectId/chat/completions`, `POST /v1/projects/:projectId/responses`
-- `POST /admin/session/reset` (drains in-flight turns first), `POST/GET /admin/drain`, `POST /admin/resume`
+- `GET /admin/session` (last-observed session state; never opens a browser tab), `POST /admin/session/reset` (drains in-flight turns first), `POST/GET /admin/drain`, `POST /admin/resume`
 - `GET/POST/DELETE /admin/api-keys`, `GET/DELETE /admin/usage` (administrator only)
 - Text messages with `system`, `developer`, `user`, and prior `assistant` roles; vision accepts bounded PNG/JPEG/WebP data URLs, and image generation accepts the same data URLs as `reference_images`. Remote image URLs are rejected.
 - The truthful provider is always `chatgpt-web`. The Anthropic compatibility id `claude-tab2api-chatgpt-web` exists for Claude Code discovery; neither incoming id controls the ChatGPT UI model picker or claims that Claude served the request.

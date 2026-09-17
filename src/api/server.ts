@@ -868,8 +868,8 @@ export function buildServer(dependencies: ServerDependencies) {
     return { draining: true, pending: queue.size, active: queue.activeCount };
   });
 
-  app.get('/admin/session', { preHandler: adminOnly }, async () => ({
-    state: await provider.health(),
+  app.get('/admin/session', { preHandler: adminOnly }, () => ({
+    state: provider.sessionState(),
   }));
 
   app.post('/admin/resume', { preHandler: adminOnly }, async () => {
