@@ -28,6 +28,10 @@ Non-stream responses use `object: "chat.completion"`, model `chatgpt-web`, and o
 
 Optional `conversation_id` continues an existing ChatGPT conversation instead of opening a new one. It must match the conversation id format ChatGPT uses; anything else is rejected as `invalid_request` before a browser tab is opened. When the UI exposed a conversation, the response carries it back as `tab2api.conversation_id`.
 
+Optional `temporary: true` runs the turn in a ChatGPT Temporary Chat, which the product does not keep in account history. It cannot be combined with `conversation_id` or a project-scoped route — a Temporary Chat has no persistent identity to continue or project context to inherit — and such combinations are rejected as `invalid_request`. `TAB2API_TEMPORARY_CHAT=true` makes temporary mode the default for requests that omit the field; pass `temporary: false` to opt a single request out. Because this is UI-mediated, the adapter verifies that a Temporary Chat indicator is actually present and fails `ui_changed` rather than silently writing history when ChatGPT changes the feature.
+
+Optional `reasoning_effort` accepts `minimal`, `low`, `medium`, `high`, or `xhigh` and drives the composer's effort control before the prompt is sent. It never changes the selected model, so it cannot exceed what the account's picker offers; when the control or a matching option is missing the request fails `ui_changed` instead of silently keeping the account default.
+
 For `stream: true`, `Content-Type` is `text/event-stream`, `X-Tab2api-Stream-Mode` is `buffered`, role/content/final chunks are emitted, and the stream ends with `data: [DONE]`.
 
 ### `POST /v1/responses`
@@ -36,11 +40,13 @@ Required: `model` and `input`. Input is a non-empty string or ordered message ar
 
 Non-stream responses contain one completed assistant `message`/`output_text`; `usage` is `null`. Optional `conversation_id` behaves as it does for Chat Completions, and the resulting conversation is reported as `metadata.tab2api_conversation_id`. Buffered streaming emits sequenced `response.created`, item/content events, one `response.output_text.delta`, and finally `response.completed`; unlike Chat Completions, the typed Responses event stream does not add `[DONE]`.
 
+`temporary` and `reasoning_effort` behave exactly as they do for Chat Completions. An Anthropic-style `reasoning: { "effort": "..." }` object is also accepted and is equivalent to `reasoning_effort`; when both are present, `reasoning_effort` wins.
+
 ### `POST /v1/messages`
 
 Anthropic Messages compatibility for local clients such as Claude Code. Required fields are `model`, positive bounded `max_tokens`, and one or more `messages`; `stream` defaults to false. `system` may be a string or bounded text-block array. Message content may be a string or ordered `text`, inline base64 `image`, `tool_use`, and `tool_result` blocks. At most four PNG/JPEG/WebP images are decoded and uploaded through the public UI. Standard client tools contain a bounded `name`, optional `description`, and object `input_schema`; at most 128 are accepted.
 
-Claude Code capability hints such as `thinking`, `output_config`, `context_management`, cache-control metadata, and future top-level fields are accepted so a harmless client upgrade does not break the route, but tab2api does not claim to implement those model features. The complete ordered transcript and tool definitions are entity-escaped inside a bridge envelope and submitted once through ChatGPT's visible composer.
+Claude Code capability hints such as `thinking`, `output_config`, `context_management`, cache-control metadata, and future top-level fields are accepted so a harmless client upgrade does not break the route, but tab2api does not claim to implement those model features. An optional `temporary: true` runs the turn in a Temporary Chat with the same semantics and limits described for Chat Completions. The complete ordered transcript and tool definitions are entity-escaped inside a bridge envelope and submitted once through ChatGPT's visible composer.
 
 When tools are available, the prompt asks the visible model for one bounded JSON envelope. A returned tool call is accepted only when its name exactly matches a tool declared by the request, its input is an object without prototype-sensitive keys, and the envelope is structurally valid. tab2api assigns a fresh `toolu_` id and returns the block to the client; it never runs the tool. Claude Code retains its normal permissions and executes or denies the call, then sends a `tool_result` in the next request. Malformed, duplicated, unsafe, or unknown-tool envelopes become inert assistant text rather than executable tool calls.
 
@@ -59,7 +65,7 @@ This is protocol compatibility, not a Claude model: Anthropic does not support r
 
 ### `POST /v1/messages/count_tokens`
 
-Accepts the same `model`, `system`, `messages`, and `tools` inputs without requiring `max_tokens`. Returns `{ "input_tokens": number }` with `X-Tab2api-Token-Count-Mode: estimated`. The value is the serialized UTF-8 byte length divided by four, rounded up; it is useful for client context heuristics but not billing. No browser tab or generation is used.
+Accepts the same `model`, `system`, `messages`, and `tools` inputs without requiring `max_tokens`. Returns `{ "input_tokens": number }` with `X-Tab2api-Token-Count-Mode: estimated`. The serialized request is counted with the real `o200k_base` tokenizer used by current ChatGPT web models; it is useful for client context heuristics but not billing, because the UI still exposes no authoritative usage. No browser tab or generation is used.
 
 ### Projects
 
@@ -77,7 +83,7 @@ These routes drive the same public web UI as everything else: they click the con
 
 ### `POST /v1/images/generations`
 
-JSON body: `prompt` is required; `model` is metadata; `n` must be `1`, `size` and `quality` must be `auto`, and `response_format` must be `b64_json`. Optional `reference_images` is an array of one to four PNG/JPEG/WebP data URLs, uploaded through the composer as visual references before the prompt is sent; remote URLs are rejected to prevent SSRF, and the combined size is capped by `TAB2API_MEDIA_LIMIT_BYTES`. A request that carries references matches the answer with assistant-scoped selectors only, so an uploaded reference is never captured in place of the generated image. The adapter requests one image through the public UI, waits for the generated image element, hides every other node so nothing else can share the frame, renders that already-loaded element at its intrinsic pixel dimensions, and clips the capture to exactly its box as lossless PNG. The captured frame is rejected unless its dimensions match the element's natural size. The response contains `created` and one `data[].b64_json`; `X-Tab2api-Image-Mode: ui-intrinsic-render` discloses the extraction method. This preserves the pixels exposed by the UI (rather than its smaller chat preview), but it is not the original asset byte-for-byte and may omit source metadata.
+JSON body: `prompt` is required; `model` is metadata; `n` must be `1`, `size` and `quality` must be `auto`, and `response_format` must be `b64_json`. Optional `temporary: true` runs the generation in a Temporary Chat under the same rules as the text routes. Optional `reference_images` is an array of one to four PNG/JPEG/WebP data URLs, uploaded through the composer as visual references before the prompt is sent; remote URLs are rejected to prevent SSRF, and the combined size is capped by `TAB2API_MEDIA_LIMIT_BYTES`. A request that carries references matches the answer with assistant-scoped selectors only, so an uploaded reference is never captured in place of the generated image. The adapter requests one image through the public UI, waits for the generated image element, hides every other node so nothing else can share the frame, renders that already-loaded element at its intrinsic pixel dimensions, and clips the capture to exactly its box as lossless PNG. The captured frame is rejected unless its dimensions match the element's natural size. The response contains `created` and one `data[].b64_json`; `X-Tab2api-Image-Mode: ui-intrinsic-render` discloses the extraction method. This preserves the pixels exposed by the UI (rather than its smaller chat preview), but it is not the original asset byte-for-byte and may omit source metadata.
 
 ### `POST /v1/audio/speech`
 
@@ -103,9 +109,16 @@ curl.exe http://127.0.0.1:3210/v1/audio/transcriptions `
   -F "file=@speech.wav;type=audio/wav"
 ```
 
-### `POST /admin/session/reset`
+### Drain and session lifecycle
 
-Requires the administrator bearer token. Closes the current browser context. The next operation relaunches it. Dedicated profile/login data is deliberately preserved. This endpoint does not delete files. Client keys receive HTTP 401.
+All three routes require the administrator bearer token; client keys receive HTTP 401.
+
+- `POST /admin/drain`: stops intake immediately. Requests already queued or in flight keep running; new work fails with `draining` (503). Returns `{ draining: true, pending, active }`.
+- `GET /admin/drain`: reports the same `{ draining, pending, active }` counters so an operator can poll until both reach zero.
+- `POST /admin/resume`: reopens intake after a manual drain and returns the same counters.
+- `POST /admin/session/reset`: drains the queue first, waits until no turn is queued or in flight (bounded by `TAB2API_REQUEST_TIMEOUT_MS`), then closes the current browser context. The next operation relaunches it. Dedicated profile/login data is deliberately preserved, and the endpoint does not delete files. A drain that outlasts the timeout reopens intake and reports `timeout` instead of wedging the service.
+
+`draining` differs from `queue_full`: intake was closed deliberately for a lifecycle step, so a supervisor can wait for the counters to reach zero before restarting instead of cutting a submitted turn off mid-generation.
 
 ### API-key administration
 
@@ -126,7 +139,7 @@ combined identity probe plus administration request times out after ten seconds.
 - `GET /admin/usage`: per-key and per-endpoint request/success/failure, latency, byte totals, and `estimatedInputTokens`/`estimatedOutputTokens`.
 - `DELETE /admin/usage`: reset counters.
 
-`tokenCounts` is always `"estimated"`. The UI provides no real tokenizer/account usage, so these byte-based estimates are unsuitable for billing or quota claims. No prompt or response text is persisted.
+`tokenCounts` is always `"estimated"`. Counts use the `o200k_base` tokenizer plus measured per-turn reserves (a fixed platform reserve and a per-image reserve), because the UI provides no authoritative usage; they remain unsuitable for billing or quota claims. No prompt or response text is persisted.
 The bounded snapshot retains at most 101 key records; after long-running client-key rotation, adding
 a new key's first request removes the least-recently-used non-admin usage record. Reset or export
 the content-free counters before that point if historical per-device totals matter.
@@ -147,10 +160,10 @@ OpenAI-shaped routes use consistent OpenAI-like envelopes:
 }
 ```
 
-Codes: `authentication_error` (401), `invalid_request` (400), `cancelled` (499), `queue_full`/`rate_limited` (429), `login_required`/`security_challenge`/`ui_changed`/`browser_disconnected`/`audio_unavailable`/`storage_unavailable` (503), and `timeout` (504). `storage_unavailable` means a private key/usage mutation was not durably committed; retry only after fixing the dedicated data directory.
+Codes: `authentication_error` (401), `invalid_request` (400), `cancelled` (499), `queue_full`/`rate_limited` (429), `login_required`/`security_challenge`/`ui_changed`/`browser_disconnected`/`audio_unavailable`/`storage_unavailable`/`draining` (503), and `timeout` (504). `draining` means the queue was deliberately closed for a lifecycle operation; retry after `GET /admin/drain` reports `draining: false` or `POST /admin/resume`. `storage_unavailable` means a private key/usage mutation was not durably committed; retry only after fixing the dedicated data directory.
 
 Anthropic routes instead return `{ "type":"error", "error": { "type", "message", "tab2api_code", "remediation"? } }`. Their public `error.type` is `authentication_error`, `invalid_request_error`, `rate_limit_error`, or `api_error`; `tab2api_code` preserves the typed code above. Once a stream has opened, the same envelope is sent in an SSE `error` event because its HTTP status is already 200.
 
 ## Request IDs and limits
 
-Each request receives an internal UUID request ID used only in structured logs. Text bodies default to 256 KiB; media is capped by `TAB2API_MEDIA_LIMIT_BYTES` (10 MiB, including at most four images or one audio file). Queue capacity defaults to 16, concurrency to one (configurable from 1–4), text/audio timeout to 120 seconds, and image timeout to 300 seconds. Configuration keys are documented in `.env.example`.
+Each request receives an internal UUID request ID used only in structured logs. Text bodies default to 256 KiB; media is capped by `TAB2API_MEDIA_LIMIT_BYTES` (10 MiB, including at most four images or one audio file). Queue capacity defaults to 16, concurrency to one (configurable from 1–4), text/audio timeout to 120 seconds, and image timeout to 300 seconds. A serialized generation prompt is preflight-checked against `TAB2API_MAX_PROMPT_TOKENS` (default 104,000 estimated `o200k` tokens, the largest measured single-message bound) and rejected as `invalid_request` before a tab opens when it cannot fit any measured browser route; the ceiling is a ceiling, not a guarantee that a given account accepts that size. `TAB2API_TEMPORARY_CHAT` makes Temporary Chat the default turn mode. Configuration keys are documented in `.env.example`.

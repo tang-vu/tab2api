@@ -12,6 +12,7 @@ export class FifoQueue {
   private readonly pending: Pending<unknown>[] = [];
   private active = 0;
   private closed = false;
+  private draining = false;
 
   constructor(
     readonly concurrency = 1,
@@ -30,8 +31,51 @@ export class FifoQueue {
     return this.active;
   }
 
+  get isDraining(): boolean {
+    return this.draining;
+  }
+
+  /**
+   * Stops accepting new work while letting queued and active items finish. Callers poll the
+   * counters until both reach zero before a lifecycle step such as a browser reset or a
+   * supervised restart, instead of cutting a request off mid-turn.
+   */
+  beginDrain(): void {
+    this.draining = true;
+  }
+
+  endDrain(): void {
+    this.draining = false;
+  }
+
+  /**
+   * Resolves once nothing is queued or running — the point where a browser reset or restart
+   * is safe. A lifecycle caller bounds the wait with `timeoutMs`; on expiry the error is a
+   * typed `timeout`, and the caller decides whether to keep the drain open or resume intake.
+   */
+  async waitForIdle(timeoutMs: number, signal?: AbortSignal): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.pending.length > 0 || this.active > 0) {
+      if (signal?.aborted) throw abortError(signal);
+      if (Date.now() >= deadline) {
+        throw new AppError(
+          'timeout',
+          'Draining the queue did not finish before the timeout; the service resumed intake.',
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
   enqueue<T>(run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     if (this.closed) return Promise.reject(new AppError('cancelled', 'Queue is shutting down.'));
+    if (this.draining)
+      return Promise.reject(
+        new AppError(
+          'draining',
+          'The service is draining for a lifecycle operation and is not accepting work.',
+        ),
+      );
     if (signal?.aborted) return Promise.reject(abortError(signal));
     if (this.pending.length + this.active >= this.capacity) {
       return Promise.reject(new AppError('queue_full', 'The local request queue is full.'));

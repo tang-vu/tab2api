@@ -6,12 +6,14 @@ import {
   apiKeyListResponseSchema,
   apiKeyRevokeResponseSchema,
   createdApiKeyResponseSchema,
+  drainStatusResponseSchema,
   healthResponseSchema,
   sessionResetResponseSchema,
   usageResetResponseSchema,
   usageResponseSchema,
   type ApiKeyListResponse,
   type CreatedApiKeyResponse,
+  type DrainStatusResponse,
   type UsageResponse,
 } from './admin-contract.js';
 import { apiKeyIdSchema } from '../security/api-keys.js';
@@ -215,6 +217,19 @@ export class LocalAdminClient {
       { method: 'POST' },
       signal,
     );
+  }
+
+  async drainStatus(signal?: AbortSignal): Promise<DrainStatusResponse> {
+    return this.request('/admin/drain', drainStatusResponseSchema, { method: 'GET' }, signal);
+  }
+
+  /** Stop intake so queued/active turns finish; pair with `resume` when done. */
+  async drain(signal?: AbortSignal): Promise<DrainStatusResponse> {
+    return this.request('/admin/drain', drainStatusResponseSchema, { method: 'POST' }, signal);
+  }
+
+  async resume(signal?: AbortSignal): Promise<DrainStatusResponse> {
+    return this.request('/admin/resume', drainStatusResponseSchema, { method: 'POST' }, signal);
   }
 
   private async request<T>(

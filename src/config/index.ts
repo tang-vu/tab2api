@@ -37,6 +37,17 @@ const environmentSchema = z.object({
   TAB2API_IMAGE_TIMEOUT_MS: integer(30_000, 900_000).default(300_000),
   TAB2API_BODY_LIMIT_BYTES: integer(1_024, 1_048_576).default(262_144),
   TAB2API_MEDIA_LIMIT_BYTES: integer(1_048_576, 26_214_400).default(10_485_760),
+  /**
+   * Default for every generation request that does not pass `temporary` itself: run the
+   * browser turn in a ChatGPT Temporary Chat so nothing is kept in account history.
+   */
+  TAB2API_TEMPORARY_CHAT: booleanValue,
+  /**
+   * Preflight ceiling for one serialized browser message, in o200k tokens. The default is
+   * the largest measured single-message bound; a smaller account window still fails inside
+   * the UI, this only prevents guaranteed-oversized turns from opening a tab at all.
+   */
+  TAB2API_MAX_PROMPT_TOKENS: integer(1_024, 1_000_000).default(104_000),
   TAB2API_DEBUG: booleanValue,
   TAB2API_LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
@@ -58,6 +69,8 @@ export interface AppConfig {
   imageTimeoutMs: number;
   bodyLimitBytes: number;
   mediaLimitBytes: number;
+  temporaryChat: boolean;
+  maxPromptTokens: number;
   debug: boolean;
   logLevel: string;
 }
@@ -95,6 +108,8 @@ export async function loadConfig(
     imageTimeoutMs: parsed.TAB2API_IMAGE_TIMEOUT_MS,
     bodyLimitBytes: parsed.TAB2API_BODY_LIMIT_BYTES,
     mediaLimitBytes: parsed.TAB2API_MEDIA_LIMIT_BYTES,
+    temporaryChat: parsed.TAB2API_TEMPORARY_CHAT,
+    maxPromptTokens: parsed.TAB2API_MAX_PROMPT_TOKENS,
     debug: parsed.TAB2API_DEBUG,
     logLevel: parsed.TAB2API_LOG_LEVEL,
   };

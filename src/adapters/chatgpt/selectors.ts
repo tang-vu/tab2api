@@ -73,6 +73,36 @@ export const UI_SELECTORS = {
     '[class*="aria-busy"]',
     '[aria-busy="true"]',
   ],
+  /**
+   * ChatGPT's logical turn identity. Unlike the `conversation-turn-N` display index, which
+   * can shift while virtualized history remounts, this attribute survives re-rendering, so
+   * submission and completion are bound to it rather than to a message count.
+   */
+  turnId: ['[data-turn-id]'],
+  /**
+   * Evidence that a Temporary Chat is active. The URL query alone is not relied on because
+   * the SPA can drop it after the first render; at least one visible marker must also exist.
+   */
+  temporaryChat: [
+    '[data-testid*="temporary" i]',
+    '[aria-label*="emporary" i]',
+    'main :text-matches("temporary chat", "i")',
+    'main :text-matches("trò chuyện tạm", "i")',
+  ],
+  /**
+   * The composer's effort/reasoning control. The exact control varies by plan tier and UI
+   * revision; absent controls fail explicitly rather than silently keeping the default.
+   */
+  effortButton: [
+    'button[data-testid*="effort" i]',
+    'button[aria-label*="effort" i]',
+    'button[aria-label*="reasoning" i]',
+    'button[data-testid*="reasoning" i]',
+    'button[data-testid="model-switcher-dropdown-button"]',
+    'button[id*="composer"][aria-haspopup="menu"]',
+  ],
+  /** Menu surfaces the effort control opens. Options are matched by their visible label. */
+  effortOption: ['[role="menuitemradio"]', '[role="option"]', '[role="menuitem"]'],
   // The projects surface renders a grid, not links: no element carries the `g-p-` id, so a
   // row's identity is only observable by opening it. These selectors are taken from the
   // live UI rather than guessed.
@@ -118,6 +148,19 @@ export const UI_SELECTORS = {
   projectFileInput: ['input[type="file"][multiple]:not([accept])', 'input[type="file"][multiple]'],
   composerWrapper: '[class*="group/composer"]',
   projectSourceEntry: ['[data-testid*="source"]', 'main'],
+} as const;
+
+/**
+ * Visible labels a requested effort is matched against, most specific first. Labels are
+ * English and Vietnamese candidates because ChatGPT localizes the composer; a request that
+ * matches nothing fails `ui_changed` instead of guessing at a neighbouring effort.
+ */
+export const EFFORT_LABELS = {
+  minimal: [/^instant$/i, /^light$/i, /^nhanh$/i, /instant/i, /light/i],
+  low: [/^instant$/i, /^light$/i, /^standard$/i, /instant/i, /light/i, /standard/i],
+  medium: [/^standard$/i, /^thinking$/i, /standard/i, /thinking/i, /suy nghĩ/i],
+  high: [/^extended$/i, /^high$/i, /extended/i, /thinking harder/i, /high/i],
+  xhigh: [/^pro$/i, /^max$/i, /extra high/i, /^pro\b/i, /max/i],
 } as const;
 
 export const DOM_MARKERS = {
