@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { AppError } from '../errors.js';
+import { estimateTokens } from '../observability/tokens.js';
 import type { ApiPrincipal } from '../security/api-keys.js';
 import { assertSafePrivateFile } from '../security/paths.js';
 import {
@@ -111,6 +112,8 @@ export interface UsageDelta {
   outputText?: string;
   inputBytes?: number;
   outputBytes?: number;
+  /** Extra tokens a browser turn spends beyond the visible text: image and platform reserves. */
+  inputReserves?: number;
 }
 
 function emptyUsage(): EndpointUsage {
@@ -126,17 +129,15 @@ function emptyUsage(): EndpointUsage {
   };
 }
 
-// ChatGPT Web exposes no authoritative usage. This is deliberately labelled an estimate.
-export function estimateTokens(text: string | undefined): number {
-  if (text === undefined || text.length === 0) return 0;
-  return Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
-}
+// ChatGPT Web exposes no authoritative usage. Counts use the o200k tokenizer plus measured
+// reserves and are deliberately labelled as estimates.
+export { estimateTokens } from '../observability/tokens.js';
 
 function add(target: EndpointUsage, delta: UsageDelta): void {
   target.requests += 1;
   target.successful += delta.successful ? 1 : 0;
   target.failed += delta.successful ? 0 : 1;
-  target.estimatedInputTokens += estimateTokens(delta.inputText);
+  target.estimatedInputTokens += estimateTokens(delta.inputText) + (delta.inputReserves ?? 0);
   target.estimatedOutputTokens += estimateTokens(delta.outputText);
   target.inputBytes += delta.inputBytes ?? 0;
   target.outputBytes += delta.outputBytes ?? 0;

@@ -77,6 +77,15 @@ export const sessionResetResponseSchema = z
   })
   .strict();
 
+export const drainStatusResponseSchema = z
+  .object({
+    draining: z.boolean(),
+    pending: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    active: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict();
+
 export type ApiKeyListResponse = z.infer<typeof apiKeyListResponseSchema>;
 export type CreatedApiKeyResponse = z.infer<typeof createdApiKeyResponseSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
+export type DrainStatusResponse = z.infer<typeof drainStatusResponseSchema>;

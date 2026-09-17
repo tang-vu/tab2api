@@ -236,5 +236,7 @@ describe('desktop sidecar lifecycle', () => {
       if (!child.killed) child.kill();
       await rm(dataDirectory, { recursive: true, force: true });
     }
-  }, 20_000);
+    // A fresh sidecar process pays the full module/Fastify cold start, which exceeds a
+    // twenty-second budget on AV-scanned disks; the bound still catches a real hang.
+  }, 60_000);
 });

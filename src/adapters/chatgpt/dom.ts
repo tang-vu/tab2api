@@ -37,3 +37,40 @@ export function extractLatestAssistant(document: Document): string | undefined {
 export function hasGeneratedImage(document: Document): boolean {
   return matchesAny(document, DOM_MARKERS.generatedImage);
 }
+
+/**
+ * ChatGPT's logical turn ids in DOM order. `data-turn-id` survives virtualized-history
+ * remounts, so a turn is identified by an id the baseline never saw rather than by a count
+ * of rendered messages.
+ */
+export function collectTurnIds(document: Document): string[] {
+  return [...document.querySelectorAll('[data-turn-id]')]
+    .map((element) => element.getAttribute('data-turn-id') ?? '')
+    .filter((id) => id.length > 0);
+}
+
+export type TurnBinding =
+  { kind: 'none' } | { kind: 'bound'; id: string } | { kind: 'ambiguous'; id: string };
+
+/**
+ * The turn this submission created is the newest logical id absent from the baseline. When
+ * that id renders on more than one element the DOM is ambiguous and the turn stays unbound
+ * rather than answering from a guessed element.
+ */
+export function selectNewTurnId(
+  baseline: ReadonlySet<string>,
+  current: readonly string[],
+): TurnBinding {
+  const fresh = current.filter((id) => !baseline.has(id));
+  const candidate = fresh.at(-1);
+  if (candidate === undefined) return { kind: 'none' };
+  if (current.filter((id) => id === candidate).length !== 1) {
+    return { kind: 'ambiguous', id: candidate };
+  }
+  return { kind: 'bound', id: candidate };
+}
+
+/** Turn ids are interpolated into a CSS attribute selector, so unexpected characters opt out. */
+export function isTurnIdSafe(id: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(id);
+}

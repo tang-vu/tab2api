@@ -16,6 +16,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     imageTimeoutMs: 5_000,
     bodyLimitBytes: 262_144,
     mediaLimitBytes: 10_485_760,
+    temporaryChat: false,
+    maxPromptTokens: 104_000,
     debug: false,
     logLevel: 'silent',
     ...overrides,

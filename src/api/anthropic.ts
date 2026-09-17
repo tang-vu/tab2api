@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, type ErrorCode } from '../errors.js';
+import { estimateTokens } from '../observability/tokens.js';
 import type { MediaAttachment } from '../provider.js';
 
 export const ANTHROPIC_API_MODEL = 'claude-tab2api-chatgpt-web' as const;
@@ -89,6 +90,8 @@ const anthropicRequestShape = {
   messages: z.array(anthropicMessageSchema).min(1).max(MAX_MESSAGES),
   system: anthropicSystemSchema.optional(),
   tools: z.array(anthropicToolSchema).max(MAX_TOOLS).default([]),
+  /** Run this turn in a Temporary Chat that is not kept in account history. */
+  temporary: z.boolean().optional(),
 };
 
 /**
@@ -449,5 +452,5 @@ export function anthropicErrorSse(error: AppError): string {
 }
 
 export function estimateAnthropicInputTokens(request: AnthropicTokenCountRequest): number {
-  return Math.max(1, Math.ceil(Buffer.byteLength(serializeAnthropicRequest(request)) / 4));
+  return Math.max(1, estimateTokens(serializeAnthropicRequest(request)));
 }

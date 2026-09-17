@@ -3,6 +3,7 @@ export type ErrorCode =
   | 'audio_unavailable'
   | 'browser_disconnected'
   | 'cancelled'
+  | 'draining'
   | 'invalid_request'
   | 'login_required'
   | 'queue_full'
@@ -17,6 +18,7 @@ const statusByCode: Record<ErrorCode, number> = {
   audio_unavailable: 503,
   browser_disconnected: 503,
   cancelled: 499,
+  draining: 503,
   invalid_request: 400,
   login_required: 503,
   queue_full: 429,

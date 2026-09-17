@@ -6,6 +6,21 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Added
 
+- Optional `temporary` field on the generation routes (and `TAB2API_TEMPORARY_CHAT` as the
+  service-wide default) runs turns in a ChatGPT Temporary Chat that is not kept in account
+  history. It is rejected explicitly when combined with `conversation_id` or a project route,
+  and the adapter verifies the Temporary Chat indicator instead of assuming it.
+- Optional `reasoning_effort` (`minimal`–`xhigh`, with an Anthropic-style `reasoning.effort`
+  alias on `/v1/responses`) drives the composer's effort control before a prompt is sent. It
+  never changes the model and fails `ui_changed` when the account's picker lacks a match.
+- Drain-first lifecycle: `POST /admin/drain` and `POST /admin/resume` control intake while
+  queued and in-flight turns finish, `GET /admin/drain` reports the counters, and
+  `POST /admin/session/reset` now waits for an idle queue instead of cutting a submitted
+  turn off mid-generation. New work during a drain fails with a typed `draining` (503).
+- Preflight prompt budgeting: a serialized request is counted with the real `o200k_base`
+  tokenizer and rejected as `invalid_request` above `TAB2API_MAX_PROMPT_TOKENS` (default
+  104,000) before a browser tab opens, with measured platform and per-image reserves tracked
+  in the usage snapshot. `/v1/messages/count_tokens` uses the same tokenizer.
 - Optional `reference_images` on `POST /v1/images/generations`: one to four bounded PNG/JPEG/WebP
   data URLs are uploaded through the composer as visual references before the prompt is sent, so a
   generated image can follow images the caller already has. Remote URLs stay rejected, and the
@@ -13,6 +28,10 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Fixed
 
+- Answer completion is bound to ChatGPT's logical `data-turn-id` rather than a rendered
+  message count, so virtualized-history remounts and continued conversations cannot confuse
+  an earlier answer with the current turn. When the attribute is absent the older
+  count-based observation still applies.
 - Generated-image detection no longer relies on an author-agnostic selector when a request uploads
   its own images, so a reference can never be captured in place of the generated image.
 

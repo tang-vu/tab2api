@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { buildServer } from '../src/api/server.js';
 import { AppError } from '../src/errors.js';
@@ -59,6 +59,12 @@ function server(provider: WebChatProvider, timeoutMs = 2_000, speech?: SpeechSyn
 }
 
 describe('Fastify API contract', () => {
+  // The first Fastify instantiation compiles its schema machinery and costs seconds on a
+  // slow filesystem; warming it once keeps the 5000 ms test budget honest for real work.
+  beforeAll(async () => {
+    await server(new FakeProvider()).close();
+  }, 60_000);
+
   it('flushes both private stores even when browser shutdown fails', async () => {
     const provider = new FakeProvider();
     vi.spyOn(provider, 'close').mockRejectedValue(
@@ -443,6 +449,149 @@ describe('Fastify API contract', () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe('invalid_request');
+    await app.close();
+  });
+
+  it('propagates temporary and reasoning_effort to the provider request', async () => {
+    const provider = new FakeProvider('ok');
+    const app = server(provider);
+    const chat = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: auth,
+      payload: {
+        model: 'x',
+        messages: [{ role: 'user', content: 'hi' }],
+        temporary: true,
+        reasoning_effort: 'high',
+      },
+    });
+    expect(chat.statusCode).toBe(200);
+    expect(provider.temporaryFlags).toEqual([true]);
+    expect(provider.efforts).toEqual(['high']);
+    const responses = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      headers: auth,
+      payload: { model: 'x', input: 'hi', reasoning: { effort: 'low' } },
+    });
+    expect(responses.statusCode).toBe(200);
+    expect(provider.efforts).toEqual(['high', 'low']);
+    await app.close();
+  });
+
+  it('defaults temporary mode from configuration and rejects incompatible combinations', async () => {
+    const provider = new FakeProvider('ok');
+    const app = buildServer({
+      config: testConfig({ temporaryChat: true }),
+      provider,
+      logger: createLogger('silent'),
+    });
+    const implicit = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      headers: auth,
+      payload: { model: 'x', input: 'hi' },
+    });
+    expect(implicit.statusCode).toBe(200);
+    expect(provider.temporaryFlags).toEqual([true]);
+    const conflicting = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      headers: auth,
+      payload: {
+        model: 'x',
+        input: 'hi',
+        conversation_id: '00000000-0000-4000-8000-0000000000ab',
+      },
+    });
+    expect(conflicting.statusCode).toBe(400);
+    expect(conflicting.json().error.code).toBe('invalid_request');
+    expect(conflicting.json().error.message).toMatch(/temporary/i);
+    const projectScoped = await app.inject({
+      method: 'POST',
+      url: '/v1/projects/g-p-00000000000000000000000000000001/chat/completions',
+      headers: auth,
+      payload: { model: 'x', messages: [{ role: 'user', content: 'hi' }], temporary: true },
+    });
+    expect(projectScoped.statusCode).toBe(400);
+    expect(projectScoped.json().error.code).toBe('invalid_request');
+    expect(provider.prompts).toHaveLength(1);
+    await app.close();
+  });
+
+  it('rejects a serialized prompt above the measured ceiling without opening a turn', async () => {
+    const provider = new FakeProvider();
+    const app = server(provider);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: auth,
+      payload: {
+        model: 'x',
+        messages: [{ role: 'user', content: 'x'.repeat(2_000_000) }],
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('invalid_request');
+    expect(response.json().error.message).toMatch(/token/);
+    expect(provider.prompts).toHaveLength(0);
+    await app.close();
+  });
+
+  it('drains intake, lets queued work finish, and resumes on request', async () => {
+    const provider = new FakeProvider('ok', 30);
+    const app = server(provider);
+    const drained = await app.inject({ method: 'POST', url: '/admin/drain', headers: auth });
+    expect(drained.statusCode).toBe(200);
+    expect(drained.json().draining).toBe(true);
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      headers: auth,
+      payload: { model: 'x', input: 'hi' },
+    });
+    expect(rejected.statusCode).toBe(503);
+    expect(rejected.json().error.code).toBe('draining');
+    const status = await app.inject({ method: 'GET', url: '/admin/drain', headers: auth });
+    expect(status.json()).toEqual({ draining: true, pending: 0, active: 0 });
+    const resumed = await app.inject({ method: 'POST', url: '/admin/resume', headers: auth });
+    expect(resumed.json().draining).toBe(false);
+    const accepted = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      headers: auth,
+      payload: { model: 'x', input: 'hi' },
+    });
+    expect(accepted.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('waits for an in-flight turn before resetting the browser session', async () => {
+    const provider = new FakeProvider('slow', 80);
+    const app = server(provider);
+    const inFlight = app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      headers: auth,
+      payload: { model: 'x', input: 'hi' },
+    });
+    // Wait until the turn is genuinely active, then an awaited drain makes the intake
+    // rejection deterministic before the reset is issued.
+    await vi.waitFor(() => expect(provider.active).toBe(1));
+    const drain = await app.inject({ method: 'POST', url: '/admin/drain', headers: auth });
+    expect(drain.json()).toMatchObject({ draining: true, active: 1 });
+    const duringDrain = await app.inject({
+      method: 'POST',
+      url: '/v1/responses',
+      headers: auth,
+      payload: { model: 'x', input: 'blocked' },
+    });
+    expect(duringDrain.json().error.code).toBe('draining');
+    const reset = app.inject({ method: 'POST', url: '/admin/session/reset', headers: auth });
+    expect((await inFlight).statusCode).toBe(200);
+    expect((await reset).statusCode).toBe(200);
+    expect(provider.state).toBe('browser_disconnected');
     await app.close();
   });
 });

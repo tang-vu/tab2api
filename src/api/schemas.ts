@@ -42,6 +42,12 @@ export const conversationIdSchema = z
   .string()
   .regex(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/);
 
+/**
+ * Client-facing effort names mirror the OpenAI reasoning_effort values. The adapter maps
+ * them onto the composer's effort control; it never changes the selected model.
+ */
+export const reasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
+
 export const chatCompletionRequestSchema = z
   .object({
     model: z.string().min(1),
@@ -49,6 +55,9 @@ export const chatCompletionRequestSchema = z
     stream: z.boolean().default(false),
     user: z.string().optional(),
     conversation_id: conversationIdSchema.optional(),
+    /** Run this turn in a Temporary Chat that is not kept in account history. */
+    temporary: z.boolean().optional(),
+    reasoning_effort: reasoningEffortSchema.optional(),
   })
   .strict();
 
@@ -67,6 +76,11 @@ export const responsesRequestSchema = z
     stream: z.boolean().default(false),
     user: z.string().optional(),
     conversation_id: conversationIdSchema.optional(),
+    /** Run this turn in a Temporary Chat that is not kept in account history. */
+    temporary: z.boolean().optional(),
+    reasoning_effort: reasoningEffortSchema.optional(),
+    /** Anthropic-style alias accepted for parity with /v1/messages; same effect. */
+    reasoning: z.object({ effort: reasoningEffortSchema }).strict().optional(),
   })
   .strict();
 
@@ -87,6 +101,8 @@ export const imageGenerationRequestSchema = z
      * routes so one code path governs how many images a single turn may carry.
      */
     reference_images: z.array(dataImageUrl).min(1).max(MAX_IMAGE_ATTACHMENTS).optional(),
+    /** Run this turn in a Temporary Chat that is not kept in account history. */
+    temporary: z.boolean().optional(),
     user: z.string().optional(),
   })
   .strict();

@@ -23,9 +23,11 @@ import type { BrowserController } from '../../browser/controller.js';
 import { assertSafeDataChildDirectory } from '../../security/paths.js';
 import { hardenPrivateDirectoryPermissions } from '../../security/private-files.js';
 import { CompletionStateMachine } from './completion-state.js';
+import { isTurnIdSafe, selectNewTurnId } from './dom.js';
 import {
   CHATGPT_URL,
   PROJECTS_URL,
+  TEMPORARY_CHAT_URL,
   conversationIdFromUrl,
   conversationUrl,
   projectConversationUrl,
@@ -33,7 +35,7 @@ import {
   projectSourcesUrl,
   projectUrl,
 } from './identifiers.js';
-import { UI_SELECTORS } from './selectors.js';
+import { EFFORT_LABELS, UI_SELECTORS } from './selectors.js';
 
 const POLL_MS = 300;
 // Opening an existing conversation can involve a redirect plus an SPA render, so readiness
@@ -59,13 +61,20 @@ const MAX_LISTED_PROJECTS = 25;
  * form only redirects there and the redirect can outlast the initial readiness wait.
  */
 function navigationTarget(request: GenerateRequest): string {
-  if (request.conversationId !== undefined) {
-    return request.projectId === undefined
-      ? conversationUrl(request.conversationId)
-      : projectConversationUrl(request.projectId, request.conversationId);
+  const { conversationId, projectId, temporary } = request;
+  if ((conversationId !== undefined || projectId !== undefined) && temporary === true) {
+    throw new AppError(
+      'invalid_request',
+      'Temporary Chat cannot continue a saved conversation or run inside a project.',
+    );
   }
-  if (request.projectId !== undefined) return projectUrl(request.projectId);
-  return CHATGPT_URL;
+  if (conversationId !== undefined) {
+    return projectId === undefined
+      ? conversationUrl(conversationId)
+      : projectConversationUrl(projectId, conversationId);
+  }
+  if (projectId !== undefined) return projectUrl(projectId);
+  return temporary === true ? TEMPORARY_CHAT_URL : CHATGPT_URL;
 }
 
 async function firstVisible(
@@ -195,8 +204,11 @@ export class ChatGptAdapter implements WebChatProvider {
       this.assertReady(state);
       const composer = await firstVisible(page, UI_SELECTORS.composer);
       if (composer === undefined) throw this.uiChanged();
+      if (request.temporary === true) await this.assertTemporaryChat(page, request.signal);
+      if (request.effort !== undefined) await this.selectEffort(page, request.effort);
       const baseline = await countAll(page, UI_SELECTORS.assistantMessage);
       const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
+      const baselineTurnIds = new Set(await this.collectTurnIds(page));
       await this.attachFiles(page, request.attachments);
       await composer.fill(request.prompt);
       const send = await firstVisible(page, UI_SELECTORS.sendButton);
@@ -207,6 +219,7 @@ export class ChatGptAdapter implements WebChatProvider {
         page,
         baseline,
         baselineCompletionActions,
+        baselineTurnIds,
         request.signal,
       );
       // A new conversation only gets its URL once the turn is under way, so read it here.
@@ -285,10 +298,12 @@ export class ChatGptAdapter implements WebChatProvider {
       if (request.signal.aborted) throw abortError(request.signal);
       page = await this.browser.getPage();
       if (request.signal.aborted) throw abortError(request.signal);
-      await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      const target = request.temporary === true ? TEMPORARY_CHAT_URL : CHATGPT_URL;
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       this.assertReady(await this.waitForInitialState(page));
       const composer = await firstVisible(page, UI_SELECTORS.composer);
       if (composer === undefined) throw this.uiChanged();
+      if (request.temporary === true) await this.assertTemporaryChat(page, request.signal);
       const imageSelectors = generatedImageSelectors(request.attachments?.length ?? 0);
       const baselineImages = await countEach(page, imageSelectors);
       const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
@@ -713,13 +728,127 @@ export class ChatGptAdapter implements WebChatProvider {
     await this.browser.close();
   }
 
+  /**
+   * Logical `data-turn-id` values currently rendered, in DOM order. Any locator failure —
+   * including a page that predates the attribute — degrades to the count-based baseline
+   * rather than failing the turn.
+   */
+  private async collectTurnIds(page: Page): Promise<string[]> {
+    try {
+      return await page
+        .locator(UI_SELECTORS.turnId[0])
+        .evaluateAll((elements) =>
+          elements
+            .map((element) => element.getAttribute('data-turn-id') ?? '')
+            .filter((id) => id.length > 0),
+        );
+    } catch {
+      return [];
+    }
+  }
+
+  /** Assistant text inside the bound turn element only, never a neighbouring turn's. */
+  private async turnAssistantText(turn: Locator): Promise<string> {
+    const scoped = turn.locator(UI_SELECTORS.assistantMessage.join(','));
+    const count = await scoped.count();
+    if (count > 0) return (await scoped.nth(count - 1).innerText()).trim();
+    const selfMatches = await turn
+      .evaluate(
+        (element, candidates) => candidates.some((candidate) => element.matches(candidate)),
+        [...UI_SELECTORS.assistantMessage],
+      )
+      .catch(() => false);
+    return selfMatches ? (await turn.innerText()).trim() : '';
+  }
+
+  /** Working markers scoped to the bound turn so a sibling status line cannot leak in. */
+  private async turnPending(turn: Locator): Promise<boolean> {
+    for (const marker of UI_SELECTORS.pendingAnswer) {
+      if (
+        (await turn
+          .locator(marker)
+          .count()
+          .catch(() => 0)) > 0
+      )
+        return true;
+      const selfMatches = await turn
+        .evaluate((element, candidate) => element.matches(candidate), marker)
+        .catch(() => false);
+      if (selfMatches) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A request that asked for Temporary Chat must observe actual evidence: the URL query
+   * alone is weak because the SPA can drop it, and a silently persistent chat would keep
+   * history the caller asked not to keep.
+   */
+  private async assertTemporaryChat(page: Page, signal: AbortSignal): Promise<void> {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (signal.aborted) throw abortError(signal);
+      if (page.url().includes('temporary-chat')) return;
+      if ((await firstVisible(page, UI_SELECTORS.temporaryChat)) !== undefined) return;
+      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    }
+    throw new AppError(
+      'ui_changed',
+      'ChatGPT did not confirm a Temporary Chat for this turn.',
+      'Unset `temporary`/`TAB2API_TEMPORARY_CHAT` or file a selector bug.',
+    );
+  }
+
+  /**
+   * Drives the composer's effort control for an explicit `reasoning_effort`. The control
+   * and its labels vary by plan and locale; an unlisted label fails `ui_changed` rather
+   * than silently sending at whatever effort the account happened to leave selected.
+   */
+  private async selectEffort(page: Page, effort: NonNullable<GenerateRequest['effort']>) {
+    const control = await firstVisible(page, UI_SELECTORS.effortButton);
+    if (control === undefined) {
+      throw new AppError(
+        'ui_changed',
+        'The ChatGPT effort control is unavailable.',
+        'The account may not expose effort selection; remove `reasoning_effort`.',
+      );
+    }
+    await control.click();
+    const options = page.locator(UI_SELECTORS.effortOption.join(','));
+    for (const pattern of EFFORT_LABELS[effort]) {
+      const option = options.filter({ hasText: pattern }).first();
+      try {
+        await option.waitFor({ state: 'visible', timeout: 1_500 });
+        await option.click();
+        return;
+      } catch {
+        // Try the next candidate label.
+      }
+    }
+    throw new AppError(
+      'ui_changed',
+      `ChatGPT offered no effort option matching "${effort}".`,
+      'Remove `reasoning_effort` or report the offered labels in a selector bug.',
+    );
+  }
+
+  /**
+   * ChatGPT's logical `data-turn-id` survives virtualized-history remounts, so the submitted
+   * turn is bound by identity rather than by a rendered-message count. When the attribute is
+   * absent from the UI entirely the observation degrades to the older count-based baseline;
+   * when ids exist but the new turn stays unbound while the count grows, a bounded number of
+   * polls later the same legacy path takes over rather than waiting out the full timeout.
+   */
   private async waitForCompletion(
     page: Page,
     baseline: number,
     baselineCompletionActions: number,
+    baselineTurnIds: ReadonlySet<string>,
     signal: AbortSignal,
   ): Promise<string> {
     const machine = new CompletionStateMachine(baseline);
+    let boundTurnId: string | undefined;
+    let turnIdsObserved = false;
+    let unboundPolls = 0;
     while (true) {
       if (signal.aborted) throw abortError(signal);
       const state = await this.classifyPage(page, true);
@@ -730,12 +859,38 @@ export class ChatGptAdapter implements WebChatProvider {
       ) {
         this.assertReady(state);
       }
-      const assistantCount = await countAll(page, UI_SELECTORS.assistantMessage);
-      const text = await lastAssistantText(page);
-      const generating = (await firstVisible(page, UI_SELECTORS.stopButton)) !== undefined;
-      const completionActionAvailable =
+      const turnIds = await this.collectTurnIds(page);
+      if (turnIds.length > 0) turnIdsObserved = true;
+      if (turnIdsObserved && boundTurnId === undefined) {
+        const binding = selectNewTurnId(baselineTurnIds, turnIds);
+        if (binding.kind === 'bound' && isTurnIdSafe(binding.id)) boundTurnId = binding.id;
+      }
+      const legacyCount = await countAll(page, UI_SELECTORS.assistantMessage);
+      let assistantCount = legacyCount;
+      let text = await lastAssistantText(page);
+      let pending = await lastAnswerPending(page);
+      let completionActionAvailable =
         (await countAll(page, UI_SELECTORS.completionAction)) > baselineCompletionActions;
-      const pending = await lastAnswerPending(page);
+      if (turnIdsObserved) {
+        if (boundTurnId !== undefined) {
+          const turn = page.locator(`[data-turn-id="${boundTurnId}"]`);
+          const present = (await turn.count()) === 1;
+          assistantCount = baseline + (present ? 1 : 0);
+          text = present ? await this.turnAssistantText(turn) : '';
+          pending = present ? await this.turnPending(turn) : false;
+          completionActionAvailable =
+            present && (await turn.locator(UI_SELECTORS.completionAction.join(',')).count()) > 0;
+        } else {
+          unboundPolls += 1;
+          if (unboundPolls <= 40 || legacyCount <= baseline) {
+            assistantCount = baseline;
+            text = '';
+            pending = false;
+            completionActionAvailable = false;
+          }
+        }
+      }
+      const generating = (await firstVisible(page, UI_SELECTORS.stopButton)) !== undefined;
       if (
         machine.observe({
           assistantCount,
