@@ -7,6 +7,12 @@ export type SessionState =
   | 'ui_changed'
   | 'browser_disconnected';
 
+/**
+ * Reasoning depth requested for the turn. `tab2api` maps it onto the ChatGPT composer's
+ * effort control when the account exposes one; it never picks a different model.
+ */
+export type UiEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+
 export interface GenerateRequest {
   prompt: string;
   signal: AbortSignal;
@@ -16,6 +22,10 @@ export interface GenerateRequest {
   projectId?: string;
   /** Continue this existing conversation instead of starting a new one. */
   conversationId?: string;
+  /** Run the turn in a ChatGPT Temporary Chat that is not kept in account history. */
+  temporary?: boolean;
+  /** Requested composer effort; absent values leave the account default untouched. */
+  effort?: UiEffort;
 }
 
 export interface MediaAttachment {
@@ -68,6 +78,8 @@ export interface GenerateImageRequest {
   requestId: string;
   /** Visual references uploaded with the prompt so the generated image can follow them. */
   attachments?: readonly MediaAttachment[];
+  /** Run the turn in a ChatGPT Temporary Chat that is not kept in account history. */
+  temporary?: boolean;
 }
 
 export interface GenerateImageResult {

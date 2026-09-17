@@ -24,8 +24,11 @@ export class FakeProvider implements WebChatProvider {
   attachmentCounts: number[] = [];
   imagePrompts: string[] = [];
   imageAttachmentCounts: number[] = [];
+  imageTemporaryFlags: (boolean | undefined)[] = [];
   projectIds: (string | undefined)[] = [];
   conversationIds: (string | undefined)[] = [];
+  temporaryFlags: (boolean | undefined)[] = [];
+  efforts: (GenerateRequest['effort'] | undefined)[] = [];
   createdProjectNames: string[] = [];
   deletedProjectIds: string[] = [];
   uploads: { projectId: string; count: number }[] = [];
@@ -43,6 +46,8 @@ export class FakeProvider implements WebChatProvider {
     this.attachmentCounts.push(request.attachments?.length ?? 0);
     this.projectIds.push(request.projectId);
     this.conversationIds.push(request.conversationId);
+    this.temporaryFlags.push(request.temporary);
+    this.efforts.push(request.effort);
     this.active += 1;
     this.maxActive = Math.max(this.maxActive, this.active);
     try {
@@ -73,6 +78,7 @@ export class FakeProvider implements WebChatProvider {
   async generateImage(request: GenerateImageRequest): Promise<GenerateImageResult> {
     this.imagePrompts.push(request.prompt);
     this.imageAttachmentCounts.push(request.attachments?.length ?? 0);
+    this.imageTemporaryFlags.push(request.temporary);
     return { data: Buffer.from('fake-png'), mimeType: 'image/png' };
   }
 

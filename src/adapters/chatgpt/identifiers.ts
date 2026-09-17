@@ -2,6 +2,11 @@ import { AppError } from '../../errors.js';
 
 export const CHATGPT_URL = 'https://chatgpt.com/';
 export const PROJECTS_URL = 'https://chatgpt.com/projects';
+/**
+ * ChatGPT's public Temporary Chat route. Conversations started here are not written into
+ * the account's chat history. Projects and saved conversations are excluded by contract.
+ */
+export const TEMPORARY_CHAT_URL = 'https://chatgpt.com/?temporary-chat=true';
 
 /**
  * Both identifiers are interpolated into a chatgpt.com URL. The patterns are anchored and

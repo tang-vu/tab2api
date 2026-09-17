@@ -6,8 +6,13 @@ import type { Logger } from 'pino';
 import { ZodError } from 'zod';
 import type { AppConfig } from '../config/index.js';
 import { AppError, asSafeAppError } from '../errors.js';
-import type { WebChatProvider } from '../provider.js';
+import type { UiEffort, WebChatProvider } from '../provider.js';
 import type { AudioMimeType, DocumentMimeType, MediaAttachment } from '../provider.js';
+import {
+  CHATGPT_IMAGE_RESERVE_TOKENS,
+  CHATGPT_PLATFORM_RESERVE_TOKENS,
+  assertPromptWithinLimit,
+} from '../observability/tokens.js';
 import { FifoQueue } from '../queue/fifo.js';
 import { SystemSpeechSynthesizer, type SpeechSynthesizer } from '../audio/system-speech.js';
 import { ApiKeyStore, type ApiPrincipal } from '../security/api-keys.js';
@@ -130,9 +135,36 @@ interface UsageDraft {
   startedAt: number;
   inputText?: string;
   outputText?: string;
+  inputReserves?: number;
   inputBytes: number;
   outputBytes: number;
   successful?: boolean;
+}
+
+/**
+ * Reserves a browser turn spends beyond the visible prompt text, so usage snapshots stay
+ * comparable to the measured composer budget instead of counting only literal characters.
+ */
+function inputReserves(imageCount: number): number {
+  return CHATGPT_PLATFORM_RESERVE_TOKENS + imageCount * CHATGPT_IMAGE_RESERVE_TOKENS;
+}
+
+/**
+ * Temporary Chats cannot carry a saved-conversation or project identity, so the API layer
+ * rejects the combination before the adapter is asked to choose between them silently.
+ */
+function assertTemporaryCompatible(
+  temporary: boolean,
+  conversationId: string | undefined,
+  projectId: string | undefined,
+): void {
+  if (!temporary) return;
+  if (conversationId !== undefined || projectId !== undefined) {
+    throw new AppError(
+      'invalid_request',
+      '`temporary` cannot be combined with `conversation_id` or a project-scoped route.',
+    );
+  }
 }
 
 const AUDIO_MIME_TYPES = new Set<AudioMimeType>([
@@ -265,6 +297,7 @@ export function buildServer(dependencies: ServerDependencies) {
           latencyMs: performance.now() - draft.startedAt,
           ...(draft.inputText === undefined ? {} : { inputText: draft.inputText }),
           ...(draft.outputText === undefined ? {} : { outputText: draft.outputText }),
+          ...(draft.inputReserves === undefined ? {} : { inputReserves: draft.inputReserves }),
           inputBytes: draft.inputBytes,
           outputBytes: draft.outputBytes,
         })
@@ -343,8 +376,13 @@ export function buildServer(dependencies: ServerDependencies) {
     projectId?: string,
   ): Promise<unknown> {
     const body = chatCompletionRequestSchema.parse(request.body);
+    const temporary = body.temporary ?? config.temporaryChat;
+    assertTemporaryCompatible(temporary, body.conversation_id, projectId);
     const prompt = serializeChatRequest(body);
-    observe(request, { inputText: prompt });
+    const attachments = chatAttachments(body, config.mediaLimitBytes);
+    const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
+    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
+    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       const result = await queue.enqueue(
@@ -353,7 +391,9 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
-            attachments: chatAttachments(body, config.mediaLimitBytes),
+            attachments,
+            temporary,
+            ...(body.reasoning_effort !== undefined && { effort: body.reasoning_effort }),
             ...(projectId !== undefined && { projectId }),
             ...(body.conversation_id !== undefined && { conversationId: body.conversation_id }),
           }),
@@ -381,8 +421,14 @@ export function buildServer(dependencies: ServerDependencies) {
     projectId?: string,
   ): Promise<unknown> {
     const body = responsesRequestSchema.parse(request.body);
+    const temporary = body.temporary ?? config.temporaryChat;
+    assertTemporaryCompatible(temporary, body.conversation_id, projectId);
     const prompt = serializeResponsesRequest(body);
-    observe(request, { inputText: prompt });
+    const attachments = responsesAttachments(body, config.mediaLimitBytes);
+    const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
+    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
+    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
+    const effort: UiEffort | undefined = body.reasoning_effort ?? body.reasoning?.effort;
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       const result = await queue.enqueue(
@@ -391,7 +437,9 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
-            attachments: responsesAttachments(body, config.mediaLimitBytes),
+            attachments,
+            temporary,
+            ...(effort !== undefined && { effort }),
             ...(projectId !== undefined && { projectId }),
             ...(body.conversation_id !== undefined && { conversationId: body.conversation_id }),
           }),
@@ -420,8 +468,11 @@ export function buildServer(dependencies: ServerDependencies) {
     const body = anthropicMessagesRequestSchema.parse(request.body);
     const prompt = serializeAnthropicRequest(body);
     const attachments = anthropicAttachments(body, config.mediaLimitBytes);
+    const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
+    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
     const allowedToolNames = new Set(body.tools.map(({ name }) => name));
-    observe(request, { inputText: prompt });
+    const temporary = body.temporary ?? config.temporaryChat;
+    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     const generate = () =>
       queue.enqueue(
@@ -431,6 +482,7 @@ export function buildServer(dependencies: ServerDependencies) {
             signal: lifecycle.controller.signal,
             requestId: request.id,
             attachments,
+            temporary,
           }),
         lifecycle.controller.signal,
       );
@@ -650,7 +702,11 @@ export function buildServer(dependencies: ServerDependencies) {
   app.post('/v1/images/generations', generationRouteOptions, async (request, reply) => {
     const body = imageGenerationRequestSchema.parse(request.body);
     const attachments = imageGenerationAttachments(body, config.mediaLimitBytes);
-    observe(request, { inputText: body.prompt });
+    assertPromptWithinLimit(body.prompt, attachments.length + 1, config.maxPromptTokens);
+    observe(request, {
+      inputText: body.prompt,
+      inputReserves: inputReserves(attachments.length + 1),
+    });
     const lifecycle = requestAbortController(request, reply, config.imageTimeoutMs);
     try {
       const result = await queue.enqueue(
@@ -659,6 +715,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt: body.prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            temporary: body.temporary ?? config.temporaryChat,
             ...(attachments.length > 0 && { attachments }),
           }),
         lifecycle.controller.signal,
@@ -753,6 +810,7 @@ export function buildServer(dependencies: ServerDependencies) {
             attachments: [attachment],
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            temporary: config.temporaryChat,
           }),
         lifecycle.controller.signal,
       );
@@ -793,8 +851,36 @@ export function buildServer(dependencies: ServerDependencies) {
     return { status: 'reset', tokenCounts: 'estimated' };
   });
 
+  /**
+   * Drain-first lifecycle: queued and active turns finish while new work is rejected with
+   * `draining` (503). `/admin/session/reset` drains before closing the browser so an
+   * in-flight turn is never cut off mid-submission; a drain that outlasts the configured
+   * request timeout reopens intake rather than wedging the service.
+   */
+  app.get('/admin/drain', { preHandler: adminOnly }, async () => ({
+    draining: queue.isDraining,
+    pending: queue.size,
+    active: queue.activeCount,
+  }));
+
+  app.post('/admin/drain', { preHandler: adminOnly }, async () => {
+    queue.beginDrain();
+    return { draining: true, pending: queue.size, active: queue.activeCount };
+  });
+
+  app.post('/admin/resume', { preHandler: adminOnly }, async () => {
+    queue.endDrain();
+    return { draining: false, pending: queue.size, active: queue.activeCount };
+  });
+
   app.post('/admin/session/reset', { preHandler: adminOnly }, async () => {
-    await provider.reset();
+    queue.beginDrain();
+    try {
+      await queue.waitForIdle(config.requestTimeoutMs);
+      await provider.reset();
+    } finally {
+      queue.endDrain();
+    }
     return {
       status: 'reset',
       detail: 'Browser process closed; dedicated profile data was preserved.',

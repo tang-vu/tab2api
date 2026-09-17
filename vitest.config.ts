@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     exclude: ['tests/manual/**'],
+    // The first Fastify instantiation in a worker compiles its schema machinery, which can
+    // cost tens of seconds on slow disks/AV-scanned checkouts; thirty seconds still bounds
+    // a genuinely hung test while keeping that cold-start cost from reading as a failure.
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

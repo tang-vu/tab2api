@@ -61,4 +61,61 @@ describe('bounded FIFO queue', () => {
     release();
     await active;
   });
+
+  it('drains in-flight work while rejecting new intake', async () => {
+    const queue = new FifoQueue(1, 4);
+    const events: string[] = [];
+    let release!: () => void;
+    const blocker = queue.enqueue(async () => {
+      events.push('start-blocker');
+      await new Promise<void>((resolve) => (release = resolve));
+      events.push('end-blocker');
+    });
+    const queued = queue.enqueue(async () => {
+      events.push('start-queued');
+    });
+    queue.beginDrain();
+    expect(queue.isDraining).toBe(true);
+    await expect(queue.enqueue(async () => undefined)).rejects.toMatchObject({
+      code: 'draining',
+    });
+    release();
+    await Promise.all([blocker, queued]);
+    expect(events).toEqual(['start-blocker', 'end-blocker', 'start-queued']);
+  });
+
+  it('accepts work again after the drain ends', async () => {
+    const queue = new FifoQueue(1, 4);
+    queue.beginDrain();
+    await expect(queue.enqueue(async () => undefined)).rejects.toMatchObject({
+      code: 'draining',
+    });
+    queue.endDrain();
+    await expect(queue.enqueue(async () => 'ok')).resolves.toBe('ok');
+  });
+
+  it('waits for an idle queue and times out on a stuck item', async () => {
+    const queue = new FifoQueue(1, 4);
+    await expect(queue.waitForIdle(50)).resolves.toBeUndefined();
+    let release!: () => void;
+    const stuck = queue.enqueue(() => new Promise<void>((resolve) => (release = resolve)));
+    await expect(queue.waitForIdle(30)).rejects.toMatchObject({ code: 'timeout' });
+    release();
+    await stuck;
+    await expect(queue.waitForIdle(50)).resolves.toBeUndefined();
+  });
+
+  it('lets a queued task cancel itself during a drain', async () => {
+    const queue = new FifoQueue(1, 4);
+    let release!: () => void;
+    const blocker = queue.enqueue(() => new Promise<void>((resolve) => (release = resolve)));
+    const controller = new AbortController();
+    const cancelled = queue.enqueue(async () => 'never', controller.signal);
+    queue.beginDrain();
+    controller.abort();
+    await expect(cancelled).rejects.toMatchObject({ code: 'cancelled' });
+    release();
+    await blocker;
+    await expect(queue.waitForIdle(50)).resolves.toBeUndefined();
+  });
 });
