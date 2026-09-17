@@ -93,6 +93,15 @@ describe('loopback administration client', () => {
       expect(revoked).toMatchObject({ id: created.id });
       expect(revoked?.role === 'client' && typeof revoked.revokedAt === 'string').toBe(true);
       await expect(client.usage()).resolves.toMatchObject({ tokenCounts: 'estimated' });
+      await client.resetUsage();
+      await expect(client.drainStatus()).resolves.toMatchObject({ draining: false });
+      await expect(client.drain()).resolves.toMatchObject({
+        draining: true,
+        pending: 0,
+        active: 0,
+      });
+      await expect(client.drainStatus()).resolves.toMatchObject({ draining: true });
+      await expect(client.resume()).resolves.toMatchObject({ draining: false });
       await client.resetSession();
       expect(provider.state).toBe('browser_disconnected');
     } finally {
