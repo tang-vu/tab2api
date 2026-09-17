@@ -9,11 +9,13 @@ import {
   drainStatusResponseSchema,
   healthResponseSchema,
   sessionResetResponseSchema,
+  sessionStateResponseSchema,
   usageResetResponseSchema,
   usageResponseSchema,
   type ApiKeyListResponse,
   type CreatedApiKeyResponse,
   type DrainStatusResponse,
+  type SessionStateResponse,
   type UsageResponse,
 } from './admin-contract.js';
 import { apiKeyIdSchema } from '../security/api-keys.js';
@@ -230,6 +232,10 @@ export class LocalAdminClient {
 
   async resume(signal?: AbortSignal): Promise<DrainStatusResponse> {
     return this.request('/admin/resume', drainStatusResponseSchema, { method: 'POST' }, signal);
+  }
+
+  async sessionState(signal?: AbortSignal): Promise<SessionStateResponse> {
+    return this.request('/admin/session', sessionStateResponseSchema, { method: 'GET' }, signal);
   }
 
   private async request<T>(

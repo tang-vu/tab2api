@@ -183,6 +183,11 @@ function imagePrompt(request: GenerateImageRequest): string {
 
 export class ChatGptAdapter implements WebChatProvider {
   readonly id = 'chatgpt-web' as const;
+  /**
+   * The browser has not run until the first probe or turn, so `browser_disconnected`
+   * is the honest pre-observation value rather than an invented `unknown` state.
+   */
+  private lastSessionState: SessionState = 'browser_disconnected';
 
   constructor(
     private readonly browser: BrowserController,
@@ -655,16 +660,16 @@ export class ChatGptAdapter implements WebChatProvider {
     for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
       const state = await this.classifyPage(page);
-      if (state !== 'ui_changed') return state;
+      if (state !== 'ui_changed') return this.observeState(state);
       if (
         (await firstVisible(page, UI_SELECTORS.newProjectButton)) !== undefined ||
         (await countAll(page, UI_SELECTORS.projectRow)) > 0
       ) {
-        return 'ready';
+        return this.observeState('ready');
       }
       if (attempt < INITIAL_STATE_ATTEMPTS - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
     }
-    return 'ui_changed';
+    return this.observeState('ui_changed');
   }
 
   private async waitForVisible(
@@ -690,12 +695,14 @@ export class ChatGptAdapter implements WebChatProvider {
       while (!page.isClosed()) {
         const state = await this.classifyPage(page);
         if (state !== previous) {
+          this.observeState(state);
           onState(state);
           previous = state;
         }
         if (state === 'ready') return;
         await page.waitForTimeout(1_000);
       }
+      this.observeState('browser_disconnected');
       throw new AppError(
         'browser_disconnected',
         'The manual login window was closed before the session became ready.',
@@ -710,22 +717,35 @@ export class ChatGptAdapter implements WebChatProvider {
     try {
       page = await this.browser.getPage();
       await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      return await this.waitForInitialState(page);
+      return this.observeState(await this.waitForInitialState(page));
     } catch (error) {
-      return error instanceof AppError && error.code === 'browser_disconnected'
-        ? 'browser_disconnected'
-        : 'ui_changed';
+      return this.observeState(
+        error instanceof AppError && error.code === 'browser_disconnected'
+          ? 'browser_disconnected'
+          : 'ui_changed',
+      );
     } finally {
       await this.closePage(page, 'health');
     }
   }
 
+  sessionState(): SessionState {
+    return this.lastSessionState;
+  }
+
+  private observeState(state: SessionState): SessionState {
+    this.lastSessionState = state;
+    return state;
+  }
+
   async reset(): Promise<void> {
     await this.browser.close();
+    this.lastSessionState = 'browser_disconnected';
   }
 
   async close(): Promise<void> {
     await this.browser.close();
+    this.lastSessionState = 'browser_disconnected';
   }
 
   /**
@@ -857,6 +877,7 @@ export class ChatGptAdapter implements WebChatProvider {
         state === 'security_challenge' ||
         state === 'login_required'
       ) {
+        this.observeState(state);
         this.assertReady(state);
       }
       const turnIds = await this.collectTurnIds(page);
@@ -926,8 +947,14 @@ export class ChatGptAdapter implements WebChatProvider {
     while (true) {
       if (signal.aborted) throw abortError(signal);
       const state = await this.classifyPage(page, true);
-      if (state === 'rate_limited' || state === 'security_challenge' || state === 'login_required')
+      if (
+        state === 'rate_limited' ||
+        state === 'security_challenge' ||
+        state === 'login_required'
+      ) {
+        this.observeState(state);
         this.assertReady(state);
+      }
       let image: Locator | undefined;
       for (const [index, selector] of selectors.entries()) {
         const candidates = page.locator(selector);
@@ -1077,10 +1104,10 @@ export class ChatGptAdapter implements WebChatProvider {
   private async waitForInitialState(page: Page): Promise<SessionState> {
     for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
       const state = await this.classifyPage(page);
-      if (state !== 'ui_changed') return state;
+      if (state !== 'ui_changed') return this.observeState(state);
       if (attempt < INITIAL_STATE_ATTEMPTS - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
     }
-    return 'ui_changed';
+    return this.observeState('ui_changed');
   }
 
   private assertReady(state: SessionState): void {

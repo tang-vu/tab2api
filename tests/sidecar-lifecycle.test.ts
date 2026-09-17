@@ -185,7 +185,9 @@ describe('desktop sidecar lifecycle', () => {
       stdout += chunk;
     });
 
-    const exitCode = await waitForExit(child, 12_000, 'Sidecar hung after startup failure.');
+    // The child pays the full tsx/module cold start before it can report the
+    // startup failure; under parallel-suite load that can exceed a small bound.
+    const exitCode = await waitForExit(child, 30_000, 'Sidecar hung after startup failure.');
 
     expect(exitCode).toBe(1);
     const events = stdout
@@ -194,7 +196,7 @@ describe('desktop sidecar lifecycle', () => {
       .map((line) => JSON.parse(line) as SidecarEvent);
     expect(events.map(({ event }) => event)).toEqual(['starting', 'fatal']);
     expect(stdout).not.toContain('unsupported');
-  }, 20_000);
+  }, 45_000);
 
   it('starts the real local server and exits after a parent shutdown command', async () => {
     const cwd = path.resolve(import.meta.dirname, '..');

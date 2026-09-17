@@ -45,6 +45,9 @@ class ErrorProvider implements WebChatProvider {
   async health(): Promise<SessionState> {
     return this.error.code === 'login_required' ? 'login_required' : 'ui_changed';
   }
+  sessionState(): SessionState {
+    return this.error.code === 'login_required' ? 'login_required' : 'ui_changed';
+  }
   async reset(): Promise<void> {}
   async close(): Promise<void> {}
 }

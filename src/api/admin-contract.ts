@@ -85,7 +85,22 @@ export const drainStatusResponseSchema = z
   })
   .strict();
 
+export const sessionStateResponseSchema = z
+  .object({
+    state: z.enum([
+      'ready',
+      'login_required',
+      'security_challenge',
+      'generation_in_progress',
+      'rate_limited',
+      'ui_changed',
+      'browser_disconnected',
+    ]),
+  })
+  .strict();
+
 export type ApiKeyListResponse = z.infer<typeof apiKeyListResponseSchema>;
 export type CreatedApiKeyResponse = z.infer<typeof createdApiKeyResponseSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
 export type DrainStatusResponse = z.infer<typeof drainStatusResponseSchema>;
+export type SessionStateResponse = z.infer<typeof sessionStateResponseSchema>;
