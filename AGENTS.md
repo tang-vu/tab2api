@@ -19,3 +19,9 @@
 For behavior changes, add tests covering success, cancellation, timeout, and relevant typed failures. Before completion run `npm run check`, `npm test`, `npm run build`, `npm run smoke`, and `npm audit`; inspect `git status` and staged/untracked files for secrets/runtime data. Documentation must describe actual behavior and limitations. Do not call work complete with failing checks or an undocumented security tradeoff.
 
 After each completed update, create a focused commit describing the change and push it to the configured remote. Never stage or push ignored runtime data, browser profiles, local API tokens, credentials, logs, or debug artifacts. If push authentication or branch protection blocks publication, keep the verified local commit and report the exact blocker.
+
+## Contributor environment notes
+
+- `main` is a protected branch: direct pushes are rejected. Land every change through a feature branch and pull request; all required checks must pass before merge.
+- `vitest.config.ts` enforces coverage floors in CI (global functions 73%, `src/api` functions 90%, plus `src/security`/`src/store` floors). New exported functions need tests or the `verify` jobs fail even when the suite itself is green.
+- On this checkout's host, WSL `gh`/`git` authenticate as a GitHub account without write access, while the Windows `gh.exe`/`git.exe` authenticate as the repository owner. From WSL, run git/gh operations through the Windows binaries (`git.exe -C "C:\Users\tangm\Documents\GitHub\tab2api" ...`, `gh.exe -R tang-vu/tab2api ...`) or `gh auth login` inside WSL with the owning account.
