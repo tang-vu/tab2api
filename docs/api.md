@@ -111,11 +111,12 @@ curl.exe http://127.0.0.1:3210/v1/audio/transcriptions `
 
 ### Drain and session lifecycle
 
-All three routes require the administrator bearer token; client keys receive HTTP 401.
+All of these routes require the administrator bearer token; client keys receive HTTP 401.
 
 - `POST /admin/drain`: stops intake immediately. Requests already queued or in flight keep running; new work fails with `draining` (503). Returns `{ draining: true, pending, active }`.
 - `GET /admin/drain`: reports the same `{ draining, pending, active }` counters so an operator can poll until both reach zero.
 - `POST /admin/resume`: reopens intake after a manual drain and returns the same counters.
+- `GET /admin/session`: reports the provider session state (`ready`, `login_required`, `security_challenge`, `generation_in_progress`, `rate_limited`, `ui_changed`, or `browser_disconnected`) without starting a turn.
 - `POST /admin/session/reset`: drains the queue first, waits until no turn is queued or in flight (bounded by `TAB2API_REQUEST_TIMEOUT_MS`), then closes the current browser context. The next operation relaunches it. Dedicated profile/login data is deliberately preserved, and the endpoint does not delete files. A drain that outlasts the timeout reopens intake and reports `timeout` instead of wedging the service.
 
 `draining` differs from `queue_full`: intake was closed deliberately for a lifecycle step, so a supervisor can wait for the counters to reach zero before restarting instead of cutting a submitted turn off mid-generation.

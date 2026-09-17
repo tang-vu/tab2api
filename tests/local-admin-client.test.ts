@@ -102,6 +102,7 @@ describe('loopback administration client', () => {
       });
       await expect(client.drainStatus()).resolves.toMatchObject({ draining: true });
       await expect(client.resume()).resolves.toMatchObject({ draining: false });
+      await expect(client.sessionState()).resolves.toEqual({ state: 'ready' });
       await client.resetSession();
       expect(provider.state).toBe('browser_disconnected');
     } finally {
