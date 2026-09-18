@@ -154,7 +154,7 @@ const en = {
     'Image generation and transcription use the public ChatGPT UI. Image generation also accepts up to four PNG/JPEG/WebP data URLs in reference_images, uploaded as visual references. Speech uses the local operating-system voice and returns WAV only.',
   adminEndpointsTitle: 'Administrator endpoints',
   adminEndpointsBody:
-    'Manage revocable client keys, inspect content-free usage counters, or reset the browser session. These routes reject client keys.',
+    'Manage revocable client keys, inspect content-free usage counters, observe the last session state, or pause and resume request intake. These routes reject client keys.',
   adminAccess: 'Administrator key',
   limitsTitle: 'Limits and behavior',
   limitsBody:
@@ -1205,7 +1205,7 @@ const documentationTranslations = {
       'Tạo ảnh và transcription dùng UI ChatGPT công khai. Tạo ảnh còn nhận tối đa bốn data URL PNG/JPEG/WebP trong reference_images, được upload làm ảnh tham chiếu. Speech dùng giọng hệ điều hành cục bộ và chỉ trả WAV.',
     adminEndpointsTitle: 'Endpoint quản trị',
     adminEndpointsBody:
-      'Quản lý client key có thể thu hồi, xem bộ đếm usage không chứa nội dung hoặc reset phiên trình duyệt. Client key không gọi được các route này.',
+      'Quản lý client key có thể thu hồi, xem bộ đếm usage không chứa nội dung, quan sát trạng thái phiên gần nhất hoặc tạm dừng và mở lại intake request. Client key không gọi được các route này.',
     adminAccess: 'Administrator key',
     limitsTitle: 'Giới hạn và hành vi',
     limitsBody:
@@ -1241,7 +1241,7 @@ const documentationTranslations = {
       '图像生成和转录使用公开 ChatGPT UI；图像生成还可在 reference_images 中接收最多四个 PNG/JPEG/WebP data URL 作为参考图。语音使用本地系统声音且仅返回 WAV。',
     adminEndpointsTitle: '管理员端点',
     adminEndpointsBody:
-      '管理可撤销客户端密钥、查看无内容用量计数或重置浏览器会话。客户端密钥不能调用这些路由。',
+      '管理可撤销的客户端密钥、查看无内容用量计数、观察最近的会话状态，或暂停并恢复请求接收。客户端密钥不能调用这些路由。',
     adminAccess: '管理员密钥',
     limitsTitle: '限制与行为',
     limitsBody:
@@ -1281,7 +1281,7 @@ const documentationTranslations = {
       '画像生成と文字起こしは公開 ChatGPT UI を使用します。画像生成は reference_images に最大 4 件の PNG/JPEG/WebP データ URL を参照画像として受け取れます。音声はローカル OS の声で WAV のみ返します。',
     adminEndpointsTitle: '管理者エンドポイント',
     adminEndpointsBody:
-      '失効可能なクライアントキー、内容を含まない使用量、ブラウザーセッションを管理します。クライアントキーは拒否されます。',
+      '取り消し可能なクライアントキー、内容を含まない使用量カウンター、最後に観測されたセッション状態、リクエスト受付の一時停止と再開を管理します。クライアントキーは拒否されます。',
     adminAccess: '管理者キー',
     limitsTitle: '制限と動作',
     limitsBody:
@@ -1320,7 +1320,7 @@ const documentationTranslations = {
       '이미지 생성과 전사는 공개 ChatGPT UI를 사용합니다. 이미지 생성은 reference_images에 최대 네 개의 PNG/JPEG/WebP data URL을 참조 이미지로 받을 수 있습니다. 음성은 로컬 OS 음성을 사용하며 WAV만 반환합니다.',
     adminEndpointsTitle: '관리자 엔드포인트',
     adminEndpointsBody:
-      '폐기 가능한 클라이언트 키, 내용 없는 사용량 카운터, 브라우저 세션을 관리합니다. 클라이언트 키는 거부됩니다.',
+      '폐기 가능한 클라이언트 키, 내용 없는 사용량 카운터, 마지막으로 관측된 세션 상태, 요청 수신 일시 중지와 재개를 관리합니다. 클라이언트 키는 거부됩니다.',
     adminAccess: '관리자 키',
     limitsTitle: '제한과 동작',
     limitsBody:
@@ -1360,7 +1360,7 @@ const documentationTranslations = {
       'La generación y transcripción usan la UI pública de ChatGPT. La generación de imágenes también acepta hasta cuatro data URL PNG/JPEG/WebP en reference_images como imágenes de referencia. La voz usa el sistema operativo local y solo devuelve WAV.',
     adminEndpointsTitle: 'Endpoints administrativos',
     adminEndpointsBody:
-      'Gestiona claves revocables, contadores sin contenido o la sesión del navegador. Estas rutas rechazan claves de cliente.',
+      'Gestiona claves revocables, contadores sin contenido, el último estado de sesión observado o la pausa y reanudación de la admisión de solicitudes. Estas rutas rechazan claves de cliente.',
     adminAccess: 'Clave de administrador',
     limitsTitle: 'Límites y comportamiento',
     limitsBody:
@@ -1400,7 +1400,7 @@ const documentationTranslations = {
       "La génération d'images et la transcription utilisent l'UI publique ChatGPT. La génération d'images accepte aussi jusqu'à quatre data URL PNG/JPEG/WebP dans reference_images comme images de référence. La voix utilise le système local et renvoie uniquement du WAV.",
     adminEndpointsTitle: "Endpoints d'administration",
     adminEndpointsBody:
-      'Gérez les clés révocables, les compteurs sans contenu ou la session du navigateur. Les clés client sont refusées.',
+      "Gérez les clés révocables, les compteurs sans contenu, le dernier état de session observé, ou la suspension et la reprise de l'admission des requêtes. Les clés client sont refusées.",
     adminAccess: 'Clé administrateur',
     limitsTitle: 'Limites et comportement',
     limitsBody:
@@ -1440,7 +1440,7 @@ const documentationTranslations = {
       'Bilderzeugung und Transkription nutzen die öffentliche ChatGPT-UI. Die Bilderzeugung akzeptiert zudem bis zu vier PNG/JPEG/WebP-Data-URLs in reference_images als Referenzbilder. Sprache nutzt die lokale Systemstimme und liefert nur WAV.',
     adminEndpointsTitle: 'Administrator-Endpunkte',
     adminEndpointsBody:
-      'Verwalten Sie widerrufbare Client-Keys, inhaltsfreie Nutzungszähler oder die Browsersitzung. Client-Keys werden abgewiesen.',
+      'Verwalten Sie widerrufbare Client-Keys, inhaltsfreie Nutzungszähler, den zuletzt beobachteten Sitzungsstatus oder das Pausieren und Fortsetzen der Anfragenannahme. Client-Keys werden abgewiesen.',
     adminAccess: 'Administrator-Key',
     limitsTitle: 'Grenzen und Verhalten',
     limitsBody:

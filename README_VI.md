@@ -92,6 +92,8 @@ npm run login
 npm run build && npm start
 ```
 
+Trong một shell khác: `TOKEN="$(tr -d '\r\n' < .tab2api/api-token)"`.
+
 ## Ví dụ API
 
 Chat Completions trong PowerShell:
@@ -123,11 +125,27 @@ $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'
 claude --model claude-tab2api-chatgpt-web
 ```
 
-Không lưu key trong `.claude/settings.json` có commit. Route `/v1/messages` chuyển text, ảnh và client tool do Claude Code khai báo thành prompt qua UI ChatGPT; chỉ tool name nằm trong request mới có thể được trả về, ID tool do server tự cấp, còn permission và việc thực thi vẫn do Claude Code kiểm soát. `/v1/messages/count_tokens` chỉ ước lượng cục bộ theo byte nên không tốn một browser request. SSE mở ngay và gửi heartbeat, nhưng nội dung/tool block vẫn chỉ xuất hiện sau khi UI hoàn tất.
+Không lưu key trong `.claude/settings.json` có commit. Route `/v1/messages` chuyển text, ảnh và client tool do Claude Code khai báo thành prompt qua UI ChatGPT; chỉ tool name nằm trong request mới có thể được trả về, ID tool do server tự cấp, còn permission và việc thực thi vẫn do Claude Code kiểm soát. `/v1/messages/count_tokens` là ước lượng cục bộ bằng tokenizer `o200k_base` thật nên không tốn một browser request. SSE mở ngay và gửi heartbeat, nhưng nội dung/tool block vẫn chỉ xuất hiện sau khi UI hoàn tất.
 
 Chế độ này **không biến ChatGPT Web thành model Claude** và Anthropic không hỗ trợ gateway dùng model không phải Claude. Độ tin cậy tool, context và giới hạn output vẫn phụ thuộc UI/model ChatGPT đang nhìn thấy. Chạy `npm run smoke:claude` để test binary Claude Code thật cùng vòng `Read package.json` hai lượt hoàn toàn offline qua fake adapter.
 
 Khi service desktop đã ready và current shell có client key tạm, chủ động cho phép bài test UI live tương đương bằng `$env:TAB2API_MANUAL_E2E = '1'; npm run smoke:claude:live`. Script chỉ nhận origin loopback, dùng cấu hình Claude tạm cô lập cùng sentinel không thể đoán trước, chỉ cho phép một lệnh `Read`, giới hạn thời gian/output và không in key hay response body. Thu hồi key tạm sau khi chạy.
+
+### MCP tools
+
+`tab2api mcp` (hoặc `npm run mcp` từ source checkout) phục vụ service local **đang chạy sẵn** như một Model Context Protocol server qua stdio — JSON-RPC phân tách bằng newline, chỉ có tools. MCP host như Claude Code, Cursor hay Claude Desktop gọi ChatGPT như một tool qua cùng queue, prompt budget và drain lifecycle như mọi HTTP caller:
+
+```powershell
+claude mcp add tab2api -- tab2api mcp
+```
+
+hoặc JSON tương đương trong Cursor/Claude Desktop:
+
+```json
+{ "mcpServers": { "tab2api": { "command": "tab2api", "args": ["mcp"] } } }
+```
+
+Các tool: `chat` (prompt kèm `temporary`, `reasoning_effort`, `conversation_id`, `project_id` tùy chọn), `count_tokens` (ước lượng o200k cục bộ, không tốn một turn browser) và `status` (trạng thái session và queue). Subprocess xác thực bằng administrator token loopback trong cấu hình của bạn, nên chỉ đăng ký trên chính máy mình — cùng trust boundary với CLI. Nếu service chưa chạy, tool call trả `isError` nhắc chạy `tab2api start`.
 
 Tạo ảnh:
 
@@ -178,7 +196,7 @@ const client = new OpenAI({
 
 ## Vận hành và giới hạn
 
-Mỗi request mở một hội thoại mới. `TAB2API_CONCURRENCY` cho phép 1–4 tab chạy song song; mặc định an toàn là 1. Chỉ nên thử mức 2 sau khi test thật vì một tài khoản có thể bị rate-limit và mỗi tab tốn RAM. Queue vẫn bị giới hạn và giữ thứ tự FIFO. `npm run doctor` kiểm tra Node, browser, quyền ghi, port, token local, kết nối, trạng thái đăng nhập và selector. `npm run reset-session` đóng browser process nhưng giữ profile/login.
+Mỗi request mở một hội thoại mới. `TAB2API_CONCURRENCY` cho phép 1–4 tab chạy song song; mặc định an toàn là 1. Chỉ nên thử mức 2 sau khi test thật vì một tài khoản có thể bị rate-limit và mỗi tab tốn RAM. Queue vẫn bị giới hạn và giữ thứ tự FIFO. `npm run doctor` kiểm tra Node, browser, quyền ghi, port, token local, kết nối, trạng thái đăng nhập và selector. `npm run status` báo trạng thái service, session quan sát gần nhất và queue. `npm run drain` đóng intake để các turn đang xếp/đang chạy hoàn tất (request mới nhận `draining` 503) rồi `npm run resume` mở lại. `npm run reset-session` drain queue trước rồi đóng browser process nhưng giữ profile/login. `npm run chat -- "prompt"` (hoặc pipe stdin) gửi một turn một lần qua API loopback, với `--temporary`, `--effort`, `--conversation`, `--project` tùy chọn.
 
 ### API key, thống kê và truy cập từ xa
 
@@ -208,7 +226,11 @@ Task chạy nền khi user đăng nhập Windows và dùng watchdog có giới h
 - OpenAI tool calling, sửa ảnh, voice realtime, MP3 TTS, structured output và logprobs chưa được hỗ trợ. Anthropic client tool-use là bridge qua prompt có giới hạn và có thể thất bại nếu model hiển thị không tuân theo output envelope.
 - Ảnh output là PNG lossless được render từ phần tử UI ở đúng kích thước pixel nội tại, không phải preview nhỏ trong chat. Pixel do UI cung cấp được giữ nguyên, nhưng file không giống byte-for-byte với asset nguồn và có thể thiếu metadata. Chỉ hỗ trợ `n=1`, `size=auto`, `quality=auto`, `b64_json`.
 - TTS dùng engine OS và không giả là giọng OpenAI/ChatGPT. STT upload audio qua UI nên không khẳng định model transcription cụ thể.
-- UI không cho biết token usage: Chat Completions dùng số 0 kèm `usage_available=false`; Responses dùng `usage: null`; Anthropic Messages trả usage 0 và ghi rõ token count là ước lượng. Đây là “không biết”, không phải usage thực bằng 0.
+- `GET /admin/session` báo trạng thái session quan sát gần nhất mà không mở tab browser; `POST /admin/session/reset` drain các turn đang chạy trước khi reset; `POST/GET /admin/drain` và `POST /admin/resume` điều khiển intake (chỉ administrator).
+- `temporary: true` tùy chọn (hoặc mặc định `TAB2API_TEMPORARY_CHAT=true`) chạy mỗi turn trong Temporary Chat của ChatGPT nên không để lại gì trong lịch sử tài khoản; không kết hợp được với `conversation_id` hay project route, và request fail `ui_changed` nếu UI không còn xác nhận được chế độ.
+- `reasoning_effort` tùy chọn (`minimal`–`xhigh`) chỉ điều khiển effort picker của composer; không bao giờ chọn model khác và fail `ui_changed` khi picker của tài khoản không có option tương ứng.
+- Prompt đã serialize được kiểm tra trước với `TAB2API_MAX_PROMPT_TOKENS` (mặc định 104.000 token `o200k` ước lượng) và bị từ chối trước khi mở tab nếu vượt; ngưỡng này là hành vi đo được của sản phẩm, không phải bảo đảm theo tài khoản.
+- UI không cho biết token usage: Chat Completions dùng số 0 kèm `usage_available=false`; Responses dùng `usage: null`; Anthropic Messages trả usage 0 và ghi rõ token count là ước lượng. Đây là “không biết”, không phải usage thực bằng 0. Ước lượng của `/v1/messages/count_tokens` và usage snapshot admin dùng tokenizer `o200k_base` thật cộng reserve đo được theo turn — vẫn là ước lượng, không phải dữ liệu billing.
 - `stream: true` là buffered fallback: đợi browser hoàn tất rồi mới gửi một delta. Chat Completions kết thúc bằng `[DONE]`, Responses bằng `response.completed`; Anthropic Messages mở SSE ngay và gửi heartbeat trước khi trả event nội dung cuối. Đây không phải token streaming thời gian thực.
 - Không bypass CAPTCHA, Cloudflare, rate limit hay security challenge; không stealth/fingerprint spoofing; không retry prompt sau lỗi mơ hồ.
 - Profile `.tab2api` tương đương thông tin đăng nhập nhạy cảm. Không chia sẻ/sync/commit thư mục này và không dùng profile Chrome cá nhân mặc định. Khi khởi động, app kiểm tra đích filesystem thật, từ chối đường dẫn thoát khỏi data root, directory link/reparse point, symlink hoặc hard link của file riêng tư, và các chuỗi thành phần profile mặc định của Chrome/Chromium/Edge. File trạng thái có giới hạn kích thước và được thay thế theo cơ chế nguyên tử; nếu ghi key/usage thất bại, trạng thái trong bộ nhớ vẫn giữ bản đã commit gần nhất. Malware cùng user vẫn có quyền đọc hoặc tạo race, nên chỉ chạy trong tài khoản tin cậy và bật mã hóa ổ đĩa.
@@ -228,6 +250,11 @@ npm run login
 npm run doctor
 npm run smoke
 npm run smoke:claude
+npm run status
+npm run drain
+npm run resume
+npm run chat -- "prompt"
+npm run mcp
 npm run keys -- create "tên thiết bị"
 npm run keys -- list
 npm run usage
