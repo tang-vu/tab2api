@@ -1,5 +1,6 @@
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { buildServer } from '../src/api/server.js';
 import {
   commandChat,
@@ -133,6 +134,46 @@ describe('tab2api CLI', () => {
       await commandStatus(config);
       expect(capture.text()).toContain('draining=false');
     });
+  });
+
+  it('prints machine-readable status with --json', async () => {
+    await withServer(async (config) => {
+      const capture = captureStdout();
+      await commandStatus(config, ['--json']);
+      const body = z
+        .object({
+          service: z.object({ reachable: z.literal(true), url: z.string() }),
+          session: z.object({ state: z.string() }),
+          queue: z.object({ pending: z.number(), active: z.number(), draining: z.boolean() }),
+        })
+        .parse(JSON.parse(capture.text()));
+      expect(body.session.state).toBe('ready');
+      expect(body.queue.draining).toBe(false);
+      expect(capture.lines).toHaveLength(1);
+    });
+  });
+
+  it('reports an unreachable service as json and sets a failing exit code', async () => {
+    const app = buildServer({
+      config: testConfig(),
+      provider: new FakeProvider(),
+      logger: createLogger('silent'),
+    });
+    const address = await app.listen({ host: '127.0.0.1', port: 0 });
+    const closedPort = Number(new URL(address).port);
+    await app.close();
+    const capture = captureStdout();
+    const previousExitCode = process.exitCode;
+    try {
+      await commandStatus(testConfig({ port: closedPort }), ['--json']);
+      const body = z
+        .object({ service: z.object({ reachable: z.literal(false), error: z.string() }) })
+        .parse(JSON.parse(capture.text()));
+      expect(body.service.error).toBe('unreachable');
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+    }
   });
 
   it('manages client keys through the admin client', async () => {
