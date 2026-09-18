@@ -33,6 +33,10 @@ All notable user-facing changes are documented here. This project follows semant
 - `tab2api mcp` serves the running service as a tools-only MCP server over stdio (newline-delimited
   JSON-RPC), exposing `chat`, `count_tokens`, and `status` to MCP hosts such as Claude Code,
   Cursor, or Claude Desktop through the same queue, budgets, and drain lifecycle as HTTP callers.
+- The desktop app's administration view now shows the request queue (pending, active, intake
+  state) with pause-intake and resume controls over `/admin/drain` and `/admin/resume`, and keeps
+  the counters refreshing while intake is paused so an operator can watch the queue empty before
+  stopping the service.
 
 ### Fixed
 

@@ -5,7 +5,9 @@ mod startup;
 mod tunnel;
 
 #[cfg(not(test))]
-use admin::{ApiKeyList, CreatedApiKey, ExportedApiDocs, SessionReadiness, UsageSnapshot};
+use admin::{
+    ApiKeyList, CreatedApiKey, DrainStatus, ExportedApiDocs, SessionReadiness, UsageSnapshot,
+};
 #[cfg(not(test))]
 use browser_host::BrowserBounds;
 #[cfg(not(test))]
@@ -223,6 +225,33 @@ async fn reset_usage(state: State<'_, DesktopState>) -> Result<(), String> {
 
 #[cfg(not(test))]
 #[tauri::command]
+async fn queue_status(state: State<'_, DesktopState>) -> Result<DrainStatus, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.queue_status())
+        .await
+        .map_err(|error| format!("queue status task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn drain_queue(state: State<'_, DesktopState>) -> Result<DrainStatus, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.drain_queue())
+        .await
+        .map_err(|error| format!("queue drain task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn resume_queue(state: State<'_, DesktopState>) -> Result<DrainStatus, String> {
+    let lifecycle = Arc::clone(&state.lifecycle);
+    tauri::async_runtime::spawn_blocking(move || lifecycle.resume_queue())
+        .await
+        .map_err(|error| format!("queue resume task failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 async fn export_api_docs(app: tauri::AppHandle) -> Result<ExportedApiDocs, String> {
     let download_dir = app
         .path()
@@ -389,6 +418,9 @@ pub fn run() {
             revoke_api_key,
             usage_status,
             reset_usage,
+            queue_status,
+            drain_queue,
+            resume_queue,
             export_api_docs,
             tunnel_status,
             install_cloudflared,
@@ -423,6 +455,9 @@ mod tests {
             "revoke_api_key",
             "usage_status",
             "reset_usage",
+            "queue_status",
+            "drain_queue",
+            "resume_queue",
             "export_api_docs",
             "tunnel_status",
             "install_cloudflared",

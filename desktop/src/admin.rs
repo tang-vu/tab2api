@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 const MAX_ADMIN_RESPONSE_BYTES: u64 = 2_621_440;
 const ADMIN_TIMEOUT: Duration = Duration::from_secs(4);
+const MAX_QUEUE_COUNT: u64 = 1_000_000;
 const READINESS_TIMEOUT: Duration = Duration::from_secs(45);
 const API_DOCS: &str = include_str!("../../docs/api.md");
 
@@ -97,6 +98,16 @@ struct ResetUsage {
     status: String,
     #[serde(rename = "tokenCounts")]
     token_counts: String,
+}
+
+// Queue counters reported by the /admin/drain routes. The service bounds its queue, so
+// implausible counters are rejected rather than rendered.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DrainStatus {
+    pub draining: bool,
+    pub pending: u64,
+    pub active: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -241,6 +252,35 @@ impl AdminClient {
             return Err("the local service did not confirm the usage reset".into());
         }
         Ok(())
+    }
+
+    pub fn queue_status(&self) -> Result<DrainStatus, String> {
+        self.drain_request("GET", "/admin/drain")
+    }
+
+    pub fn drain(&self) -> Result<DrainStatus, String> {
+        self.drain_request("POST", "/admin/drain")
+    }
+
+    pub fn resume(&self) -> Result<DrainStatus, String> {
+        self.drain_request("POST", "/admin/resume")
+    }
+
+    fn drain_request(&self, method: &str, path: &str) -> Result<DrainStatus, String> {
+        validate_drain_status(self.request::<DrainStatus>(method, path, None, ADMIN_TIMEOUT)?)
+    }
+
+    #[cfg(test)]
+    fn drain_request_with_token(
+        &self,
+        method: &str,
+        path: &str,
+        timeout: Duration,
+        token: String,
+    ) -> Result<DrainStatus, String> {
+        validate_drain_status(
+            self.request_with_token::<DrainStatus>(method, path, None, timeout, token)?,
+        )
     }
 
     fn request<T: DeserializeOwned>(
@@ -389,6 +429,13 @@ fn validate_readiness(
         ready,
         session: response.session,
     })
+}
+
+fn validate_drain_status(result: DrainStatus) -> Result<DrainStatus, String> {
+    if result.pending > MAX_QUEUE_COUNT || result.active > MAX_QUEUE_COUNT {
+        return Err("the local service returned invalid queue counters".into());
+    }
+    Ok(result)
 }
 
 fn load_admin_token(data_dir: &Path) -> Result<String, String> {
@@ -1033,6 +1080,128 @@ mod tests {
         assert!(error.contains("timed out"));
         assert!(!error.contains(secret));
         release_sender.send(()).unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn drain_status_contract_rejects_unknown_fields_or_wrong_types() {
+        let parsed: DrainStatus = parse_json_response(
+            b"HTTP/1.1 200 OK\r\n\r\n{\"draining\":true,\"pending\":2,\"active\":1}",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            DrainStatus {
+                draining: true,
+                pending: 2,
+                active: 1,
+            }
+        );
+        assert!(
+            parse_json_response::<DrainStatus>(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"draining\":true,\"pending\":2,\"active\":1,\"extra\":0}"
+            )
+            .is_err()
+        );
+        assert!(
+            parse_json_response::<DrainStatus>(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"draining\":\"yes\",\"pending\":2,\"active\":1}"
+            )
+            .is_err()
+        );
+        assert!(
+            parse_json_response::<DrainStatus>(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"draining\":true,\"pending\":-1,\"active\":1}"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn drain_request_rejects_implausible_counters() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut identity_stream, identity_request) = accept_request(&listener);
+            assert_identity_probe(&identity_request);
+            respond_with_identity(&mut identity_stream);
+            drop(identity_stream);
+
+            let (mut stream, request) = accept_request(&listener);
+            assert!(request.starts_with("POST /admin/drain HTTP/1.1\r\n"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{\"draining\":true,\"pending\":999999999999,\"active\":0}",
+                )
+                .unwrap();
+        });
+        let client = AdminClient::new(port, PathBuf::new());
+        let secret = "test-administrator-key-never-report";
+        let error = client
+            .drain_request_with_token(
+                "POST",
+                "/admin/drain",
+                Duration::from_secs(1),
+                secret.to_owned(),
+            )
+            .unwrap_err();
+        assert!(error.contains("invalid queue counters"));
+        assert!(!error.contains(secret));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn queue_lifecycle_routes_use_the_expected_loopback_shape() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            for expected_line in [
+                "GET /admin/drain HTTP/1.1\r\n",
+                "POST /admin/drain HTTP/1.1\r\n",
+                "POST /admin/resume HTTP/1.1\r\n",
+            ] {
+                let (mut identity_stream, identity_request) = accept_request(&listener);
+                assert_identity_probe(&identity_request);
+                respond_with_identity(&mut identity_stream);
+                drop(identity_stream);
+
+                let (mut stream, request) = accept_request(&listener);
+                assert!(request.starts_with(expected_line));
+                assert!(
+                    request.contains(
+                        "\r\nAuthorization: Bearer test-administrator-key-never-report\r\n"
+                    )
+                );
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{\"draining\":true,\"pending\":1,\"active\":1}",
+                    )
+                    .unwrap();
+            }
+        });
+        let client = AdminClient::new(port, PathBuf::new());
+        let expected = DrainStatus {
+            draining: true,
+            pending: 1,
+            active: 1,
+        };
+        for (method, path) in [
+            ("GET", "/admin/drain"),
+            ("POST", "/admin/drain"),
+            ("POST", "/admin/resume"),
+        ] {
+            assert_eq!(
+                client
+                    .drain_request_with_token(
+                        method,
+                        path,
+                        Duration::from_secs(1),
+                        "test-administrator-key-never-report".to_owned(),
+                    )
+                    .unwrap(),
+                expected
+            );
+        }
         server.join().unwrap();
     }
 }

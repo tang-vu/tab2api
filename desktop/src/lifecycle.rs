@@ -1,6 +1,8 @@
 #![cfg_attr(test, allow(dead_code))]
 
-use crate::admin::{AdminClient, ApiKeyList, CreatedApiKey, SessionReadiness, UsageSnapshot};
+use crate::admin::{
+    AdminClient, ApiKeyList, CreatedApiKey, DrainStatus, SessionReadiness, UsageSnapshot,
+};
 use crate::browser_host::{BrowserMode, BrowserSession, PhysicalBounds};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -689,6 +691,21 @@ impl SidecarLifecycle {
     pub fn reset_usage(&self) -> Result<(), String> {
         self.ensure_admin_ready()?;
         AdminClient::new(self.port, self.data_dir.clone()).reset_usage()
+    }
+
+    pub fn queue_status(&self) -> Result<DrainStatus, String> {
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).queue_status()
+    }
+
+    pub fn drain_queue(&self) -> Result<DrainStatus, String> {
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).drain()
+    }
+
+    pub fn resume_queue(&self) -> Result<DrainStatus, String> {
+        self.ensure_admin_ready()?;
+        AdminClient::new(self.port, self.data_dir.clone()).resume()
     }
 
     fn ensure_admin_ready(&self) -> Result<(), String> {

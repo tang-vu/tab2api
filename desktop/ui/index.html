@@ -471,6 +471,35 @@ claude --model claude-tab2api-chatgpt-web</code></pre>
           <section class="admin-card">
             <div class="admin-card-heading">
               <div>
+                <h2 data-i18n="queueTitle">Request queue</h2>
+                <p data-i18n="queueBody">
+                  Pausing intake lets queued and in-flight turns finish before the service stops.
+                </p>
+              </div>
+              <div class="queue-actions">
+                <button id="drain-queue" type="button" data-i18n="drainQueue">Pause intake</button>
+                <button id="resume-queue" type="button" data-i18n="resumeQueue">Resume</button>
+              </div>
+            </div>
+            <div class="usage-metrics queue-metrics" aria-live="polite">
+              <span
+                ><small data-i18n="queuePending">Pending</small
+                ><strong id="queue-pending">–</strong></span
+              >
+              <span
+                ><small data-i18n="queueActive">Active</small
+                ><strong id="queue-active">–</strong></span
+              >
+              <span
+                ><small data-i18n="queueIntake">Intake</small
+                ><strong id="queue-intake">–</strong></span
+              >
+            </div>
+          </section>
+
+          <section class="admin-card">
+            <div class="admin-card-heading">
+              <div>
                 <h2 data-i18n="usageTitle">Usage</h2>
                 <p data-i18n="usageBody">
                   Content-free counters by key and endpoint. Token counts are estimates, not billing
@@ -547,6 +576,30 @@ claude --model claude-tab2api-chatgpt-web</code></pre>
             data-i18n="resetUsage"
           >
             Reset usage
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="stop-queue-dialog">
+      <form method="dialog">
+        <div class="dialog-heading">
+          <strong data-i18n="stopBusyTitle">Turns are still in progress</strong>
+        </div>
+        <p data-i18n="stopBusyBody">
+          Stopping now cuts off the queued or in-flight turns shown below. Pause intake on the queue
+          card to let them finish first, or stop anyway.
+        </p>
+        <p id="stop-busy-detail" class="stop-busy-detail"></p>
+        <div class="dialog-buttons">
+          <button value="cancel" data-i18n="cancel">Cancel</button>
+          <button
+            id="confirm-stop-queue"
+            type="button"
+            class="danger-button"
+            data-i18n="stopAnyway"
+          >
+            Stop anyway
           </button>
         </div>
       </form>

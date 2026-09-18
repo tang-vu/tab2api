@@ -673,6 +673,18 @@ pre code {
   gap: 8px;
   margin-top: 14px;
 }
+.queue-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 9px;
+}
+.queue-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.stop-busy-detail {
+  color: #e2b84f;
+  font-variant-numeric: tabular-nums;
+}
 .usage-metrics > span {
   display: grid;
   gap: 4px;

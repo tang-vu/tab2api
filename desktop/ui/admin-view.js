@@ -26,6 +26,30 @@ export function administrationControls(phase, busy) {
   };
 }
 
+const MAX_QUEUE_COUNT = 1_000_000;
+
+export function validQueueStatus(value) {
+  if (typeof value !== 'object' || value === null) return false;
+  return (
+    typeof value.draining === 'boolean' &&
+    Number.isSafeInteger(value.pending) &&
+    value.pending >= 0 &&
+    value.pending <= MAX_QUEUE_COUNT &&
+    Number.isSafeInteger(value.active) &&
+    value.active >= 0 &&
+    value.active <= MAX_QUEUE_COUNT
+  );
+}
+
+export function queueControls(phase, busy, status) {
+  const ready = phase === 'ready';
+  const draining = validQueueStatus(status) && status.draining;
+  return {
+    drainDisabled: !ready || busy || draining,
+    resumeDisabled: !ready || busy || !draining,
+  };
+}
+
 export function usageTotals(entry) {
   return {
     requests: Number(entry?.requests ?? 0),

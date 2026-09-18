@@ -2,8 +2,10 @@
 import {
   administrationControls,
   claudeCodePowerShellSetup,
+  queueControls,
   usageTotals,
   validKeyLabel,
+  validQueueStatus,
 } from './admin-view.js';
 import { languageOptions, loadLanguage, saveLanguage, translate } from './i18n.js';
 import { readinessPresentation, shouldApplyReadinessResult } from './session-readiness.js';
@@ -44,6 +46,11 @@ const elements = {
   createKey: document.querySelector('#create-key'),
   keyList: document.querySelector('#key-list'),
   usageList: document.querySelector('#usage-list'),
+  drainQueue: document.querySelector('#drain-queue'),
+  resumeQueue: document.querySelector('#resume-queue'),
+  queuePending: document.querySelector('#queue-pending'),
+  queueActive: document.querySelector('#queue-active'),
+  queueIntake: document.querySelector('#queue-intake'),
   showResetUsage: document.querySelector('#show-reset-usage'),
   createdKeyDialog: document.querySelector('#created-key-dialog'),
   createdKeyValue: document.querySelector('#created-key-value'),
@@ -55,6 +62,9 @@ const elements = {
   confirmRevokeKey: document.querySelector('#confirm-revoke-key'),
   resetUsageDialog: document.querySelector('#reset-usage-dialog'),
   confirmResetUsage: document.querySelector('#confirm-reset-usage'),
+  stopQueueDialog: document.querySelector('#stop-queue-dialog'),
+  stopBusyDetail: document.querySelector('#stop-busy-detail'),
+  confirmStopQueue: document.querySelector('#confirm-stop-queue'),
   browserHost: document.querySelector('#browser-host'),
   browserMode: document.querySelector('#browser-mode'),
   tunnelCard: document.querySelector('#tunnel-card'),
@@ -97,6 +107,8 @@ let nativeBrowserVisibilityQueue = Promise.resolve();
 let adminOperation;
 let lastApiKeys;
 let lastUsage;
+let lastQueueStatus;
+let queuePollTimer;
 let pendingRevokeKey;
 let sessionState = 'unavailable';
 let sessionCheckEpoch = 0;
@@ -141,6 +153,7 @@ function applyLanguage() {
   }
   if (lastApiKeys) renderApiKeys(lastApiKeys);
   if (lastUsage) renderUsage(lastUsage);
+  renderQueueStatus();
   renderSessionReadiness();
   renderAutostart();
   if (lastServiceStatus) render(lastServiceStatus);
@@ -343,7 +356,19 @@ function renderAdministrationControls() {
   elements.createKey.disabled = controls.createDisabled || !validKeyLabel(elements.keyLabel.value);
   elements.keyLabel.disabled = controls.createDisabled;
   elements.showResetUsage.disabled = controls.resetDisabled;
+  const queue = queueControls(lastServiceStatus?.phase, Boolean(adminOperation), lastQueueStatus);
+  elements.drainQueue.disabled = queue.drainDisabled;
+  elements.resumeQueue.disabled = queue.resumeDisabled;
   elements.adminColumn.setAttribute('aria-busy', String(Boolean(adminOperation)));
+}
+
+function renderQueueStatus() {
+  const status = validQueueStatus(lastQueueStatus) ? lastQueueStatus : undefined;
+  elements.queuePending.textContent = status ? formatNumber(status.pending) : '–';
+  elements.queueActive.textContent = status ? formatNumber(status.active) : '–';
+  elements.queueIntake.textContent = status
+    ? t(status.draining ? 'queuePaused' : 'queueOpen')
+    : t('queueUnavailable');
 }
 
 function formatNumber(value) {
@@ -467,9 +492,14 @@ async function refreshAdminData() {
   renderAdministrationControls();
   setAdminStatus('adminLoading');
   try {
-    const [keys, usage] = await Promise.all([invoke('list_api_keys'), invoke('usage_status')]);
+    const [keys, usage, queue] = await Promise.all([
+      invoke('list_api_keys'),
+      invoke('usage_status'),
+      invoke('queue_status'),
+    ]);
     renderApiKeys(keys);
     renderUsage(usage);
+    applyQueueStatus(queue);
     setAdminStatus('adminReady');
   } catch (error) {
     elements.adminStatus.textContent = localizedError(error);
@@ -504,9 +534,55 @@ async function createApiKey() {
 }
 
 async function refreshAdminDataAfterMutation() {
-  const [keys, usage] = await Promise.all([invoke('list_api_keys'), invoke('usage_status')]);
+  const [keys, usage, queue] = await Promise.all([
+    invoke('list_api_keys'),
+    invoke('usage_status'),
+    invoke('queue_status'),
+  ]);
   renderApiKeys(keys);
   renderUsage(usage);
+  applyQueueStatus(queue);
+}
+
+function applyQueueStatus(status) {
+  if (!validQueueStatus(status)) throw new Error('invalid queue status');
+  lastQueueStatus = status;
+  renderQueueStatus();
+  scheduleQueuePoll();
+}
+
+function scheduleQueuePoll() {
+  clearTimeout(queuePollTimer);
+  queuePollTimer = undefined;
+  if (lastQueueStatus?.draining !== true || activeView !== 'admin') return;
+  queuePollTimer = setTimeout(() => void pollQueueStatus(), 2500);
+}
+
+async function pollQueueStatus() {
+  if (adminOperation || lastServiceStatus?.phase !== 'ready' || activeView !== 'admin') return;
+  try {
+    applyQueueStatus(await invoke('queue_status'));
+  } catch (error) {
+    clearTimeout(queuePollTimer);
+    queuePollTimer = undefined;
+    elements.adminStatus.textContent = localizedError(error);
+    elements.adminStatus.classList.add('error');
+  }
+}
+
+async function setQueueDraining(draining) {
+  if (adminOperation) return;
+  adminOperation = draining ? 'drain' : 'resume';
+  renderAdministrationControls();
+  try {
+    applyQueueStatus(await invoke(draining ? 'drain_queue' : 'resume_queue'));
+    setAdminStatus(draining ? 'queuePausedStatus' : 'queueResumedStatus');
+  } catch (error) {
+    showError(error);
+  } finally {
+    adminOperation = undefined;
+    renderAdministrationControls();
+  }
 }
 
 async function revokeApiKey() {
@@ -639,6 +715,20 @@ function queueBrowserBounds() {
   });
 }
 
+function requestStop() {
+  const busy = validQueueStatus(lastQueueStatus)
+    ? lastQueueStatus.pending + lastQueueStatus.active
+    : 0;
+  if (busy === 0) {
+    void perform('stop_sidecar');
+    return;
+  }
+  elements.stopBusyDetail.textContent = `${t('queuePending')}: ${formatNumber(
+    lastQueueStatus.pending,
+  )} · ${t('queueActive')}: ${formatNumber(lastQueueStatus.active)}`;
+  elements.stopQueueDialog.showModal();
+}
+
 async function perform(command) {
   elements.error.hidden = true;
   for (const button of [
@@ -715,7 +805,11 @@ if (typeof invoke !== 'function') {
   for (const button of document.querySelectorAll('button')) button.disabled = true;
 } else {
   elements.start.addEventListener('click', () => perform('start_sidecar'));
-  elements.stop.addEventListener('click', () => perform('stop_sidecar'));
+  elements.stop.addEventListener('click', () => void requestStop());
+  elements.confirmStopQueue.addEventListener('click', () => {
+    elements.stopQueueDialog.close();
+    void perform('stop_sidecar');
+  });
   elements.login.addEventListener('click', () => perform('open_login'));
   elements.refresh.addEventListener('click', refresh);
   elements.checkSession.addEventListener('click', () => void checkSessionReadiness());
@@ -732,6 +826,8 @@ if (typeof invoke !== 'function') {
   });
   elements.exportApiDocs.addEventListener('click', () => void exportApiDocs());
   elements.refreshAdmin.addEventListener('click', () => void refreshAdminData());
+  elements.drainQueue.addEventListener('click', () => void setQueueDraining(true));
+  elements.resumeQueue.addEventListener('click', () => void setQueueDraining(false));
   elements.keyLabel.addEventListener('input', renderAdministrationControls);
   elements.createKeyForm.addEventListener('submit', (event) => {
     event.preventDefault();
