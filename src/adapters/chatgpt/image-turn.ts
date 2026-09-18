@@ -12,7 +12,8 @@ import {
   submitPrompt,
 } from './composer.js';
 import type { DomObservation } from './observe-dom.js';
-import { turnAbortError, type TurnLifecycle } from './turn-lifecycle.js';
+import { abortRace, turnAbortError, type TurnLifecycle } from './turn-lifecycle.js';
+import { operationTimeout } from '../../browser/deadline.js';
 import { TEMPORARY_CHAT_URL, CHATGPT_URL } from './identifiers.js';
 
 /**
@@ -125,7 +126,7 @@ async function waitForGeneratedImage(
     ) {
       return captureIntrinsicImage(page, image, mediaLimitBytes);
     }
-    await page.waitForTimeout(POLL_MS);
+    await abortRace(page.waitForTimeout(POLL_MS), signal, lifecycle.postSubmit);
   }
 }
 
@@ -244,7 +245,14 @@ export async function runImageTurn(
   lifecycle.transition('navigating');
   const target = request.temporary === true ? TEMPORARY_CHAT_URL : CHATGPT_URL;
   try {
-    await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await abortRace(
+      page.goto(target, {
+        waitUntil: 'domcontentloaded',
+        timeout: operationTimeout(request.deadlineAt, 30_000),
+      }),
+      request.signal,
+      false,
+    );
   } catch {
     if (request.signal.aborted) throw turnAbortError(request.signal, false);
     throw new AppError(
@@ -254,24 +262,29 @@ export async function runImageTurn(
     );
   }
   lifecycle.transition('observing');
-  const initial = await waitForInitialObservation(page);
+  const initial = await waitForInitialObservation(page, {
+    signal: request.signal,
+    deadlineAt: request.deadlineAt,
+  });
   hooks?.onObservation?.(initial, page.url());
   if (request.signal.aborted) throw turnAbortError(request.signal, false);
   assertReadyObservation(initial);
 
   lifecycle.transition('preparing');
   const composer = await resolveComposer(page);
-  if (request.temporary === true) await assertTemporaryChat(page, request.signal);
+  if (request.temporary === true) {
+    await assertTemporaryChat(page, request.signal, request.deadlineAt);
+  }
   const imageSelectors = generatedImageSelectors(request.attachments?.length ?? 0);
   const baselineImages = await Promise.all(
     imageSelectors.map(async (selector) => page.locator(selector).count()),
   );
   const baselineObservation = await observe(page);
   const baselineCompletionActions = baselineObservation.completionActionCount;
-  await attachFiles(page, request.attachments);
+  await attachFiles(page, request.attachments, request.signal, request.deadlineAt);
 
   lifecycle.transition('submitting');
-  await submitPrompt(page, composer, imagePrompt(request));
+  await submitPrompt(page, composer, imagePrompt(request), request.signal);
   lifecycle.transition('submitted');
 
   const data = await waitForGeneratedImage(

@@ -49,13 +49,13 @@ describe('TurnLifecycle', () => {
     const lifecycle = new TurnLifecycle();
     const path = HAPPY_PATH.slice(0, HAPPY_PATH.indexOf(from));
     for (const phase of path) lifecycle.transition(phase);
-    expect(() => lifecycle.transition(to)).toThrowError(/Invalid turn transition/);
+    expect(() => lifecycle.transition(to)).toThrow(/Invalid turn transition/);
   });
 
   it('never re-enters submitting once the send boundary is crossed', () => {
     const lifecycle = new TurnLifecycle();
     for (const phase of HAPPY_PATH.slice(0, 5)) lifecycle.transition(phase);
-    expect(() => lifecycle.transition('submitting')).toThrowError(/Invalid turn transition/);
+    expect(() => lifecycle.transition('submitting')).toThrow(/Invalid turn transition/);
   });
 
   it('flips postSubmit at the send gesture and never flips back', () => {
@@ -90,7 +90,7 @@ describe('TurnLifecycle', () => {
     expect(error).toBeInstanceOf(AppError);
     expect(error.code).toBe('navigation_failed');
     expect(lifecycle.current).toBe('failed');
-    expect(() => lifecycle.transition('observing')).toThrowError(
+    expect(() => lifecycle.transition('observing')).toThrow(
       /Invalid turn transition/,
     );
   });

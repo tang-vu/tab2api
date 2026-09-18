@@ -19,7 +19,8 @@ import {
   selectEffort,
   submitPrompt,
 } from './composer.js';
-import { turnAbortError, type TurnLifecycle } from './turn-lifecycle.js';
+import { abortRace, turnAbortError, type TurnLifecycle } from './turn-lifecycle.js';
+import { operationTimeout } from '../../browser/deadline.js';
 
 /**
  * One text turn through the ChatGPT composer, driven by the turn lifecycle machine and the
@@ -166,7 +167,14 @@ export async function runTextTurn(
 ): Promise<GenerateResult> {
   lifecycle.transition('navigating');
   try {
-    await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await abortRace(
+      page.goto(target, {
+        waitUntil: 'domcontentloaded',
+        timeout: operationTimeout(request.deadlineAt, 30_000),
+      }),
+      request.signal,
+      false,
+    );
   } catch {
     if (request.signal.aborted) throw turnAbortError(request.signal, false);
     throw new AppError(
@@ -176,23 +184,28 @@ export async function runTextTurn(
     );
   }
   lifecycle.transition('observing');
-  const initial = await waitForInitialObservation(page);
+  const initial = await waitForInitialObservation(page, {
+    signal: request.signal,
+    deadlineAt: request.deadlineAt,
+  });
   hooks?.onObservation?.(initial, page.url());
   if (request.signal.aborted) throw turnAbortError(request.signal, false);
   assertReadyObservation(initial);
 
   lifecycle.transition('preparing');
   const composer = await resolveComposer(page);
-  if (request.temporary === true) await assertTemporaryChat(page, request.signal);
-  if (request.effort !== undefined) await selectEffort(page, request.effort);
+  if (request.temporary === true) {
+    await assertTemporaryChat(page, request.signal, request.deadlineAt);
+  }
+  if (request.effort !== undefined) await selectEffort(page, request.effort, request.signal);
   const baselineObservation = await observe(page);
   const baseline = baselineObservation.assistant.count;
   const baselineCompletionActions = baselineObservation.completionActionCount;
   const baselineTurnIds = new Set(baselineObservation.turnIds);
-  await attachFiles(page, request.attachments);
+  await attachFiles(page, request.attachments, request.signal, request.deadlineAt);
 
   lifecycle.transition('submitting');
-  await submitPrompt(page, composer, request.prompt);
+  await submitPrompt(page, composer, request.prompt, request.signal);
   lifecycle.transition('submitted');
 
   const text = await waitForCompletion(

@@ -40,6 +40,10 @@ export class CdpBrowserManager implements BrowserController {
     }
   }
 
+  openPageCount(): number {
+    return this.ownedPages.size;
+  }
+
   async close(): Promise<void> {
     this.generation += 1;
     // An attachment failure is returned to the concurrent getPage caller; close still has to

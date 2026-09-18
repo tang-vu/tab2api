@@ -11,6 +11,8 @@ import type {
   UploadProjectFilesResult,
 } from '../../provider.js';
 import type { BrowserController } from '../../browser/controller.js';
+import { boundedAttempts, operationTimeout } from '../../browser/deadline.js';
+import { abortRace } from './turn-lifecycle.js';
 import { contractError, firstVisible } from './locators.js';
 import { contractCandidates } from './selector-contracts.js';
 import { UI_SELECTORS } from './selectors.js';
@@ -54,7 +56,7 @@ export class ProjectOps {
   ) {}
 
   async createProject(request: CreateProjectRequest): Promise<ProjectSummary> {
-    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
+    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, request.deadlineAt, async (page) => {
       const newProject = await firstVisible(page, contractCandidates('newProjectButton'));
       if (newProject === undefined) throw contractError('newProjectButton', 'ui_changed');
       await newProject.click();
@@ -62,20 +64,21 @@ export class ProjectOps {
         page,
         contractCandidates('projectNameInput'),
         request.signal,
+        request.deadlineAt,
       );
       await nameInput.fill(request.name);
       const confirm = await firstVisible(page, contractCandidates('projectCreateConfirm'));
       if (confirm === undefined) throw contractError('projectCreateConfirm', 'ui_changed');
       await confirm.click();
       // Creating navigates into the new project, which is the only place its id appears.
-      const id = await this.waitForProjectId(page, request.signal);
+      const id = await this.waitForProjectId(page, request.signal, request.deadlineAt);
       return { id, name: request.name };
     });
   }
 
   async listProjects(request: ListProjectsRequest): Promise<readonly ProjectSummary[]> {
-    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
-      const rows = await this.waitForProjectRows(page, request.signal);
+    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, request.deadlineAt, async (page) => {
+      const rows = await this.waitForProjectRows(page, request.signal, request.deadlineAt);
       if (rows === undefined) return [];
       const summaries = new Map<string, string>();
       const total = Math.min(rows.count, MAX_LISTED_PROJECTS);
@@ -84,9 +87,9 @@ export class ProjectOps {
         // Opening a project moves it to the front of ChatGPT's modified-time-sorted grid.
         // Repeatedly opening the last row in the bounded prefix walks that prefix backwards
         // without skipping the row shifted into the previous index.
-        const opened = await this.openProjectRow(page, rows.selector, total - 1, request.signal);
+        const opened = await this.openProjectRow(page, rows.selector, total - 1, request.signal, request.deadlineAt);
         summaries.set(opened.id, opened.name);
-        await this.returnToProjects(page, request.signal);
+        await this.returnToProjects(page, request.signal, request.deadlineAt);
       }
       return [...summaries].map(([id, name]) => ({ id, name }));
     });
@@ -94,13 +97,13 @@ export class ProjectOps {
 
   async deleteProject(request: DeleteProjectRequest): Promise<void> {
     const target = projectUrl(request.projectId);
-    await this.withProjectPage(target, request.signal, request.requestId, async (page) => {
+    await this.withProjectPage(target, request.signal, request.requestId, request.deadlineAt, async (page) => {
       // Resolve the id to its name inside the project, then delete the row bearing that
       // name. Row position must not be used: opening a project updates its modified time
       // and re-sorts the grid, so an index captured beforehand can point at a different
       // project by the time the delete runs.
-      const name = await this.readProjectName(page, request.signal);
-      await this.returnToProjects(page, request.signal);
+      const name = await this.readProjectName(page, request.signal, request.deadlineAt);
+      await this.returnToProjects(page, request.signal, request.deadlineAt);
       const options = await this.projectOptionsForName(page, name);
       if (options.length === 0)
         throw new AppError(
@@ -121,15 +124,17 @@ export class ProjectOps {
         page,
         contractCandidates('projectDeleteMenuItem'),
         request.signal,
+        request.deadlineAt,
       );
       await remove.click();
       const confirm = await this.waitForVisible(
         page,
         contractCandidates('projectDeleteConfirm'),
         request.signal,
+        request.deadlineAt,
       );
       await confirm.click();
-      await this.waitForProjectGone(page, name, request.signal);
+      await this.waitForProjectGone(page, name, request.signal, request.deadlineAt);
     });
   }
 
@@ -137,20 +142,26 @@ export class ProjectOps {
     // The sources tab is the project's own file store. Uploading through the composer
     // instead would attach the files to a single message that is discarded with the tab.
     const target = projectSourcesUrl(request.projectId);
-    return this.withProjectPage(target, request.signal, request.requestId, async (page) => {
-      const fileInput = await this.projectSourcesInput(page, request.signal);
-      await fileInput.setInputFiles(
-        request.attachments.map((attachment) => ({
-          name: attachment.filename,
-          mimeType: attachment.mimeType,
-          buffer: attachment.data,
-        })),
+    return this.withProjectPage(target, request.signal, request.requestId, request.deadlineAt, async (page) => {
+      const fileInput = await this.projectSourcesInput(page, request.signal, request.deadlineAt);
+      await abortRace(
+        fileInput.setInputFiles(
+          request.attachments.map((attachment) => ({
+            name: attachment.filename,
+            mimeType: attachment.mimeType,
+            buffer: attachment.data,
+          })),
+          { timeout: operationTimeout(request.deadlineAt, 30_000) },
+        ),
+        request.signal,
+        false,
       );
       // Confirm the sources list actually took the files rather than sleeping blindly.
       await this.waitForSourceNames(
         page,
         request.attachments.map((attachment) => attachment.filename),
         request.signal,
+        request.deadlineAt,
       );
       return { projectId: request.projectId, uploaded: request.attachments.length };
     });
@@ -160,8 +171,10 @@ export class ProjectOps {
     page: Page,
     selectors: readonly string[],
     signal: AbortSignal,
+    deadlineAt?: number,
   ): Promise<Locator> {
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+    const attempts = boundedAttempts(deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
       const locator = await firstVisible(page, selectors);
       if (locator !== undefined) return locator;
@@ -187,8 +200,8 @@ export class ProjectOps {
     return [];
   }
 
-  private async readProjectName(page: Page, signal: AbortSignal): Promise<string> {
-    const title = await this.waitForVisible(page, UI_SELECTORS.projectTitle, signal);
+  private async readProjectName(page: Page, signal: AbortSignal, deadlineAt?: number): Promise<string> {
+    const title = await this.waitForVisible(page, UI_SELECTORS.projectTitle, signal, deadlineAt);
     const name = (await title.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
     if (name.length === 0)
       throw new AppError('ui_changed', 'The ChatGPT project title could not be read.');
@@ -196,8 +209,9 @@ export class ProjectOps {
   }
 
   /** A destructive step is only reported as done once the row is actually gone. */
-  private async waitForProjectGone(page: Page, name: string, signal: AbortSignal): Promise<void> {
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+  private async waitForProjectGone(page: Page, name: string, signal: AbortSignal, deadlineAt?: number): Promise<void> {
+    const attempts = boundedAttempts(deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
       if ((await this.projectOptionsForName(page, name)).length === 0) return;
       await page.waitForTimeout(INITIAL_STATE_POLL_MS);
@@ -209,8 +223,9 @@ export class ProjectOps {
    * The sources tab exposes two unrestricted file inputs. Only the composer's one sits
    * inside the composer wrapper, so ancestry — not order — selects the project's input.
    */
-  private async projectSourcesInput(page: Page, signal: AbortSignal): Promise<Locator> {
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+  private async projectSourcesInput(page: Page, signal: AbortSignal, deadlineAt?: number): Promise<Locator> {
+    const attempts = boundedAttempts(deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
       for (const selector of UI_SELECTORS.projectFileInput) {
         const candidates = page.locator(selector);
@@ -235,8 +250,9 @@ export class ProjectOps {
     page: Page,
     filenames: readonly string[],
     signal: AbortSignal,
+    deadlineAt?: number,
   ): Promise<void> {
-    const deadline = Date.now() + PROJECT_UPLOAD_TIMEOUT_MS;
+    const deadline = Date.now() + operationTimeout(deadlineAt, PROJECT_UPLOAD_TIMEOUT_MS);
     while (Date.now() < deadline) {
       if (signal.aborted) throw abortError(signal);
       const text = await page
@@ -261,21 +277,29 @@ export class ProjectOps {
     selector: string,
     index: number,
     signal: AbortSignal,
+    deadlineAt?: number,
   ): Promise<ProjectSummary> {
     const row = page.locator(selector).nth(index);
     if ((await row.count()) === 0) throw contractError('projectRow', 'ui_changed');
     const name = (await row.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
     if (name.length === 0) throw contractError('projectRow', 'ui_changed');
     await row.click();
-    const id = await this.waitForProjectId(page, signal);
+    const id = await this.waitForProjectId(page, signal, deadlineAt);
     return { id, name };
   }
 
-  private async returnToProjects(page: Page, signal: AbortSignal): Promise<void> {
-    await page.goto(PROJECTS_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    const observation = await waitForProjectObservation(page, signal);
+  private async returnToProjects(page: Page, signal: AbortSignal, deadlineAt?: number): Promise<void> {
+    await abortRace(
+      page.goto(PROJECTS_URL, {
+        waitUntil: 'domcontentloaded',
+        timeout: operationTimeout(deadlineAt, 30_000),
+      }),
+      signal,
+      false,
+    );
+    const observation = await waitForProjectObservation(page, signal, deadlineAt);
     if (observation.session !== 'ready') throw errorForState(observation.session);
-    await this.waitForProjectRows(page, signal);
+    await this.waitForProjectRows(page, signal, deadlineAt);
   }
 
   /**
@@ -297,11 +321,13 @@ export class ProjectOps {
   private async waitForProjectRows(
     page: Page,
     signal: AbortSignal,
+    deadlineAt?: number,
   ): Promise<{ selector: string; count: number } | undefined> {
     let previousKey: string | undefined;
     let stableObservations = 0;
     let current: { selector: string; count: number } | undefined;
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+    const attempts = boundedAttempts(deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
       current = await this.projectRowSelector(page);
       const key = current === undefined ? 'empty' : `${current.selector}\0${current.count}`;
@@ -313,8 +339,9 @@ export class ProjectOps {
     throw contractError('projectRow', 'ui_changed');
   }
 
-  private async waitForProjectId(page: Page, signal: AbortSignal): Promise<string> {
-    for (let attempt = 0; attempt < PROJECT_ID_ATTEMPTS; attempt += 1) {
+  private async waitForProjectId(page: Page, signal: AbortSignal, deadlineAt?: number): Promise<string> {
+    const attempts = boundedAttempts(deadlineAt, PROJECT_ID_ATTEMPTS, POLL_MS);
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
       const id = projectIdFromHref(page.url());
       if (id !== undefined) return id;
@@ -328,6 +355,7 @@ export class ProjectOps {
     url: string,
     signal: AbortSignal,
     requestId: string,
+    deadlineAt: number | undefined,
     action: (page: Page) => Promise<T>,
   ): Promise<T> {
     let page: Page | undefined;
@@ -336,14 +364,22 @@ export class ProjectOps {
       page = await this.browser.getPage();
       if (signal.aborted) throw abortError(signal);
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await abortRace(
+          page.goto(url, {
+            waitUntil: 'domcontentloaded',
+            timeout: operationTimeout(deadlineAt, 30_000),
+          }),
+          signal,
+          false,
+        );
       } catch {
+        if (signal.aborted) throw abortError(signal);
         throw new AppError(
           'navigation_failed',
           'ChatGPT did not finish navigating to the requested project surface.',
         );
       }
-      const observation = await waitForProjectObservation(page, signal);
+      const observation = await waitForProjectObservation(page, signal, deadlineAt);
       this.observeState(observation.session);
       if (observation.missing === 'project_not_found') {
         throw new AppError(

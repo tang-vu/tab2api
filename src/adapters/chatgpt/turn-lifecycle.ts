@@ -120,6 +120,41 @@ export function turnAbortError(signal: AbortSignal, postSubmit: boolean): AppErr
 }
 
 /**
+ * Races a browser operation against the request signal so a cancelled or timed-out request
+ * does not keep waiting out a slow `page.goto` or file upload. The underlying operation is
+ * not cancelled — the page's `finally` cleanup tears it down — but the caller stops
+ * waiting immediately, classified through `turnAbortError`.
+ */
+export function abortRace<T>(
+  work: Promise<T>,
+  signal: AbortSignal | undefined,
+  postSubmit: boolean,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal === undefined) {
+      void work.then(resolve, reject);
+      return;
+    }
+    if (signal.aborted) {
+      reject(turnAbortError(signal, postSubmit));
+      return;
+    }
+    const onAbort = () => reject(turnAbortError(signal, postSubmit));
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+/**
  * Maps an unexpected post-submit failure to `submission_uncertain`: the send gesture ran,
  * so the prompt may exist upstream even though this process lost track of the turn.
  */

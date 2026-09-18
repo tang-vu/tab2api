@@ -95,16 +95,17 @@ describe('MetricsRegistry', () => {
     metrics.observeDuration('generate', 100);
     metrics.observeDuration('generate', 40);
     metrics.observeDuration('generate', 260);
-    const stat = metrics.snapshot().durations.generate;
-    expect(stat.count).toBe(3);
-    expect(stat.totalMs).toBe(400);
-    expect(stat.maxMs).toBe(260);
+    expect(metrics.snapshot().durations.generate).toEqual({
+      count: 3,
+      totalMs: 400,
+      maxMs: 260,
+    });
   });
 
   it('clamps negative durations to zero', () => {
     const metrics = new MetricsRegistry();
     metrics.observeDuration('generateImage', -50);
-    expect(metrics.snapshot().durations.generateImage.totalMs).toBe(0);
+    expect(metrics.snapshot().durations.generateImage).toMatchObject({ totalMs: 0 });
   });
 
   it('timed() records success and failure outcomes', async () => {
@@ -126,7 +127,7 @@ describe('MetricsRegistry', () => {
     expect(snapshot.counters['turns.started']).toBe(2);
     expect(snapshot.counters['turns.completed']).toBe(1);
     expect(snapshot.counters['turns.failed']).toBe(1);
-    expect(snapshot.durations.generate.count).toBe(2);
+    expect(snapshot.durations.generate?.count).toBe(2);
   });
 
   it('exposes a zero-filled snapshot before anything runs', () => {
