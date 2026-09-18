@@ -1,7 +1,10 @@
 import type { Locator, Page } from 'playwright';
 import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
-import { ChatGptAdapter, validateIntrinsicPng } from '../src/adapters/chatgpt/adapter.js';
+import { ChatGptAdapter } from '../src/adapters/chatgpt/adapter.js';
+import { validateIntrinsicPng } from '../src/adapters/chatgpt/image-turn.js';
+import type { DomObservation } from '../src/adapters/chatgpt/observe-dom.js';
+import { emptyObservation } from '../src/adapters/chatgpt/session.js';
 import { UI_SELECTORS } from '../src/adapters/chatgpt/selectors.js';
 import type { BrowserController } from '../src/browser/controller.js';
 import { AppError } from '../src/errors.js';
@@ -146,6 +149,10 @@ class FakeCapturePage {
       nth: () => ({ innerText: async () => '' }),
     } as unknown as Locator;
   }
+  /** The observer's serialized evaluate is answered with a ready chat surface. */
+  async evaluate(): Promise<DomObservation> {
+    return { ...emptyObservation('ready'), composerPresent: true, composerVisible: true };
+  }
   context(): { newCDPSession: () => Promise<FakeCdpSession> } {
     return { newCDPSession: async () => this.cdp };
   }
@@ -266,8 +273,8 @@ describe('image generation reference uploads', () => {
 
   it.each([
     ['cancelled', undefined],
-    ['timeout', new AppError('timeout', 'timed out')],
-  ] as const)('preserves %s while waiting for an answer with references', async (code, reason) => {
+    ['generation_timeout', new AppError('timeout', 'timed out')],
+  ] as const)('maps abort to %s while waiting for an answer with references', async (code, reason) => {
     const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }, 1000));
     const controller = new AbortController();
     page.onWait = () => controller.abort(reason);
@@ -362,7 +369,7 @@ describe('image generation reference uploads', () => {
     expect(page.queried).toContain(UI_SELECTORS.generatedImageFallback[0]);
   });
 
-  it('reports a missing file input as a UI change instead of dropping the references', async () => {
+  it('reports a missing file input as an attachment failure, not a dropped reference', async () => {
     const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }));
     page.screenshotPng = pngHeader(width, height);
     page.fileInputAvailable = false;
@@ -374,7 +381,7 @@ describe('image generation reference uploads', () => {
         requestId: 'reference-missing-input',
         attachments: [{ data: Buffer.from('one'), mimeType: 'image/png', filename: 'image-1.png' }],
       }),
-    ).rejects.toMatchObject({ code: 'ui_changed' });
+    ).rejects.toMatchObject({ code: 'attachment_failed' });
     // Nothing was typed, so the prompt cannot reach ChatGPT without its references.
     expect(page.composed).toEqual([]);
     expect(page.closed).toBe(true);

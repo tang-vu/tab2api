@@ -1,8 +1,11 @@
 import type { Locator, Page } from 'playwright';
 import { describe, expect, it } from 'vitest';
 import { ChatGptAdapter } from '../src/adapters/chatgpt/adapter.js';
+import type { DomObservation } from '../src/adapters/chatgpt/observe-dom.js';
+import { emptyObservation } from '../src/adapters/chatgpt/session.js';
 import type { BrowserController } from '../src/browser/controller.js';
 import { AppError } from '../src/errors.js';
+import type { SessionState } from '../src/provider.js';
 import { createLogger } from '../src/observability/logger.js';
 import { testConfig } from './helpers.js';
 
@@ -55,8 +58,28 @@ class FakePage {
   isClosed(): boolean {
     return this.closed;
   }
+  private observations = 0;
+
+  /** The observer's serialized evaluate is answered with the mode's session state. */
+  async evaluate(): Promise<DomObservation> {
+    this.observations += 1;
+    const session: SessionState =
+      this.mode === 'ready'
+        ? 'ready'
+        : this.mode === 'login'
+          ? 'login_required'
+          : this.mode === 'delayed' && this.observations > 1
+            ? 'ready'
+            : 'ui_changed';
+    return {
+      ...emptyObservation(session),
+      composerPresent: session === 'ready',
+      composerVisible: session === 'ready',
+    };
+  }
+
   locator(selector: string): Locator {
-    const ready = this.mode === 'ready' || (this.mode === 'delayed' && this.waits > 0);
+    const ready = this.mode === 'ready' || (this.mode === 'delayed' && this.observations > 1);
     const composer = selector === '#prompt-textarea' && ready;
     const send = selector === 'button[data-testid="send-button"]' && ready;
     const login = selector === 'button[data-testid="login-button"]' && this.mode === 'login';
@@ -130,7 +153,7 @@ describe('ChatGPT adapter failure cleanup', () => {
     expect(browser.page.closed).toBe(true);
   });
 
-  it('preserves timeout code and closes its tab', async () => {
+  it('maps a request-timeout abort after submission to generation_timeout and closes its tab', async () => {
     const browser = new FakeBrowser('ready');
     const adapter = new ChatGptAdapter(browser, testConfig(), createLogger('silent'));
     const controller = new AbortController();
@@ -140,7 +163,7 @@ describe('ChatGPT adapter failure cleanup', () => {
       requestId: 'timeout-test',
     });
     setTimeout(() => controller.abort(new AppError('timeout', 'timed out')), 20);
-    await expect(generation).rejects.toMatchObject({ code: 'timeout' });
+    await expect(generation).rejects.toMatchObject({ code: 'generation_timeout' });
     expect(browser.page.closed).toBe(true);
   });
 
