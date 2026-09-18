@@ -175,8 +175,14 @@ export class LocalGenerationClient {
   }
 
   async chat(options: ChatOptions, signal?: AbortSignal): Promise<string> {
+    // Project turns live behind the project-scoped route; the strict request schema has no
+    // `project_id` body field, so sending one inside the payload is rejected as unknown.
+    const pathname =
+      options.projectId === undefined
+        ? '/v1/chat/completions'
+        : `/v1/projects/${encodeURIComponent(options.projectId)}/chat/completions`;
     const body = await this.post(
-      '/v1/chat/completions',
+      pathname,
       {
         model: 'chatgpt-web',
         stream: false,
@@ -188,7 +194,6 @@ export class LocalGenerationClient {
         ...(options.conversationId === undefined
           ? {}
           : { conversation_id: options.conversationId }),
-        ...(options.projectId === undefined ? {} : { project_id: options.projectId }),
       },
       chatCompletionResponseSchema,
       signal,
