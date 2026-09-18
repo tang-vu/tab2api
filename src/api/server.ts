@@ -692,7 +692,7 @@ export function buildServer(dependencies: ServerDependencies) {
               attachments,
               signal: lifecycle.controller.signal,
               requestId: request.id,
-            deadlineAt: lifecycle.deadlineAt,
+              deadlineAt: lifecycle.deadlineAt,
             }),
           lifecycle.controller.signal,
         );

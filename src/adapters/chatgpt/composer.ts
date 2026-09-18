@@ -42,11 +42,7 @@ export async function attachFiles(
   if (attachments === undefined || attachments.length === 0) return;
   const fileInput = page.locator(contractCandidates('fileInput').join(',')).first();
   if ((await fileInput.count()) === 0) {
-    throw contractError(
-      'fileInput',
-      'attachment_failed',
-      'The ChatGPT file input is unavailable.',
-    );
+    throw contractError('fileInput', 'attachment_failed', 'The ChatGPT file input is unavailable.');
   }
   await abortRace(
     fileInput.setInputFiles(
@@ -154,13 +150,12 @@ export async function sendPrompt(
   try {
     // The send gesture is the post-submit boundary: an abort racing it is classified
     // through the post-submit path, and a gesture failure is submission_uncertain.
-    await abortRace(
-      send !== undefined ? send.click() : composer.press('Enter'),
-      signal,
-      true,
-    );
+    await abortRace(send !== undefined ? send.click() : composer.press('Enter'), signal, true);
   } catch (error) {
-    if (error instanceof AppError && (error.code === 'cancelled' || error.code === 'generation_timeout')) {
+    if (
+      error instanceof AppError &&
+      (error.code === 'cancelled' || error.code === 'generation_timeout')
+    ) {
       throw error;
     }
     throw new AppError(

@@ -4,7 +4,12 @@ import type { GenerateImageRequest, GenerateImageResult } from '../../provider.j
 import type { AppConfig } from '../../config/index.js';
 import { contractCandidates } from './selector-contracts.js';
 import { observe } from './session.js';
-import { assertGeneratingObservation, assertReadyObservation, errorForState, waitForInitialObservation } from './session.js';
+import {
+  assertGeneratingObservation,
+  assertReadyObservation,
+  errorForState,
+  waitForInitialObservation,
+} from './session.js';
 import {
   attachFiles,
   assertTemporaryChat,
@@ -118,8 +123,7 @@ async function waitForGeneratedImage(
         .catch(() => false));
     stableObservations = complete ? stableObservations + 1 : 0;
     const generating = observation.stopVisible;
-    const completionActionAvailable =
-      observation.completionActionCount > baselineCompletionActions;
+    const completionActionAvailable = observation.completionActionCount > baselineCompletionActions;
     if (
       image !== undefined &&
       stableObservations >= STABLE_IMAGE_OBSERVATIONS &&

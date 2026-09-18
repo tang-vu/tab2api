@@ -87,8 +87,7 @@ async function waitForCompletion(
     let assistantCount = observation.assistant.count;
     let text = observation.assistant.text;
     let pending = observation.assistant.pending;
-    let completionActionAvailable =
-      observation.completionActionCount > baselineCompletionActions;
+    let completionActionAvailable = observation.completionActionCount > baselineCompletionActions;
     const generating = observation.stopVisible;
 
     if (turnIdsObserved) {
@@ -139,10 +138,7 @@ async function waitForCompletion(
     ) {
       return text;
     }
-    if (
-      lifecycle.current === 'submitted' &&
-      (generating || pending || assistantCount > baseline)
-    ) {
+    if (lifecycle.current === 'submitted' && (generating || pending || assistantCount > baseline)) {
       lifecycle.transition('generating');
     }
     await new Promise<void>((resolve, reject) => {

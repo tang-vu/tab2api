@@ -84,10 +84,7 @@ describe('capabilitySnapshot', () => {
   });
 
   it('reports absent rather than unknown on a rendered surface missing the control', () => {
-    const capabilities = capabilitySnapshot(
-      observationWith({ composerVisible: true }),
-      'chat',
-    );
+    const capabilities = capabilitySnapshot(observationWith({ composerVisible: true }), 'chat');
     expect(capabilities.fileUploads).toBe('absent');
     expect(capabilities.reasoningEffort).toBe('absent');
   });
@@ -100,10 +97,7 @@ describe('capabilitySnapshot', () => {
   });
 
   it('reports project navigation only on the projects surface', () => {
-    const capabilities = capabilitySnapshot(
-      observationWith({ projectRowCount: 2 }),
-      'projects',
-    );
+    const capabilities = capabilitySnapshot(observationWith({ projectRowCount: 2 }), 'projects');
     expect(capabilities.projectNavigation).toBe('observed');
     const missing = capabilitySnapshot(emptyObservation('ui_changed'), 'projects');
     expect(missing.projectNavigation).toBe('absent');

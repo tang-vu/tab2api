@@ -44,9 +44,7 @@ describe('observeChatDom session classification', () => {
   });
 
   it('reports unknown markup as ui_changed', () => {
-    expect(observe(dom('<main>unrelated</main>')).session).toBe(
-      'ui_changed',
-    );
+    expect(observe(dom('<main>unrelated</main>')).session).toBe('ui_changed');
   });
 
   it('treats an unknown surface as still generating when told generation is in flight', () => {
@@ -57,18 +55,14 @@ describe('observeChatDom session classification', () => {
   });
 
   it('detects generation in progress from a visible stop control', () => {
-    const root = dom(
-      '<main><button data-testid="stop-button">Stop generating</button></main>',
-    );
+    const root = dom('<main><button data-testid="stop-button">Stop generating</button></main>');
     const observation = observe(root);
     expect(observation.session).toBe('generation_in_progress');
     expect(observation.stopVisible).toBe(true);
   });
 
   it('does not call a hidden composer ready', () => {
-    const root = dom(
-      '<main><textarea id="prompt-textarea" hidden></textarea></main>',
-    );
+    const root = dom('<main><textarea id="prompt-textarea" hidden></textarea></main>');
     const observation = observe(root);
     expect(observation.composerPresent).toBe(true);
     expect(observation.composerVisible).toBe(false);
@@ -77,7 +71,7 @@ describe('observeChatDom session classification', () => {
 });
 
 describe('observeChatDom missing surfaces', () => {
-  const notFoundPage = '<main><p>We couldn\'t find the page you were looking for.</p></main>';
+  const notFoundPage = "<main><p>We couldn't find the page you were looking for.</p></main>";
 
   it('reports a missing conversation only when the URL names one and nothing renders', () => {
     const observation = observe(dom(notFoundPage), {
@@ -94,9 +88,7 @@ describe('observeChatDom missing surfaces', () => {
   });
 
   it('ignores not-found text on surfaces that still render turns', () => {
-    const root = dom(
-      `${notFoundPage}<div data-turn-id="t1"></div>`,
-    );
+    const root = dom(`${notFoundPage}<div data-turn-id="t1"></div>`);
     const observation = observe(root, {
       url: 'https://chatgpt.com/c/00000000-0000-4000-8000-000000000099',
     });
@@ -260,9 +252,7 @@ describe('observer helpers', () => {
   });
 
   it('matchContract matches text patterns inside the declared scope', () => {
-    const root = dom(
-      '<main><button>Say hello</button><a href="/auth/login">Log in</a></main>',
-    );
+    const root = dom('<main><button>Say hello</button><a href="/auth/login">Log in</a></main>');
     const matched = matchContract(root, {
       css: [],
       textScope: ['main button', 'main a'],
@@ -272,9 +262,7 @@ describe('observer helpers', () => {
   });
 
   it('caps page-text scanning for state patterns', () => {
-    const root = dom(
-      '<main><p>checking your browser</p></main>',
-    );
+    const root = dom('<main><p>checking your browser</p></main>');
     const capped = observe(root, { maxPageTextChars: 5 });
     expect(capped.session).toBe('ui_changed');
   });

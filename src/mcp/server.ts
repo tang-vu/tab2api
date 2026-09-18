@@ -262,7 +262,11 @@ export async function serveMcpStdio(
     if (trimmed.length > MAX_MCP_MESSAGE_CHARS) {
       writeLine(
         output,
-        jsonRpcError(null, -32_600, `Invalid request: message exceeds ${MAX_MCP_MESSAGE_CHARS} characters.`),
+        jsonRpcError(
+          null,
+          -32_600,
+          `Invalid request: message exceeds ${MAX_MCP_MESSAGE_CHARS} characters.`,
+        ),
       );
       continue;
     }

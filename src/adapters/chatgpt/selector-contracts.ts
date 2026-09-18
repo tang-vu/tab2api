@@ -249,10 +249,7 @@ export const SELECTOR_CONTRACTS = {
   newProjectButton: contract({
     name: 'newProjectButton',
     css: ['button[aria-label="Dự án mới"]', 'button[aria-label*="New project" i]'],
-    playwright: [
-      'main button:visible:has-text("Tạo")',
-      'main button:visible:has-text("Create")',
-    ],
+    playwright: ['main button:visible:has-text("Tạo")', 'main button:visible:has-text("Create")'],
     textScope: ['main button'],
     textPatterns: ['tạo', 'create'],
     cardinality: 'zeroOrOne',
@@ -411,12 +408,8 @@ export function serializeContracts(): SerializedContracts {
     serialized[name] = {
       css: definition.css,
       ...(definition.textScope === undefined ? {} : { textScope: definition.textScope }),
-      ...(definition.textPatterns === undefined
-        ? {}
-        : { textPatterns: definition.textPatterns }),
-      ...(definition.pagePatterns === undefined
-        ? {}
-        : { pagePatterns: definition.pagePatterns }),
+      ...(definition.textPatterns === undefined ? {} : { textPatterns: definition.textPatterns }),
+      ...(definition.pagePatterns === undefined ? {} : { pagePatterns: definition.pagePatterns }),
     };
   }
   return serialized;

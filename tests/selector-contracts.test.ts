@@ -114,9 +114,7 @@ describe('contract candidate accessors', () => {
 describe('serializeContracts', () => {
   it('serializes the whole registry to plain JSON data', () => {
     const serialized = serializeContracts();
-    expect(Object.keys(serialized).sort()).toEqual(
-      Object.keys(SELECTOR_CONTRACTS).sort(),
-    );
+    expect(Object.keys(serialized).sort()).toEqual(Object.keys(SELECTOR_CONTRACTS).sort());
     const roundTripped = JSON.parse(JSON.stringify(serialized)) as Record<
       string,
       { css: string[] }
@@ -130,9 +128,7 @@ describe('serializeContracts', () => {
     const serialized = serializeContracts();
     for (const definition of Object.values(serialized)) {
       expect('textScope' in definition && definition.textScope === undefined).toBe(false);
-      expect('pagePatterns' in definition && definition.pagePatterns === undefined).toBe(
-        false,
-      );
+      expect('pagePatterns' in definition && definition.pagePatterns === undefined).toBe(false);
     }
   });
 });

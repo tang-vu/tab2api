@@ -19,10 +19,7 @@ describe('EventLog', () => {
     const log = new EventLog();
     log.record('queue.draining');
     log.record('queue.resumed');
-    expect(log.list().map((event) => event.type)).toEqual([
-      'queue.draining',
-      'queue.resumed',
-    ]);
+    expect(log.list().map((event) => event.type)).toEqual(['queue.draining', 'queue.resumed']);
   });
 
   it('evicts the oldest events once the ring wraps', () => {
@@ -47,13 +44,7 @@ describe('EventLog', () => {
   it('carries only content-free detail fields', () => {
     const log = new EventLog();
     const event = log.record('request.error', 'rate_limited', 'req-9');
-    expect(Object.keys(event).sort()).toEqual([
-      'at',
-      'detail',
-      'requestId',
-      'seq',
-      'type',
-    ]);
+    expect(Object.keys(event).sort()).toEqual(['at', 'detail', 'requestId', 'seq', 'type']);
   });
 });
 
