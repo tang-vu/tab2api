@@ -17,6 +17,9 @@ export interface GenerateRequest {
   prompt: string;
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
   attachments?: readonly MediaAttachment[];
   /** Ask inside this ChatGPT project so its files and instructions apply. */
   projectId?: string;
@@ -76,6 +79,9 @@ export interface GenerateImageRequest {
   prompt: string;
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
   /** Visual references uploaded with the prompt so the generated image can follow them. */
   attachments?: readonly MediaAttachment[];
   /** Run the turn in a ChatGPT Temporary Chat that is not kept in account history. */
@@ -97,17 +103,26 @@ export interface CreateProjectRequest {
   name: string;
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
 }
 
 export interface ListProjectsRequest {
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
 }
 
 export interface DeleteProjectRequest {
   projectId: string;
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
 }
 
 export interface UploadProjectFilesRequest {
@@ -115,6 +130,9 @@ export interface UploadProjectFilesRequest {
   attachments: readonly MediaAttachment[];
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
 }
 
 export interface UploadProjectFilesResult {

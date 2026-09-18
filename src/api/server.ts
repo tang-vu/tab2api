@@ -97,9 +97,12 @@ function requestAbortController(
   timeoutMs: number,
 ): {
   controller: AbortController;
+  /** Epoch ms when this request's budget expires; forwarded to browser operations. */
+  deadlineAt: number;
   dispose: () => void;
 } {
   const controller = new AbortController();
+  const deadlineAt = Date.now() + timeoutMs;
   const timeout = setTimeout(
     () => controller.abort(new AppError('timeout', 'The request exceeded the configured timeout.')),
     timeoutMs,
@@ -112,6 +115,7 @@ function requestAbortController(
   reply.raw.once('close', onResponseClose);
   return {
     controller,
+    deadlineAt,
     dispose: () => {
       clearTimeout(timeout);
       request.raw.removeListener('aborted', onAborted);
@@ -397,6 +401,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             attachments,
             temporary,
             ...(body.reasoning_effort !== undefined && { effort: body.reasoning_effort }),
@@ -443,6 +448,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             attachments,
             temporary,
             ...(effort !== undefined && { effort }),
@@ -487,6 +493,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             attachments,
             temporary,
           }),
@@ -592,6 +599,7 @@ export function buildServer(dependencies: ServerDependencies) {
             name: body.name,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
           }),
         lifecycle.controller.signal,
       );
@@ -608,6 +616,7 @@ export function buildServer(dependencies: ServerDependencies) {
           provider.listProjects({
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
           }),
         lifecycle.controller.signal,
       );
@@ -632,6 +641,7 @@ export function buildServer(dependencies: ServerDependencies) {
             projectId,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
           }),
         lifecycle.controller.signal,
       );
@@ -682,6 +692,7 @@ export function buildServer(dependencies: ServerDependencies) {
               attachments,
               signal: lifecycle.controller.signal,
               requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             }),
           lifecycle.controller.signal,
         );
@@ -721,6 +732,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt: body.prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             temporary: body.temporary ?? config.temporaryChat,
             ...(attachments.length > 0 && { attachments }),
           }),
@@ -816,6 +828,7 @@ export function buildServer(dependencies: ServerDependencies) {
             attachments: [attachment],
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             temporary: config.temporaryChat,
           }),
         lifecycle.controller.signal,

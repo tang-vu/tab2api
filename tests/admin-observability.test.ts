@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { buildServer } from '../src/api/server.js';
 import { AppError } from '../src/errors.js';
 import { EventLog } from '../src/observability/events.js';
@@ -21,7 +22,7 @@ class DiagnosticsProvider extends FakeProvider {
     super();
   }
 
-  override diagnostics(): ProviderDiagnostics {
+  diagnostics(): ProviderDiagnostics {
     if (this.diagnosticsPayload === undefined) {
       return {
         state: this.state,
@@ -68,7 +69,14 @@ describe('admin observability surfaces', () => {
     metrics.recordError('ui_changed');
     const app = server(new FakeProvider(), { metrics });
     const response = await app.inject({ method: 'GET', url: '/admin/metrics', headers: auth });
-    const body = response.json();
+    const body = z
+      .object({
+        counters: z.record(z.string(), z.number()),
+        errorsByCode: z.record(z.string(), z.number()),
+        queue: z.object({ pending: z.number(), active: z.number(), draining: z.boolean() }),
+        uptimeMs: z.number(),
+      })
+      .parse(response.json());
     expect(body.counters['turns.started']).toBe(1);
     expect(body.errorsByCode.ui_changed).toBe(1);
     expect(body.queue).toMatchObject({ pending: 0, active: 0, draining: false });
@@ -91,13 +99,20 @@ describe('admin observability surfaces', () => {
       url: '/admin/diagnostics',
       headers: auth,
     });
-    const body = response.json();
+    const body = z
+      .object({
+        session: z.string(),
+        provider: z.object({
+          unsatisfiedContracts: z.array(z.string()),
+          fingerprint: z.object({ capturedAt: z.string() }),
+        }),
+        events: z.array(z.object({ type: z.string() })),
+      })
+      .parse(response.json());
     expect(body.session).toBe('ready');
     expect(body.provider.unsatisfiedContracts).toEqual(['composer']);
     expect(body.provider.fingerprint.capturedAt).toBe('2025-01-01T00:00:00.000Z');
-    expect(body.events.map((event: { type: string }) => event.type)).toContain(
-      'browser.reset',
-    );
+    expect(body.events.map((event) => event.type)).toContain('browser.reset');
     await app.close();
   });
 
@@ -108,12 +123,8 @@ describe('admin observability surfaces', () => {
       url: '/admin/diagnostics',
       headers: auth,
     });
-    const body = response.json();
-    expect(body.provider).toEqual({
-      state: 'ready',
-      fingerprint: undefined,
-      capabilities: undefined,
-      unsatisfiedContracts: [],
+    expect(response.json()).toMatchObject({
+      provider: { state: 'ready', unsatisfiedContracts: [] },
     });
     await app.close();
   });

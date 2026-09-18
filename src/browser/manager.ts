@@ -8,6 +8,11 @@ import { hardenPrivateDirectoryPermissions } from '../security/private-files.js'
 export class BrowserManager {
   private context: BrowserContext | undefined;
   private launching: Promise<BrowserContext> | undefined;
+  /**
+   * Pages leased to callers. Each page removes itself on close; a nonzero count after an
+   * operation finished means a page escaped its owner and `openPageCount` reports it.
+   */
+  private readonly ownedPages = new Set<Page>();
 
   constructor(private readonly config: AppConfig) {}
 
@@ -17,7 +22,14 @@ export class BrowserManager {
       await this.close();
       context = await this.ensureContext();
     }
-    return context.newPage();
+    const page = await context.newPage();
+    this.ownedPages.add(page);
+    page.once('close', () => this.ownedPages.delete(page));
+    return page;
+  }
+
+  openPageCount(): number {
+    return this.ownedPages.size;
   }
 
   async ensureContext(): Promise<BrowserContext> {
@@ -35,6 +47,7 @@ export class BrowserManager {
   async close(): Promise<void> {
     const current = this.context;
     this.context = undefined;
+    this.ownedPages.clear();
     if (current !== undefined) {
       try {
         await current.close();

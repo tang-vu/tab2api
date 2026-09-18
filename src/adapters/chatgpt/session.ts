@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import { AppError, abortError } from '../../errors.js';
 import type { SessionState } from '../../provider.js';
+import { boundedAttempts } from '../../browser/deadline.js';
 import { observePage, type DomObservation, type ObservePageOptions } from './observe-dom.js';
 import { firstVisible } from './locators.js';
 
@@ -44,16 +45,28 @@ export async function observe(
   return observePage(page, options);
 }
 
+export interface InitialObservationOptions {
+  /** Cancels the wait between polls; checked every attempt. */
+  signal?: AbortSignal;
+  /** Caps the wait at the request deadline rather than the full poll budget. */
+  deadlineAt?: number | undefined;
+}
+
 /**
  * Waits for any known surface after navigation. Opening a saved conversation can involve a
  * redirect plus an SPA render, so readiness is given more room than a cold composer needs
- * before it is called a UI change.
+ * before it is called a UI change — but never past the request's own deadline.
  */
-export async function waitForInitialObservation(page: Page): Promise<DomObservation> {
-  for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+export async function waitForInitialObservation(
+  page: Page,
+  options: InitialObservationOptions = {},
+): Promise<DomObservation> {
+  const attempts = boundedAttempts(options.deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (options.signal?.aborted) throw abortError(options.signal);
     const observation = await observe(page);
     if (observation.session !== 'ui_changed') return observation;
-    if (attempt < INITIAL_STATE_ATTEMPTS - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    if (attempt < attempts - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
   }
   return observe(page);
 }
@@ -66,15 +79,17 @@ export async function waitForInitialObservation(page: Page): Promise<DomObservat
 export async function waitForProjectObservation(
   page: Page,
   signal: AbortSignal,
+  deadlineAt?: number,
 ): Promise<DomObservation> {
-  for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
+  const attempts = boundedAttempts(deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (signal.aborted) throw abortError(signal);
     const observation = await observe(page);
     if (observation.session !== 'ui_changed') return observation;
     if (observation.newProjectControl || observation.projectRowCount > 0) {
       return { ...observation, session: 'ready' };
     }
-    if (attempt < INITIAL_STATE_ATTEMPTS - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
+    if (attempt < attempts - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
   }
   return observe(page);
 }
