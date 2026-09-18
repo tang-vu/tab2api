@@ -122,6 +122,25 @@ export interface UploadProjectFilesResult {
   uploaded: number;
 }
 
+/**
+ * Content-free provider diagnostics: the last live observation's session state, which
+ * selector contracts matched, and which capabilities were observed. Carries no prompt
+ * text, assistant output, titles, file names, or account data.
+ */
+export interface ProviderDiagnostics {
+  readonly state: SessionState;
+  /**
+   * Per-contract match evidence from the last observation, when one has run. The shape is
+   * provider-specific (see the adapter's diagnostics module); it is always a
+   * JSON-serializable, content-free structure.
+   */
+  readonly fingerprint: unknown;
+  /** Three-valued capability evidence from the last observation. */
+  readonly capabilities: unknown;
+  /** Semantic contract names whose declared cardinality was not satisfied. */
+  readonly unsatisfiedContracts: readonly string[];
+}
+
 export interface WebChatProvider {
   readonly id: 'chatgpt-web';
   generate(request: GenerateRequest): Promise<GenerateResult>;
@@ -137,6 +156,11 @@ export interface WebChatProvider {
    * `browser_disconnected`. Callers needing a live probe use `health()` instead.
    */
   sessionState(): SessionState;
+  /**
+   * Content-free diagnostics from the last live observation. Providers that cannot inspect
+   * the upstream UI may omit it; callers treat its absence as "no observation yet".
+   */
+  diagnostics?(): ProviderDiagnostics;
   reset(): Promise<void>;
   close(): Promise<void>;
 }

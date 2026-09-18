@@ -10,7 +10,9 @@ import { LocalGenerationClient } from '../api/local-generation-client.js';
 import { buildServer } from '../api/server.js';
 import { createBrowserController } from '../browser/factory.js';
 import { loadConfig, type AppConfig } from '../config/index.js';
+import { EventLog } from '../observability/events.js';
 import { createLogger } from '../observability/logger.js';
+import { MetricsRegistry } from '../observability/metrics.js';
 import { SystemSpeechSynthesizer } from '../audio/system-speech.js';
 import { ApiKeyStore } from '../security/api-keys.js';
 import { assertSafeDataChildDirectory } from '../security/paths.js';
@@ -27,18 +29,20 @@ function print(message: string): void {
 async function dependencies(config: AppConfig) {
   const logger = createLogger(config.logLevel);
   const browser = createBrowserController(config);
-  const provider = new ChatGptAdapter(browser, config, logger);
-  return { logger, provider };
+  const events = new EventLog();
+  const metrics = new MetricsRegistry();
+  const provider = new ChatGptAdapter(browser, config, logger, { events, metrics });
+  return { logger, provider, events, metrics };
 }
 
 export async function commandStart(): Promise<void> {
   const config = await loadConfig();
-  const { logger, provider } = await dependencies(config);
+  const { logger, provider, events, metrics } = await dependencies(config);
   const [apiKeys, usage] = await Promise.all([
     ApiKeyStore.load(config.dataDir, config.apiToken),
     UsageStore.load(config.dataDir),
   ]);
-  const app = buildServer({ config, provider, logger, apiKeys, usage });
+  const app = buildServer({ config, provider, logger, apiKeys, usage, events, metrics });
   let shutdownPromise: Promise<void> | undefined;
   const shutdown = (signal: string): Promise<void> => {
     if (shutdownPromise === undefined) {
