@@ -157,7 +157,11 @@ export async function commandDoctor(args: readonly string[] = []): Promise<void>
   try {
     const state = await provider.health();
     const ok = state === 'ready';
-    results.push({ name: 'Browser/session/selectors', status: ok ? 'pass' : 'fail', detail: state });
+    results.push({
+      name: 'Browser/session/selectors',
+      status: ok ? 'pass' : 'fail',
+      detail: state,
+    });
     if (!json) print(`${ok ? 'PASS' : 'FAIL'} Browser/session/selectors: ${state}`);
     if (!ok) failed = true;
   } finally {

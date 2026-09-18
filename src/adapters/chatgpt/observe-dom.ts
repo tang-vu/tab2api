@@ -156,9 +156,7 @@ export function isVisible(el: DomElement): boolean {
   const style = el.style;
   if (
     style !== undefined &&
-    (style.display === 'none' ||
-      style.visibility === 'hidden' ||
-      style.visibility === 'collapse')
+    (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse')
   ) {
     return false;
   }
@@ -186,9 +184,7 @@ export function visibleText(root: DomNode, exclude?: ReadonlySet<DomNode>): stri
   };
   const walk = (node: DomNode, inPre: boolean): void => {
     if (node.nodeType === 3) {
-      output += inPre
-        ? (node.nodeValue ?? '')
-        : (node.nodeValue ?? '').replace(/\s+/g, ' ');
+      output += inPre ? (node.nodeValue ?? '') : (node.nodeValue ?? '').replace(/\s+/g, ' ');
       return;
     }
     if (node.nodeType !== 1) return;
@@ -446,9 +442,7 @@ export function observeChatDom(root: DomRoot, options: ObserveDomOptions): DomOb
     fileInputCount: contractResults.fileInput?.count ?? 0,
     generatedImageCount: Math.max(
       0,
-      ...(contracts.generatedImage?.css ?? []).map(
-        (selector) => queryAll(root, selector).length,
-      ),
+      ...(contracts.generatedImage?.css ?? []).map((selector) => queryAll(root, selector).length),
     ),
     generatedImageFallbackCount: Math.max(
       0,

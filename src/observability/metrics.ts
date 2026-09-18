@@ -45,11 +45,7 @@ const COUNTER_NAMES: readonly CounterName[] = [
 
 type DurationName = 'generate' | 'generateImage' | 'projectOperation';
 
-const DURATION_NAMES: readonly DurationName[] = [
-  'generate',
-  'generateImage',
-  'projectOperation',
-];
+const DURATION_NAMES: readonly DurationName[] = ['generate', 'generateImage', 'projectOperation'];
 
 export class MetricsRegistry {
   private readonly startedAt = new Date();

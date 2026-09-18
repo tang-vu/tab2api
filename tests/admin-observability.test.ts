@@ -5,20 +5,14 @@ import { AppError } from '../src/errors.js';
 import { EventLog } from '../src/observability/events.js';
 import { createLogger } from '../src/observability/logger.js';
 import { MetricsRegistry } from '../src/observability/metrics.js';
-import type {
-  GenerateRequest,
-  GenerateResult,
-  ProviderDiagnostics,
-} from '../src/provider.js';
+import type { GenerateRequest, GenerateResult, ProviderDiagnostics } from '../src/provider.js';
 import { FakeProvider } from '../src/testing/fake-provider.js';
 import { testConfig } from './helpers.js';
 
 const auth = { authorization: 'Bearer test-only-token-that-is-long-enough' };
 
 class DiagnosticsProvider extends FakeProvider {
-  constructor(
-    private readonly diagnosticsPayload: ProviderDiagnostics | undefined,
-  ) {
+  constructor(private readonly diagnosticsPayload: ProviderDiagnostics | undefined) {
     super();
   }
 
@@ -159,11 +153,7 @@ describe('admin observability surfaces', () => {
     await app.inject({ method: 'POST', url: '/admin/session/reset', headers: auth });
     const types = events.list().map((event) => event.type);
     expect(types).toEqual(
-      expect.arrayContaining([
-        'queue.draining',
-        'queue.resumed',
-        'browser.reset',
-      ]),
+      expect.arrayContaining(['queue.draining', 'queue.resumed', 'browser.reset']),
     );
     await app.close();
   });

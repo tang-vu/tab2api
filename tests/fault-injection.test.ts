@@ -267,9 +267,7 @@ describe('fault injection', () => {
   it('maps a send-gesture throw to submission_uncertain', async () => {
     const browser = new LeaseBrowser(
       () =>
-        new ScriptedPage(successfulTurn(), [
-          { at: 'click', error: new Error('element detached') },
-        ]),
+        new ScriptedPage(successfulTurn(), [{ at: 'click', error: new Error('element detached') }]),
     );
     const adapter = adapterFor(browser);
     await expect(
@@ -378,9 +376,7 @@ describe('observer property checks', () => {
   it('always returns a bounded, well-formed observation for generated DOMs', async () => {
     const { parseHTML } = await import('linkedom');
     const { observeChatDom } = await import('../src/adapters/chatgpt/observe-dom.js');
-    const { serializeContracts } = await import(
-      '../src/adapters/chatgpt/selector-contracts.js'
-    );
+    const { serializeContracts } = await import('../src/adapters/chatgpt/selector-contracts.js');
     const contracts = serializeContracts();
     const random = mulberry32(9_991);
     const tags = ['div', 'span', 'button', 'textarea', 'article', 'main', 'a', 'img'];

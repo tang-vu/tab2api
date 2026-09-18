@@ -58,9 +58,7 @@ export class TurnLifecycle {
   private phase: TurnPhase = 'idle';
   private readonly transitions: TurnTransition[] = [{ phase: 'idle', at: Date.now() }];
 
-  constructor(
-    private readonly onTransition?: (transition: TurnTransition) => void,
-  ) {}
+  constructor(private readonly onTransition?: (transition: TurnTransition) => void) {}
 
   get current(): TurnPhase {
     return this.phase;
@@ -106,8 +104,7 @@ export class TurnLifecycle {
  * caller must decide whether to retry rather than the runtime doing it silently.
  */
 export function turnAbortError(signal: AbortSignal, postSubmit: boolean): AppError {
-  const timedOut =
-    signal.reason instanceof AppError && signal.reason.code === 'timeout';
+  const timedOut = signal.reason instanceof AppError && signal.reason.code === 'timeout';
   if (!postSubmit) return abortError(signal);
   if (timedOut) {
     return new AppError(

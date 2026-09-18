@@ -61,7 +61,11 @@ export async function waitForInitialObservation(
   page: Page,
   options: InitialObservationOptions = {},
 ): Promise<DomObservation> {
-  const attempts = boundedAttempts(options.deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
+  const attempts = boundedAttempts(
+    options.deadlineAt,
+    INITIAL_STATE_ATTEMPTS,
+    INITIAL_STATE_POLL_MS,
+  );
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (options.signal?.aborted) throw abortError(options.signal);
     const observation = await observe(page);
@@ -177,11 +181,7 @@ export function assertReadyObservation(observation: DomObservation): void {
  */
 export function assertGeneratingObservation(observation: DomObservation): void {
   const state = observation.session;
-  if (
-    state === 'rate_limited' ||
-    state === 'security_challenge' ||
-    state === 'login_required'
-  ) {
+  if (state === 'rate_limited' || state === 'security_challenge' || state === 'login_required') {
     throw errorForState(state);
   }
 }

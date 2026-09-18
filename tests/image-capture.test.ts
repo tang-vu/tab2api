@@ -274,22 +274,27 @@ describe('image generation reference uploads', () => {
   it.each([
     ['cancelled', undefined],
     ['generation_timeout', new AppError('timeout', 'timed out')],
-  ] as const)('maps abort to %s while waiting for an answer with references', async (code, reason) => {
-    const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }, 1000));
-    const controller = new AbortController();
-    page.onWait = () => controller.abort(reason);
-    await expect(
-      adapterFor(page).generateImage({
-        prompt: 'use this reference',
-        signal: controller.signal,
-        requestId: 'reference-interrupted',
-        attachments: [{ data: Buffer.from('one'), mimeType: 'image/png', filename: 'image-1.png' }],
-      }),
-    ).rejects.toMatchObject({ code });
-    expect(page.uploads).toHaveLength(1);
-    expect(page.clips).toEqual([]);
-    expect(page.closed).toBe(true);
-  });
+  ] as const)(
+    'maps abort to %s while waiting for an answer with references',
+    async (code, reason) => {
+      const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }, 1000));
+      const controller = new AbortController();
+      page.onWait = () => controller.abort(reason);
+      await expect(
+        adapterFor(page).generateImage({
+          prompt: 'use this reference',
+          signal: controller.signal,
+          requestId: 'reference-interrupted',
+          attachments: [
+            { data: Buffer.from('one'), mimeType: 'image/png', filename: 'image-1.png' },
+          ],
+        }),
+      ).rejects.toMatchObject({ code });
+      expect(page.uploads).toHaveLength(1);
+      expect(page.clips).toEqual([]);
+      expect(page.closed).toBe(true);
+    },
+  );
 
   it('uploads the references before submitting and names them in the prompt', async () => {
     const page = new FakeCapturePage(new FakeImageLocator(width, height, { x: 0, y: 0 }));

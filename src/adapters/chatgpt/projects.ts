@@ -17,12 +17,7 @@ import { contractError, firstVisible } from './locators.js';
 import { contractCandidates } from './selector-contracts.js';
 import { UI_SELECTORS } from './selectors.js';
 import { waitForProjectObservation, errorForState } from './session.js';
-import {
-  PROJECTS_URL,
-  projectIdFromHref,
-  projectSourcesUrl,
-  projectUrl,
-} from './identifiers.js';
+import { PROJECTS_URL, projectIdFromHref, projectSourcesUrl, projectUrl } from './identifiers.js';
 
 /**
  * Project operations on the ChatGPT projects grid. The grid renders a table rather than
@@ -56,115 +51,145 @@ export class ProjectOps {
   ) {}
 
   async createProject(request: CreateProjectRequest): Promise<ProjectSummary> {
-    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, request.deadlineAt, async (page) => {
-      const newProject = await firstVisible(page, contractCandidates('newProjectButton'));
-      if (newProject === undefined) throw contractError('newProjectButton', 'ui_changed');
-      await newProject.click();
-      const nameInput = await this.waitForVisible(
-        page,
-        contractCandidates('projectNameInput'),
-        request.signal,
-        request.deadlineAt,
-      );
-      await nameInput.fill(request.name);
-      const confirm = await firstVisible(page, contractCandidates('projectCreateConfirm'));
-      if (confirm === undefined) throw contractError('projectCreateConfirm', 'ui_changed');
-      await confirm.click();
-      // Creating navigates into the new project, which is the only place its id appears.
-      const id = await this.waitForProjectId(page, request.signal, request.deadlineAt);
-      return { id, name: request.name };
-    });
+    return this.withProjectPage(
+      PROJECTS_URL,
+      request.signal,
+      request.requestId,
+      request.deadlineAt,
+      async (page) => {
+        const newProject = await firstVisible(page, contractCandidates('newProjectButton'));
+        if (newProject === undefined) throw contractError('newProjectButton', 'ui_changed');
+        await newProject.click();
+        const nameInput = await this.waitForVisible(
+          page,
+          contractCandidates('projectNameInput'),
+          request.signal,
+          request.deadlineAt,
+        );
+        await nameInput.fill(request.name);
+        const confirm = await firstVisible(page, contractCandidates('projectCreateConfirm'));
+        if (confirm === undefined) throw contractError('projectCreateConfirm', 'ui_changed');
+        await confirm.click();
+        // Creating navigates into the new project, which is the only place its id appears.
+        const id = await this.waitForProjectId(page, request.signal, request.deadlineAt);
+        return { id, name: request.name };
+      },
+    );
   }
 
   async listProjects(request: ListProjectsRequest): Promise<readonly ProjectSummary[]> {
-    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, request.deadlineAt, async (page) => {
-      const rows = await this.waitForProjectRows(page, request.signal, request.deadlineAt);
-      if (rows === undefined) return [];
-      const summaries = new Map<string, string>();
-      const total = Math.min(rows.count, MAX_LISTED_PROJECTS);
-      for (let visited = 0; visited < total; visited += 1) {
-        if (request.signal.aborted) throw abortError(request.signal);
-        // Opening a project moves it to the front of ChatGPT's modified-time-sorted grid.
-        // Repeatedly opening the last row in the bounded prefix walks that prefix backwards
-        // without skipping the row shifted into the previous index.
-        const opened = await this.openProjectRow(page, rows.selector, total - 1, request.signal, request.deadlineAt);
-        summaries.set(opened.id, opened.name);
-        await this.returnToProjects(page, request.signal, request.deadlineAt);
-      }
-      return [...summaries].map(([id, name]) => ({ id, name }));
-    });
+    return this.withProjectPage(
+      PROJECTS_URL,
+      request.signal,
+      request.requestId,
+      request.deadlineAt,
+      async (page) => {
+        const rows = await this.waitForProjectRows(page, request.signal, request.deadlineAt);
+        if (rows === undefined) return [];
+        const summaries = new Map<string, string>();
+        const total = Math.min(rows.count, MAX_LISTED_PROJECTS);
+        for (let visited = 0; visited < total; visited += 1) {
+          if (request.signal.aborted) throw abortError(request.signal);
+          // Opening a project moves it to the front of ChatGPT's modified-time-sorted grid.
+          // Repeatedly opening the last row in the bounded prefix walks that prefix backwards
+          // without skipping the row shifted into the previous index.
+          const opened = await this.openProjectRow(
+            page,
+            rows.selector,
+            total - 1,
+            request.signal,
+            request.deadlineAt,
+          );
+          summaries.set(opened.id, opened.name);
+          await this.returnToProjects(page, request.signal, request.deadlineAt);
+        }
+        return [...summaries].map(([id, name]) => ({ id, name }));
+      },
+    );
   }
 
   async deleteProject(request: DeleteProjectRequest): Promise<void> {
     const target = projectUrl(request.projectId);
-    await this.withProjectPage(target, request.signal, request.requestId, request.deadlineAt, async (page) => {
-      // Resolve the id to its name inside the project, then delete the row bearing that
-      // name. Row position must not be used: opening a project updates its modified time
-      // and re-sorts the grid, so an index captured beforehand can point at a different
-      // project by the time the delete runs.
-      const name = await this.readProjectName(page, request.signal, request.deadlineAt);
-      await this.returnToProjects(page, request.signal, request.deadlineAt);
-      const options = await this.projectOptionsForName(page, name);
-      if (options.length === 0)
-        throw new AppError(
-          'project_not_found',
-          'No project with that id is listed for this account.',
+    await this.withProjectPage(
+      target,
+      request.signal,
+      request.requestId,
+      request.deadlineAt,
+      async (page) => {
+        // Resolve the id to its name inside the project, then delete the row bearing that
+        // name. Row position must not be used: opening a project updates its modified time
+        // and re-sorts the grid, so an index captured beforehand can point at a different
+        // project by the time the delete runs.
+        const name = await this.readProjectName(page, request.signal, request.deadlineAt);
+        await this.returnToProjects(page, request.signal, request.deadlineAt);
+        const options = await this.projectOptionsForName(page, name);
+        if (options.length === 0)
+          throw new AppError(
+            'project_not_found',
+            'No project with that id is listed for this account.',
+          );
+        if (options.length > 1)
+          throw new AppError(
+            'invalid_request',
+            `More than one project is named "${name}". Rename them so deletion is unambiguous.`,
+          );
+        // The per-row options control is only revealed while its row is hovered.
+        const optionsButton = options[0];
+        if (optionsButton === undefined) throw contractError('projectOptionsButton', 'ui_changed');
+        await optionsButton.locator('xpath=ancestor::*[@role="row"][1]').hover();
+        await optionsButton.click();
+        const remove = await this.waitForVisible(
+          page,
+          contractCandidates('projectDeleteMenuItem'),
+          request.signal,
+          request.deadlineAt,
         );
-      if (options.length > 1)
-        throw new AppError(
-          'invalid_request',
-          `More than one project is named "${name}". Rename them so deletion is unambiguous.`,
+        await remove.click();
+        const confirm = await this.waitForVisible(
+          page,
+          contractCandidates('projectDeleteConfirm'),
+          request.signal,
+          request.deadlineAt,
         );
-      // The per-row options control is only revealed while its row is hovered.
-      const optionsButton = options[0];
-      if (optionsButton === undefined) throw contractError('projectOptionsButton', 'ui_changed');
-      await optionsButton.locator('xpath=ancestor::*[@role="row"][1]').hover();
-      await optionsButton.click();
-      const remove = await this.waitForVisible(
-        page,
-        contractCandidates('projectDeleteMenuItem'),
-        request.signal,
-        request.deadlineAt,
-      );
-      await remove.click();
-      const confirm = await this.waitForVisible(
-        page,
-        contractCandidates('projectDeleteConfirm'),
-        request.signal,
-        request.deadlineAt,
-      );
-      await confirm.click();
-      await this.waitForProjectGone(page, name, request.signal, request.deadlineAt);
-    });
+        await confirm.click();
+        await this.waitForProjectGone(page, name, request.signal, request.deadlineAt);
+      },
+    );
   }
 
   async uploadProjectFiles(request: UploadProjectFilesRequest): Promise<UploadProjectFilesResult> {
     // The sources tab is the project's own file store. Uploading through the composer
     // instead would attach the files to a single message that is discarded with the tab.
     const target = projectSourcesUrl(request.projectId);
-    return this.withProjectPage(target, request.signal, request.requestId, request.deadlineAt, async (page) => {
-      const fileInput = await this.projectSourcesInput(page, request.signal, request.deadlineAt);
-      await abortRace(
-        fileInput.setInputFiles(
-          request.attachments.map((attachment) => ({
-            name: attachment.filename,
-            mimeType: attachment.mimeType,
-            buffer: attachment.data,
-          })),
-          { timeout: operationTimeout(request.deadlineAt, 30_000) },
-        ),
-        request.signal,
-        false,
-      );
-      // Confirm the sources list actually took the files rather than sleeping blindly.
-      await this.waitForSourceNames(
-        page,
-        request.attachments.map((attachment) => attachment.filename),
-        request.signal,
-        request.deadlineAt,
-      );
-      return { projectId: request.projectId, uploaded: request.attachments.length };
-    });
+    return this.withProjectPage(
+      target,
+      request.signal,
+      request.requestId,
+      request.deadlineAt,
+      async (page) => {
+        const fileInput = await this.projectSourcesInput(page, request.signal, request.deadlineAt);
+        await abortRace(
+          fileInput.setInputFiles(
+            request.attachments.map((attachment) => ({
+              name: attachment.filename,
+              mimeType: attachment.mimeType,
+              buffer: attachment.data,
+            })),
+            { timeout: operationTimeout(request.deadlineAt, 30_000) },
+          ),
+          request.signal,
+          false,
+        );
+        // Confirm the sources list actually took the files rather than sleeping blindly.
+        await this.waitForSourceNames(
+          page,
+          request.attachments.map((attachment) => attachment.filename),
+          request.signal,
+          request.deadlineAt,
+        );
+        return { projectId: request.projectId, uploaded: request.attachments.length };
+      },
+    );
   }
 
   private async waitForVisible(
@@ -200,7 +225,11 @@ export class ProjectOps {
     return [];
   }
 
-  private async readProjectName(page: Page, signal: AbortSignal, deadlineAt?: number): Promise<string> {
+  private async readProjectName(
+    page: Page,
+    signal: AbortSignal,
+    deadlineAt?: number,
+  ): Promise<string> {
     const title = await this.waitForVisible(page, UI_SELECTORS.projectTitle, signal, deadlineAt);
     const name = (await title.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
     if (name.length === 0)
@@ -209,7 +238,12 @@ export class ProjectOps {
   }
 
   /** A destructive step is only reported as done once the row is actually gone. */
-  private async waitForProjectGone(page: Page, name: string, signal: AbortSignal, deadlineAt?: number): Promise<void> {
+  private async waitForProjectGone(
+    page: Page,
+    name: string,
+    signal: AbortSignal,
+    deadlineAt?: number,
+  ): Promise<void> {
     const attempts = boundedAttempts(deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
@@ -223,7 +257,11 @@ export class ProjectOps {
    * The sources tab exposes two unrestricted file inputs. Only the composer's one sits
    * inside the composer wrapper, so ancestry — not order — selects the project's input.
    */
-  private async projectSourcesInput(page: Page, signal: AbortSignal, deadlineAt?: number): Promise<Locator> {
+  private async projectSourcesInput(
+    page: Page,
+    signal: AbortSignal,
+    deadlineAt?: number,
+  ): Promise<Locator> {
     const attempts = boundedAttempts(deadlineAt, INITIAL_STATE_ATTEMPTS, INITIAL_STATE_POLL_MS);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (signal.aborted) throw abortError(signal);
@@ -288,7 +326,11 @@ export class ProjectOps {
     return { id, name };
   }
 
-  private async returnToProjects(page: Page, signal: AbortSignal, deadlineAt?: number): Promise<void> {
+  private async returnToProjects(
+    page: Page,
+    signal: AbortSignal,
+    deadlineAt?: number,
+  ): Promise<void> {
     await abortRace(
       page.goto(PROJECTS_URL, {
         waitUntil: 'domcontentloaded',
@@ -339,7 +381,11 @@ export class ProjectOps {
     throw contractError('projectRow', 'ui_changed');
   }
 
-  private async waitForProjectId(page: Page, signal: AbortSignal, deadlineAt?: number): Promise<string> {
+  private async waitForProjectId(
+    page: Page,
+    signal: AbortSignal,
+    deadlineAt?: number,
+  ): Promise<string> {
     const attempts = boundedAttempts(deadlineAt, PROJECT_ID_ATTEMPTS, POLL_MS);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (signal.aborted) throw abortError(signal);

@@ -32,11 +32,7 @@ export async function countEach(page: Page, selectors: readonly string[]): Promi
 }
 
 /** The contract's declared failure code with a message naming the semantic contract. */
-export function contractError(
-  name: ContractName,
-  fallback: ErrorCode,
-  detail?: string,
-): AppError {
+export function contractError(name: ContractName, fallback: ErrorCode, detail?: string): AppError {
   const definition = SELECTOR_CONTRACTS[name];
   const code = definition.failure ?? fallback;
   return new AppError(

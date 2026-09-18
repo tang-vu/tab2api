@@ -90,9 +90,7 @@ describe('TurnLifecycle', () => {
     expect(error).toBeInstanceOf(AppError);
     expect(error.code).toBe('navigation_failed');
     expect(lifecycle.current).toBe('failed');
-    expect(() => lifecycle.transition('observing')).toThrow(
-      /Invalid turn transition/,
-    );
+    expect(() => lifecycle.transition('observing')).toThrow(/Invalid turn transition/);
   });
 
   it('fail() after done is a no-op for the phase', () => {
@@ -110,18 +108,12 @@ describe('turnAbortError', () => {
   });
 
   it('maps a pre-submit request timeout to timeout', () => {
-    const error = turnAbortError(
-      abortedSignal(new AppError('timeout', 'deadline')),
-      false,
-    );
+    const error = turnAbortError(abortedSignal(new AppError('timeout', 'deadline')), false);
     expect(error.code).toBe('timeout');
   });
 
   it('maps a post-submit request timeout to generation_timeout', () => {
-    const error = turnAbortError(
-      abortedSignal(new AppError('timeout', 'deadline')),
-      true,
-    );
+    const error = turnAbortError(abortedSignal(new AppError('timeout', 'deadline')), true);
     expect(error.code).toBe('generation_timeout');
     expect(error.remediation).toContain('TAB2API_REQUEST_TIMEOUT_MS');
   });
