@@ -174,7 +174,7 @@ export function isVisible(el: DomElement): boolean {
  * newlines, collapses inline whitespace outside <pre>, and preserves whitespace verbatim
  * inside <pre> so code blocks survive.
  */
-export function visibleText(root: DomNode): string {
+export function visibleText(root: DomNode, exclude?: ReadonlySet<DomNode>): string {
   const blockTags = new Set(
     'address article aside blockquote dd details div dl dt fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hr li main nav ol p pre section table tbody td tfoot th thead tr ul'.split(
       ' ',
@@ -192,6 +192,7 @@ export function visibleText(root: DomNode): string {
       return;
     }
     if (node.nodeType !== 1) return;
+    if (exclude?.has(node) === true) return;
     const el = node as DomElement;
     if (!isVisible(el)) return;
     const tag = (el.tagName ?? '').toLowerCase();
@@ -287,8 +288,8 @@ function pageRoot(root: DomRoot): DomNode {
   return root.documentElement ?? root.body ?? (root as unknown as DomNode);
 }
 
-function pageText(root: DomRoot, maxChars: number): string {
-  const text = visibleText(pageRoot(root));
+function pageText(root: DomRoot, maxChars: number, exclude?: ReadonlySet<DomNode>): string {
+  const text = visibleText(pageRoot(root), exclude);
   return text.length > maxChars ? text.slice(0, maxChars) : text;
 }
 
@@ -340,10 +341,16 @@ export function observeChatDom(root: DomRoot, options: ObserveDomOptions): DomOb
       textMatch: false,
     };
   }
-  const text = pageText(root, options.maxPageTextChars ?? 20_000);
+  // State page-patterns (challenge, rate-limit, not-found) must not read assistant answer
+  // text: an answer merely quoting "rate limit" is content, not a session state surface.
+  const stateText = pageText(
+    root,
+    options.maxPageTextChars ?? 20_000,
+    new Set<DomNode>(matched.assistantMessage ?? []),
+  );
   for (const [name, definition] of Object.entries(contracts)) {
     const result = contractResults[name];
-    if (result !== undefined) result.textMatch = anyPagePattern(definition, text);
+    if (result !== undefined) result.textMatch = anyPagePattern(definition, stateText);
   }
 
   const challengeHit =
@@ -407,10 +414,10 @@ export function observeChatDom(root: DomRoot, options: ObserveDomOptions): DomOb
               ? visibleText(turn).trim()
               : '',
         pending: pendingWithin(turn, markerSelectors) > 0,
-        completionActions: (contracts.completionAction?.css ?? []).reduce(
-          (total, selector) => total + queryAll(turn, selector).length,
-          0,
-        ),
+        completionActions:
+          contracts.completionAction === undefined
+            ? 0
+            : matchContract(turn, contracts.completionAction).length,
       };
     }
   }

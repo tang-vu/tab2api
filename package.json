@@ -71,6 +71,7 @@
     "tunnel:remove": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/remove-cloudflare-autostart.ps1",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:compat": "vitest run tests/observe-dom.test.ts tests/compat-mutations.test.ts tests/dom-fixtures.test.ts tests/selector-contracts.test.ts tests/diagnostics.test.ts tests/turn-binding.test.ts",
     "test:manual": "vitest run --config vitest.manual.config.ts",
     "lint": "eslint .",
     "format:check": "prettier --check .",
