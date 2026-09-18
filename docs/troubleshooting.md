@@ -24,7 +24,11 @@ Wait for the UI/account limit to clear and retry later. There is no rotation, qu
 
 ## `ui_changed`
 
-Confirm the page is normal in `npm run login`. UI experiments/localization can invalidate selectors. Set `TAB2API_DEBUG=true` only if you accept that a local screenshot may include prompt/response content; reproduce once, inspect `.tab2api/debug-artifacts`, remove sensitive data, then file a bug with version/locale and sanitized evidence. Never upload the browser profile.
+Confirm the page is normal in `npm run login`. UI experiments/localization can invalidate selectors. First read `GET /admin/diagnostics` (admin token): its `unsatisfiedContracts` names the exact selector contracts that no longer match, and its capability snapshot shows what the current page still exposes — that output is content-free and safe to attach to a bug report. Set `TAB2API_DEBUG=true` only if you accept that a local screenshot may include prompt/response content; reproduce once, inspect `.tab2api/debug-artifacts`, remove sensitive data, then file a bug with version/locale and sanitized evidence. Never upload the browser profile.
+
+## `submission_uncertain`, `generation_timeout`, `generation_interrupted`
+
+These codes mean the send gesture already ran, so the prompt may exist on ChatGPT. tab2api never retries them automatically because a retry could submit twice. Check the conversation in ChatGPT first: if the answer is there or still generating, do not resend; if the prompt never arrived, it is safe to retry once. `generation_timeout` specifically means the turn was still in flight when the request deadline passed — the answer may still complete upstream. `generation_interrupted` means the submitted turn disappeared mid-generation (history remount or upstream abort).
 
 ## Browser disconnected/profile locked
 
