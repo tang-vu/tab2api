@@ -35,25 +35,27 @@ describe('loopback generation client', () => {
         temporary: true,
         reasoningEffort: 'low',
         conversationId: 'conv-9',
-        projectId: 'g-p-abc',
+        projectId: 'g-p-0123456789abcdef',
       }),
     ).resolves.toBe('the answer');
 
-    expect(calls[0]?.url).toBe('http://127.0.0.1:4321/v1/chat/completions');
+    expect(calls[0]?.url).toBe(
+      'http://127.0.0.1:4321/v1/projects/g-p-0123456789abcdef/chat/completions',
+    );
     expect(calls[0]?.init?.method).toBe('POST');
     expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(
       `Bearer ${testConfig().apiToken}`,
     );
     const body = calls[0]?.init?.body;
     if (typeof body !== 'string') throw new Error('Expected a JSON request body.');
-    expect(JSON.parse(body)).toMatchObject({
+    // The strict request schema rejects a `project_id` body field; the route carries it.
+    expect(JSON.parse(body)).toEqual({
       model: 'chatgpt-web',
       stream: false,
       messages: [{ role: 'user', content: 'hi' }],
       temporary: true,
       reasoning_effort: 'low',
       conversation_id: 'conv-9',
-      project_id: 'g-p-abc',
     });
   });
 
@@ -154,6 +156,10 @@ describe('loopback generation client', () => {
       await expect(client.chat({ prompt: 'ping' })).resolves.toBe('live answer');
       await expect(client.countTokens('ping')).resolves.toBeGreaterThan(0);
       expect(provider.prompts[0]).toContain('ping');
+      await expect(
+        client.chat({ prompt: 'inside a project', projectId: 'g-p-0123456789abcdef' }),
+      ).resolves.toBe('live answer');
+      expect(provider.projectIds[1]).toBe('g-p-0123456789abcdef');
     } finally {
       await app.close();
     }
