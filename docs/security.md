@@ -48,6 +48,8 @@ The API Docs export is a compile-time copy of `docs/api.md`. It creates a new `t
 
 The repository ignores `.env`, `.tab2api/`, runtime/profile/artifact directories, logs, screenshots, HARs, traces, and archives. Test fixtures contain no real secrets.
 
+Operational observability is content-free by construction. The bounded event log and metrics registry exposed at `/admin/diagnostics` and `/admin/metrics` contain only session states, turn phases, typed error codes, contract names, counts, and timestamps — never prompt text, assistant output, conversation titles, file names, cookies, tokens, or account data — so diagnostics can be attached to a bug report without redacting conversation content.
+
 ## Operator rules
 
 - Run only on a trusted personal machine and user account.
