@@ -129,17 +129,27 @@ export async function selectEffort(
 }
 
 /**
- * Fills the composer and performs the send gesture. A failure of the gesture itself is
- * `submission_uncertain`: the prompt may already have been delivered by a partial click or
- * a keypress that fired before the throw, so the caller must not auto-retry.
+ * Fills the composer while the turn is still pre-submit: a failure here means the prompt
+ * was never delivered, so it must keep a pre-submit error class, not submission_uncertain.
  */
-export async function submitPrompt(
-  page: Page,
+export async function fillComposer(
   composer: Locator,
   prompt: string,
   signal?: AbortSignal,
 ): Promise<void> {
   await abortRace(composer.fill(prompt), signal, false);
+}
+
+/**
+ * Performs the send gesture — the post-submit boundary. A failure of the gesture itself is
+ * `submission_uncertain`: the prompt may already have been delivered by a partial click or
+ * a keypress that fired before the throw, so the caller must not auto-retry.
+ */
+export async function sendPrompt(
+  page: Page,
+  composer: Locator,
+  signal?: AbortSignal,
+): Promise<void> {
   const send = await firstVisible(page, contractCandidates('sendControl'));
   try {
     // The send gesture is the post-submit boundary: an abort racing it is classified

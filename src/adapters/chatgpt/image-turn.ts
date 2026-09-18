@@ -8,8 +8,9 @@ import { assertGeneratingObservation, assertReadyObservation, errorForState, wai
 import {
   attachFiles,
   assertTemporaryChat,
+  fillComposer,
   resolveComposer,
-  submitPrompt,
+  sendPrompt,
 } from './composer.js';
 import type { DomObservation } from './observe-dom.js';
 import { abortRace, turnAbortError, type TurnLifecycle } from './turn-lifecycle.js';
@@ -283,8 +284,9 @@ export async function runImageTurn(
   const baselineCompletionActions = baselineObservation.completionActionCount;
   await attachFiles(page, request.attachments, request.signal, request.deadlineAt);
 
+  await fillComposer(composer, imagePrompt(request), request.signal);
   lifecycle.transition('submitting');
-  await submitPrompt(page, composer, imagePrompt(request), request.signal);
+  await sendPrompt(page, composer, request.signal);
   lifecycle.transition('submitted');
 
   const data = await waitForGeneratedImage(
