@@ -136,6 +136,9 @@ export function abortRace<T>(
       return;
     }
     if (signal.aborted) {
+      // The operation is already running (the caller created it eagerly); it must still
+      // have a rejection handler or Node reports an unhandled rejection later.
+      void work.catch(() => undefined);
       reject(turnAbortError(signal, postSubmit));
       return;
     }

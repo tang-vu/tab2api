@@ -15,9 +15,10 @@ import {
 import {
   attachFiles,
   assertTemporaryChat,
+  fillComposer,
   resolveComposer,
   selectEffort,
-  submitPrompt,
+  sendPrompt,
 } from './composer.js';
 import { abortRace, turnAbortError, type TurnLifecycle } from './turn-lifecycle.js';
 import { operationTimeout } from '../../browser/deadline.js';
@@ -204,8 +205,10 @@ export async function runTextTurn(
   const baselineTurnIds = new Set(baselineObservation.turnIds);
   await attachFiles(page, request.attachments, request.signal, request.deadlineAt);
 
+  // The fill stays pre-submit: its failure can only mean the prompt was never delivered.
+  await fillComposer(composer, request.prompt, request.signal);
   lifecycle.transition('submitting');
-  await submitPrompt(page, composer, request.prompt, request.signal);
+  await sendPrompt(page, composer, request.signal);
   lifecycle.transition('submitted');
 
   const text = await waitForCompletion(
