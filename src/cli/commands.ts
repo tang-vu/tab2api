@@ -90,7 +90,8 @@ async function checkPort(config: AppConfig): Promise<void> {
   });
 }
 
-export async function commandDoctor(): Promise<void> {
+export async function commandDoctor(args: readonly string[] = []): Promise<void> {
+  const json = args.includes('--json');
   const config = await loadConfig();
   const checks: Array<[string, () => Promise<string>]> = [
     [
@@ -138,27 +139,41 @@ export async function commandDoctor(): Promise<void> {
       },
     ],
   ];
+  const results: { name: string; status: 'pass' | 'fail'; detail: string }[] = [];
   let failed = false;
   for (const [name, check] of checks) {
     try {
-      print(`PASS ${name}: ${await check()}`);
+      const detail = await check();
+      results.push({ name, status: 'pass', detail });
+      if (!json) print(`PASS ${name}: ${detail}`);
     } catch (error) {
       failed = true;
-      print(`FAIL ${name}: ${error instanceof Error ? error.message : 'unknown error'}`);
+      const detail = error instanceof Error ? error.message : 'unknown error';
+      results.push({ name, status: 'fail', detail });
+      if (!json) print(`FAIL ${name}: ${detail}`);
     }
   }
   const { provider } = await dependencies(config);
   try {
     const state = await provider.health();
-    print(`${state === 'ready' ? 'PASS' : 'FAIL'} Browser/session/selectors: ${state}`);
-    if (state !== 'ready') failed = true;
+    const ok = state === 'ready';
+    results.push({ name: 'Browser/session/selectors', status: ok ? 'pass' : 'fail', detail: state });
+    if (!json) print(`${ok ? 'PASS' : 'FAIL'} Browser/session/selectors: ${state}`);
+    if (!ok) failed = true;
   } finally {
     await provider.close();
   }
+  if (json) {
+    print(JSON.stringify({ ok: !failed, checks: results }));
+  }
   if (failed) {
-    print(
-      'Doctor found issues. Install Chromium with `npx playwright install chromium` or run `npm run login`.',
-    );
+    const hint =
+      'Doctor found issues. Install Chromium with `npx playwright install chromium` or run `npm run login`.';
+    if (json) {
+      process.stderr.write(`${hint}\n`);
+    } else {
+      print(hint);
+    }
     process.exitCode = 1;
   }
 }
@@ -205,12 +220,33 @@ export async function commandResume(config: AppConfig): Promise<void> {
   print(`Intake reopened. ${status.pending} queued / ${status.active} active turn(s).`);
 }
 
-export async function commandStatus(config: AppConfig): Promise<void> {
+export async function commandStatus(
+  config: AppConfig,
+  args: readonly string[] = [],
+): Promise<void> {
+  const json = args.includes('--json');
   const client = new LocalAdminClient(config);
-  const [session, drain] = await Promise.all([client.sessionState(), client.drainStatus()]);
-  print(`Service: reachable at http://${config.host}:${config.port}`);
-  print(`Session: ${session.state} (last observed)`);
-  print(`Queue: pending=${drain.pending} active=${drain.active} draining=${drain.draining}`);
+  const url = `http://${config.host}:${config.port}`;
+  try {
+    const [session, drain] = await Promise.all([client.sessionState(), client.drainStatus()]);
+    if (json) {
+      print(
+        JSON.stringify({
+          service: { reachable: true, url },
+          session: { state: session.state },
+          queue: { pending: drain.pending, active: drain.active, draining: drain.draining },
+        }),
+      );
+      return;
+    }
+    print(`Service: reachable at ${url}`);
+    print(`Session: ${session.state} (last observed)`);
+    print(`Queue: pending=${drain.pending} active=${drain.active} draining=${drain.draining}`);
+  } catch (error) {
+    if (!json || !(error instanceof LocalAdminError)) throw error;
+    print(JSON.stringify({ service: { reachable: false, url, error: error.code } }));
+    process.exitCode = 1;
+  }
 }
 
 export async function commandKeys(config: AppConfig, args: readonly string[]): Promise<void> {
@@ -355,8 +391,8 @@ Usage: tab2api <command> [args]
 
 Service lifecycle
   start               Start the loopback API server (default command)
-  status              Show service reachability, last-observed session state, and queue state
-  doctor              Run environment and session checks
+  status [--json]     Show service reachability, last-observed session state, and queue state
+  doctor [--json]     Run environment and session checks
   login               Open the dedicated browser profile for manual ChatGPT login
   reset-session       Restart the browser process (profile is preserved)
   drain               Stop accepting new turns; finish queued/active work
@@ -390,7 +426,7 @@ export type CommandHandler = (config: AppConfig, args: readonly string[]) => Pro
 
 /** Commands that need a loaded config and take trailing args. */
 export const configuredCommands: Record<string, CommandHandler> = {
-  status: (config) => commandStatus(config),
+  status: (config, args) => commandStatus(config, args),
   drain: (config) => commandDrain(config),
   resume: (config) => commandResume(config),
   chat: (config, args) => commandChat(config, args, undefined),
@@ -404,7 +440,7 @@ export const configuredCommands: Record<string, CommandHandler> = {
 export const standaloneCommands: Record<string, (args: readonly string[]) => Promise<void>> = {
   start: () => commandStart(),
   login: () => commandLogin(),
-  doctor: () => commandDoctor(),
+  doctor: (args) => commandDoctor(args),
   smoke: () => commandSmoke(),
   version: () => commandVersion(),
   help: async () => commandHelp(),
