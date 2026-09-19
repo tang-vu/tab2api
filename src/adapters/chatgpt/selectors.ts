@@ -1,153 +1,44 @@
+import { SELECTOR_CONTRACTS, contractCandidates, type ContractName } from './selector-contracts.js';
+
+/**
+ * Derived locator candidates for live Playwright interaction. The semantic definitions
+ * (cardinality, text patterns, failure classification) live in `selector-contracts.ts`;
+ * this map only flattens each contract's `css` + `playwright` candidate lists so call
+ * sites that resolve locators keep a stable shape.
+ */
+function candidates(name: ContractName): readonly string[] {
+  return contractCandidates(name);
+}
+
 export const UI_SELECTORS = {
-  composer: [
-    '#prompt-textarea',
-    'textarea[placeholder*="Message"]',
-    '[contenteditable="true"][data-virtualkeyboard="true"]',
-    'main [contenteditable="true"]',
-  ],
-  sendButton: [
-    'button[data-testid="send-button"]',
-    'button[aria-label*="Send"]',
-    'button[aria-label*="send"]',
-  ],
-  stopButton: [
-    'button[data-testid="stop-button"]',
-    'button[aria-label*="Stop"]',
-    'button[aria-label*="stop"]',
-  ],
-  completionAction: [
-    'button[data-testid="copy-turn-action-button"]',
-    'button[aria-label*="Copy message"]',
-    'button[aria-label*="Sao chép tin nhắn"]',
-  ],
-  fileInput: ['input[type="file"]'],
-  attachmentReady: [
-    '[data-testid*="file"]',
-    'button[aria-label*="Remove file"]',
-    'button[aria-label*="Xóa tệp"]',
-    '[class*="file-preview"]',
-  ],
-  /**
-   * Assistant-scoped candidates for a generated image. They stay correct even when the same
-   * conversation also carries images the request uploaded.
-   */
-  generatedImage: [
-    '[data-message-author-role="assistant"] img[alt^="Generated image"]',
-    '[data-message-author-role="assistant"] img[alt^="Ảnh đã tạo"]',
-    '[data-message-author-role="assistant"] [class*="imagegen-image"] img[alt]:not([alt=""])',
-    '[data-message-author-role="assistant"] img:not([alt="ChatGPT"])',
-  ],
-  /**
-   * Author-agnostic last resort. It matches the user's own turn as well, so it is only
-   * consulted for a request that uploaded no reference images.
-   */
-  generatedImageFallback: ['article[data-testid^="conversation-turn-"] img[src]'],
-  assistantMessage: [
-    '[data-message-author-role="assistant"]',
-    'article[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',
-    'main article .markdown',
-  ],
-  login: [
-    'button[data-testid="login-button"]',
-    'a[href*="/auth/login"]',
-    'button:has-text("Log in")',
-    'button:has-text("Đăng nhập")',
-  ],
-  challenge: [
-    'iframe[src*="challenges.cloudflare.com"]',
-    '[id*="challenge-running"]',
-    'text=/verify you are human|security check|checking your browser/i',
-  ],
-  rateLimit: [
-    'text=/too many requests|rate limit|try again later|reached.*limit/i',
-    '[data-testid="rate-limit-error"]',
-  ],
-  /**
-   * Markers ChatGPT puts on a turn that is still working. The copy action already exists at
-   * that point, so it cannot be used on its own to decide that an answer is final: while
-   * these are present the visible text is a status line ("Analyzing image") or empty.
-   */
-  pendingAnswer: [
-    '[class*="loading-shimmer"]',
-    '[class*="result-thinking"]',
-    '[class*="aria-busy"]',
-    '[aria-busy="true"]',
-  ],
-  /**
-   * ChatGPT's logical turn identity. Unlike the `conversation-turn-N` display index, which
-   * can shift while virtualized history remounts, this attribute survives re-rendering, so
-   * submission and completion are bound to it rather than to a message count.
-   */
-  turnId: ['[data-turn-id]'],
-  /**
-   * Evidence that a Temporary Chat is active. The URL query alone is not relied on because
-   * the SPA can drop it after the first render; at least one visible marker must also exist.
-   */
-  temporaryChat: [
-    '[data-testid*="temporary" i]',
-    '[aria-label*="emporary" i]',
-    'main :text-matches("temporary chat", "i")',
-    'main :text-matches("trò chuyện tạm", "i")',
-  ],
-  /**
-   * The composer's effort/reasoning control. The exact control varies by plan tier and UI
-   * revision; absent controls fail explicitly rather than silently keeping the default.
-   */
-  effortButton: [
-    'button[data-testid*="effort" i]',
-    'button[aria-label*="effort" i]',
-    'button[aria-label*="reasoning" i]',
-    'button[data-testid*="reasoning" i]',
-    'button[data-testid="model-switcher-dropdown-button"]',
-    'button[id*="composer"][aria-haspopup="menu"]',
-  ],
-  /** Menu surfaces the effort control opens. Options are matched by their visible label. */
-  effortOption: ['[role="menuitemradio"]', '[role="option"]', '[role="menuitem"]'],
-  // The projects surface renders a grid, not links: no element carries the `g-p-` id, so a
-  // row's identity is only observable by opening it. These selectors are taken from the
-  // live UI rather than guessed.
-  newProjectButton: [
-    'main button:visible:has-text("Tạo")',
-    'main button:visible:has-text("Create")',
-    'button[aria-label="Dự án mới"]',
-    'button[aria-label*="New project" i]',
-  ],
-  projectNameInput: ['input#project-name', 'input[name="projectName"]'],
-  projectCreateConfirm: [
-    'button[type="submit"]:has-text("Tạo dự án")',
-    'button[type="submit"]:has-text("Create project")',
-    'button[type="submit"]:visible',
-  ],
-  projectRow: ['[role="row"][data-page-table-selectable-row]', '[role="grid"] [role="row"]'],
-  projectTitle: [
-    'button[aria-label^="Chỉnh sửa tiêu đề của"]',
-    'button[aria-label^="Edit title of"]',
-    'button[aria-label*="tiêu đề" i]',
-    'button[aria-label*="title" i]',
-  ],
-  projectOptionsButton: [
-    'button[aria-label^="Mở các tùy chọn dự án cho"]',
-    'button[aria-label^="Open project options for"]',
-    'button[aria-label*="tùy chọn dự án" i]',
-    'button[aria-label*="project options" i]',
-  ],
-  projectDeleteMenuItem: [
-    '[role="menuitem"]:has-text("Xóa dự án")',
-    '[role="menuitem"]:has-text("Xoá dự án")',
-    '[role="menuitem"]:has-text("Delete project")',
-  ],
-  projectDeleteConfirm: [
-    '[role="dialog"] button:has-text("Xóa")',
-    '[role="dialog"] button:has-text("Xoá")',
-    '[role="dialog"] button:has-text("Delete")',
-    'button[data-testid*="confirm"]',
-  ],
-  // On the sources tab two unrestricted file inputs exist: the composer's attachment input
-  // and the project's own sources input. They are told apart by ancestry, not by selector,
-  // because only the composer one sits inside the composer wrapper below.
-  projectFileInput: ['input[type="file"][multiple]:not([accept])', 'input[type="file"][multiple]'],
-  composerWrapper: '[class*="group/composer"]',
-  projectSourceEntry: ['[data-testid*="source"]', 'main'],
+  composer: candidates('composer'),
+  sendButton: candidates('sendControl'),
+  stopButton: candidates('stopControl'),
+  completionAction: candidates('completionAction'),
+  fileInput: candidates('fileInput'),
+  attachmentReady: candidates('attachmentReady'),
+  generatedImage: candidates('generatedImage'),
+  generatedImageFallback: candidates('generatedImageFallback'),
+  assistantMessage: candidates('assistantMessage'),
+  login: candidates('login'),
+  challenge: candidates('challenge'),
+  rateLimit: candidates('rateLimit'),
+  pendingAnswer: candidates('pendingAnswer'),
+  turnId: candidates('turnId'),
+  temporaryChat: candidates('temporaryChat'),
+  effortButton: candidates('effortButton'),
+  effortOption: candidates('effortOption'),
+  newProjectButton: candidates('newProjectButton'),
+  projectNameInput: candidates('projectNameInput'),
+  projectCreateConfirm: candidates('projectCreateConfirm'),
+  projectRow: candidates('projectRow'),
+  projectTitle: candidates('projectTitle'),
+  projectOptionsButton: candidates('projectOptionsButton'),
+  projectDeleteMenuItem: candidates('projectDeleteMenuItem'),
+  projectDeleteConfirm: candidates('projectDeleteConfirm'),
+  projectFileInput: candidates('projectFileInput'),
+  composerWrapper: SELECTOR_CONTRACTS.composerWrapper.css[0],
+  projectSourceEntry: candidates('projectSourceEntry'),
 } as const;
 
 /**
@@ -163,10 +54,15 @@ export const EFFORT_LABELS = {
   xhigh: [/^pro$/i, /^max$/i, /extra high/i, /^pro\b/i, /max/i],
 } as const;
 
+/**
+ * Reduced marker sets for the pure-DOM fixture helpers in `dom.ts`. These stay aligned with
+ * the contracts because both are derived from `SELECTOR_CONTRACTS`; the observer in
+ * `observe-dom.ts` is the authoritative matcher and exercises the same candidates.
+ */
 export const DOM_MARKERS = {
-  composer: ['#prompt-textarea', '[contenteditable="true"]', 'textarea'],
-  assistant: ['[data-message-author-role="assistant"]', 'main article .markdown'],
-  login: ['[data-testid="login-button"]', 'a[href*="/auth/login"]'],
+  composer: SELECTOR_CONTRACTS.composer.css,
+  assistant: SELECTOR_CONTRACTS.assistantMessage.css,
+  login: SELECTOR_CONTRACTS.login.css,
   challenge: ['iframe[src*="challenges.cloudflare.com"]', '[id*="challenge"]'],
   rateLimit: ['[data-testid="rate-limit-error"]'],
   generatedImage: [

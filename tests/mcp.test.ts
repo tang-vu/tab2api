@@ -1,6 +1,7 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_MCP_MESSAGE_CHARS,
   MCP_PROTOCOL_VERSION,
   McpServer,
   serveMcpStdio,
@@ -212,5 +213,25 @@ describe('MCP stdio server', () => {
     expect(responses).toHaveLength(2);
     expect(responses[0]).toMatchObject({ id: 1, result: {} });
     expect(responses[1]).toMatchObject({ id: null, error: { code: -32_700 } });
+  });
+
+  it('rejects lines that exceed the bounded frame size without parsing them', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const received: string[] = [];
+    output.on('data', (chunk: Buffer) =>
+      received.push(...chunk.toString('utf8').split('\n').filter(Boolean)),
+    );
+
+    const serving = serveMcpStdio(input, output, fakeBackend());
+    input.write(`${'x'.repeat(MAX_MCP_MESSAGE_CHARS + 1)}\n`);
+    input.write('{"jsonrpc":"2.0","id":2,"method":"ping"}\n');
+    input.end();
+
+    await serving;
+    const responses = received.map((line) => JSON.parse(line) as { id: unknown });
+    expect(responses).toHaveLength(2);
+    expect(responses[0]).toMatchObject({ id: null, error: { code: -32_600 } });
+    expect(responses[1]).toMatchObject({ id: 2, result: {} });
   });
 });

@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import type { Locator, Page } from 'playwright';
+import type { Page } from 'playwright';
 import type { Logger } from 'pino';
 import { AppError, abortError, asSafeAppError } from '../../errors.js';
 import type {
@@ -11,7 +11,6 @@ import type {
   GenerateRequest,
   GenerateResult,
   ListProjectsRequest,
-  MediaAttachment,
   ProjectSummary,
   SessionState,
   UploadProjectFilesRequest,
@@ -20,40 +19,32 @@ import type {
 } from '../../provider.js';
 import type { AppConfig } from '../../config/index.js';
 import type { BrowserController } from '../../browser/controller.js';
+import type { EventLog } from '../../observability/events.js';
+import type { MetricsRegistry } from '../../observability/metrics.js';
 import { assertSafeDataChildDirectory } from '../../security/paths.js';
 import { hardenPrivateDirectoryPermissions } from '../../security/private-files.js';
-import { CompletionStateMachine } from './completion-state.js';
-import { isTurnIdSafe, selectNewTurnId } from './dom.js';
 import {
   CHATGPT_URL,
-  PROJECTS_URL,
   TEMPORARY_CHAT_URL,
-  conversationIdFromUrl,
   conversationUrl,
   projectConversationUrl,
-  projectIdFromHref,
-  projectSourcesUrl,
   projectUrl,
 } from './identifiers.js';
-import { EFFORT_LABELS, UI_SELECTORS } from './selectors.js';
-
-const POLL_MS = 300;
-// Opening an existing conversation can involve a redirect plus an SPA render, so readiness
-// is given more room than a cold composer needs before it is called a UI change.
-const INITIAL_STATE_ATTEMPTS = 40;
-const INITIAL_STATE_POLL_MS = 250;
-const MAX_CAPTURE_DIMENSION = 4_096;
-const MAX_CAPTURE_PIXELS = 16_777_216;
-/** Padding around the isolated element so the clip never sits flush against the viewport. */
-const CAPTURE_MARGIN_PX = 256;
-const PROJECT_UPLOAD_TIMEOUT_MS = 120_000;
-const PROJECT_ID_ATTEMPTS = 40;
-const PROJECT_ROW_STABLE_OBSERVATIONS = 4;
-/**
- * Listing and deleting cost one navigation per row because the grid publishes no id, so the
- * work is bounded rather than proportional to an unbounded account.
- */
-const MAX_LISTED_PROJECTS = 25;
+import { observe } from './session.js';
+import { waitForInitialObservation } from './session.js';
+import { runTextTurn } from './turn.js';
+import { runImageTurn } from './image-turn.js';
+import { ProjectOps } from './projects.js';
+import { TurnLifecycle, postSubmitError, turnAbortError } from './turn-lifecycle.js';
+import type { DomObservation } from './observe-dom.js';
+import {
+  buildDiagnostics,
+  capabilitySnapshot,
+  fingerprintObservation,
+  type AdapterDiagnostics,
+  type CapabilitySnapshot,
+  type CompatFingerprint,
+} from './diagnostics.js';
 
 /**
  * Continuing a conversation wins over starting a new one in the project. When both are
@@ -77,110 +68,13 @@ function navigationTarget(request: GenerateRequest): string {
   return temporary === true ? TEMPORARY_CHAT_URL : CHATGPT_URL;
 }
 
-async function firstVisible(
-  page: Page,
-  selectors: readonly string[],
-): Promise<Locator | undefined> {
-  for (const selector of selectors) {
-    const locator = page.locator(selector).first();
-    if (await locator.isVisible().catch(() => false)) return locator;
-  }
-  return undefined;
-}
-
-async function countAll(page: Page, selectors: readonly string[]): Promise<number> {
-  let maximum = 0;
-  for (const selector of selectors)
-    maximum = Math.max(maximum, await page.locator(selector).count());
-  return maximum;
-}
-
-async function countEach(page: Page, selectors: readonly string[]): Promise<number[]> {
-  return Promise.all(selectors.map(async (selector) => page.locator(selector).count()));
-}
-
-export function validateIntrinsicPng(
-  data: Buffer,
-  dimensions: { width: number; height: number },
-  mediaLimitBytes: number,
-): Buffer {
-  const captureError = (reason: string): AppError =>
-    new AppError(
-      'ui_changed',
-      `ChatGPT displayed an image that could not be captured safely at intrinsic resolution (${reason}).`,
-    );
-  if (!data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
-    throw captureError('invalid PNG output');
-  }
-  const pngWidth = data.length >= 24 ? data.readUInt32BE(16) : 0;
-  const pngHeight = data.length >= 24 ? data.readUInt32BE(20) : 0;
-  if (pngWidth !== dimensions.width || pngHeight !== dimensions.height) {
-    throw captureError(
-      `expected ${dimensions.width}x${dimensions.height}, captured ${pngWidth}x${pngHeight}`,
-    );
-  }
-  if (data.length > mediaLimitBytes) {
-    throw captureError(`PNG exceeds the configured ${mediaLimitBytes}-byte media limit`);
-  }
-  return data;
-}
-
-/** True while the newest assistant turn still carries one of ChatGPT's working markers. */
-async function lastAnswerPending(page: Page): Promise<boolean> {
-  for (const selector of UI_SELECTORS.assistantMessage) {
-    const locator = page.locator(selector);
-    const count = await locator.count();
-    if (count === 0) continue;
-    const last = locator.nth(count - 1);
-    for (const marker of UI_SELECTORS.pendingAnswer) {
-      if (
-        (await last
-          .locator(marker)
-          .count()
-          .catch(() => 0)) > 0
-      )
-        return true;
-      const selfMatches = await last
-        .evaluate((element, candidate) => element.matches(candidate), marker)
-        .catch(() => false);
-      if (selfMatches) return true;
-    }
-    return false;
-  }
-  return false;
-}
-
-async function lastAssistantText(page: Page): Promise<string> {
-  for (const selector of UI_SELECTORS.assistantMessage) {
-    const locator = page.locator(selector);
-    const count = await locator.count();
-    if (count > 0) return (await locator.nth(count - 1).innerText()).trim();
-  }
-  return '';
-}
-
 /**
- * A turn that uploaded references puts the user's own images into the transcript, where the
- * author-agnostic fallback cannot tell them apart from the answer. Such a turn is matched by
- * assistant-scoped selectors only, so a reference is never captured as the generated image.
+ * The provider orchestrator. UI knowledge lives in `selector-contracts.ts` (semantic
+ * candidates) and `observe-dom.ts` (the shared decoder); turn flow lives in `turn.ts`,
+ * `image-turn.ts`, and `turn-lifecycle.ts`; projects live in `projects.ts`. This class
+ * owns page lifecycle, the post-submit error boundary, diagnostics capture, and session
+ * state tracking — it never re-derives DOM facts itself.
  */
-function generatedImageSelectors(references: number): readonly string[] {
-  return references === 0
-    ? [...UI_SELECTORS.generatedImage, ...UI_SELECTORS.generatedImageFallback]
-    : UI_SELECTORS.generatedImage;
-}
-
-/**
- * Keeps the single-image constraint that `waitForGeneratedImage` counts on, and names the
- * uploads so the model treats them as references rather than as the subject to describe.
- */
-function imagePrompt(request: GenerateImageRequest): string {
-  const references = request.attachments?.length ?? 0;
-  if (references === 0) return `Create exactly one image from this request:\n\n${request.prompt}`;
-  const noun = references === 1 ? 'the attached image' : `the ${references} attached images`;
-  return `Create exactly one image from this request, using ${noun} as visual references:\n\n${request.prompt}`;
-}
-
 export class ChatGptAdapter implements WebChatProvider {
   readonly id = 'chatgpt-web' as const;
   /**
@@ -188,452 +82,183 @@ export class ChatGptAdapter implements WebChatProvider {
    * is the honest pre-observation value rather than an invented `unknown` state.
    */
   private lastSessionState: SessionState = 'browser_disconnected';
+  private lastFingerprint: CompatFingerprint | undefined;
+  private lastCapabilities: CapabilitySnapshot | undefined;
+  private readonly projects: ProjectOps;
 
   constructor(
     private readonly browser: BrowserController,
     private readonly config: AppConfig,
     private readonly logger: Logger,
-  ) {}
+    private readonly observability?: { events?: EventLog; metrics?: MetricsRegistry },
+  ) {
+    this.projects = new ProjectOps(
+      browser,
+      logger,
+      async (page, operation, requestId) => this.closePage(page, operation, requestId),
+      (state) => {
+        this.observeState(state);
+      },
+    );
+  }
+
+  private lifecycleFor(requestId: string): TurnLifecycle {
+    return new TurnLifecycle((transition) => {
+      this.observability?.events?.record('turn.phase', transition.phase, requestId);
+    });
+  }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
+    const metrics = this.observability?.metrics;
+    const events = this.observability?.events;
+    metrics?.increment('turns.started');
+    const startedAt = Date.now();
     let page: Page | undefined;
-    let submitted = false;
+    const lifecycle = this.lifecycleFor(request.requestId);
     try {
       if (request.signal.aborted) throw abortError(request.signal);
       // Resolve the target before opening a tab so a rejected identifier never navigates.
       const target = navigationTarget(request);
       page = await this.browser.getPage();
       if (request.signal.aborted) throw abortError(request.signal);
-      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      const state = await this.waitForInitialState(page);
-      this.assertReady(state);
-      const composer = await firstVisible(page, UI_SELECTORS.composer);
-      if (composer === undefined) throw this.uiChanged();
-      if (request.temporary === true) await this.assertTemporaryChat(page, request.signal);
-      if (request.effort !== undefined) await this.selectEffort(page, request.effort);
-      const baseline = await countAll(page, UI_SELECTORS.assistantMessage);
-      const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
-      const baselineTurnIds = new Set(await this.collectTurnIds(page));
-      await this.attachFiles(page, request.attachments);
-      await composer.fill(request.prompt);
-      const send = await firstVisible(page, UI_SELECTORS.sendButton);
-      if (send !== undefined) await send.click();
-      else await composer.press('Enter');
-      submitted = true;
-      const text = await this.waitForCompletion(
-        page,
-        baseline,
-        baselineCompletionActions,
-        baselineTurnIds,
-        request.signal,
-      );
-      // A new conversation only gets its URL once the turn is under way, so read it here.
-      const conversationId = conversationIdFromUrl(page.url());
-      return {
-        text,
-        providerModel: this.id,
-        ...(conversationId !== undefined && { conversationId }),
+      const hooks = {
+        onObservation: (observation: DomObservation, url: string) =>
+          this.captureDiagnostics(observation, url, 'chat'),
       };
+      const result = await runTextTurn(page, request, target, lifecycle, hooks);
+      metrics?.increment('turns.completed');
+      events?.record('turn.completed', undefined, request.requestId);
+      return result;
     } catch (error) {
-      if (request.signal.aborted) throw abortError(request.signal);
+      if (request.signal.aborted) {
+        const aborted = turnAbortError(request.signal, lifecycle.postSubmit);
+        metrics?.increment('turns.failed');
+        metrics?.recordError(aborted.code);
+        events?.record('turn.failed', aborted.code, request.requestId);
+        throw aborted;
+      }
       if (error instanceof AppError) {
+        metrics?.increment('turns.failed');
+        metrics?.recordError(error.code);
+        events?.record('turn.failed', error.code, request.requestId);
         if (error.code === 'ui_changed' && this.config.debug && page !== undefined) {
-          try {
-            await assertSafeDataChildDirectory(this.config.dataDir, this.config.artifactDir);
-            await mkdir(this.config.artifactDir, { recursive: true, mode: 0o700 });
-            await hardenPrivateDirectoryPermissions(this.config.dataDir);
-            await hardenPrivateDirectoryPermissions(this.config.artifactDir);
-            await assertSafeDataChildDirectory(this.config.dataDir, this.config.artifactDir);
-            await page.screenshot({
-              path: path.join(this.config.artifactDir, `ui-changed-${request.requestId}.png`),
-              fullPage: false,
-            });
-          } catch (screenshotError) {
-            this.logger.warn(
-              {
-                errorType: screenshotError instanceof Error ? screenshotError.name : 'unknown',
-                requestId: request.requestId,
-              },
-              'diagnostic screenshot was not written',
-            );
-          }
+          await this.captureDebugScreenshot(page, request.requestId);
         }
         throw error;
       }
+      metrics?.increment('turns.failed');
+      const safe = lifecycle.postSubmit ? postSubmitError(error) : asSafeAppError(error);
+      metrics?.recordError(safe.code);
+      events?.record('turn.failed', safe.code, request.requestId);
       this.logger.warn(
         {
           errorType: error instanceof Error ? error.name : 'unknown',
           requestId: request.requestId,
-          submitted,
+          postSubmit: lifecycle.postSubmit,
         },
         'browser request failed',
       );
       // A submitted prompt is never retried because generation may already have started.
-      throw asSafeAppError(error);
+      throw safe;
     } finally {
+      metrics?.observeDuration('generate', Date.now() - startedAt);
       await this.closePage(page, 'generation', request.requestId);
     }
   }
 
-  /**
-   * Uploads attachments through the composer's hidden file input. Doing nothing for an empty
-   * list keeps callers free of the guard and leaves attachment-free turns untouched.
-   */
-  private async attachFiles(
-    page: Page,
-    attachments: readonly MediaAttachment[] | undefined,
-  ): Promise<void> {
-    if (attachments === undefined || attachments.length === 0) return;
-    const fileInput = page.locator(UI_SELECTORS.fileInput[0]).first();
-    if ((await fileInput.count()) === 0)
-      throw new AppError('ui_changed', 'The ChatGPT file input is unavailable.');
-    await fileInput.setInputFiles(
-      attachments.map((attachment) => ({
-        name: attachment.filename,
-        mimeType: attachment.mimeType,
-        buffer: attachment.data,
-      })),
-    );
-  }
-
   async generateImage(request: GenerateImageRequest): Promise<GenerateImageResult> {
+    const metrics = this.observability?.metrics;
+    const events = this.observability?.events;
+    metrics?.increment('images.started');
+    const startedAt = Date.now();
     let page: Page | undefined;
-    let submitted = false;
+    const lifecycle = this.lifecycleFor(request.requestId);
     try {
       if (request.signal.aborted) throw abortError(request.signal);
       page = await this.browser.getPage();
       if (request.signal.aborted) throw abortError(request.signal);
-      const target = request.temporary === true ? TEMPORARY_CHAT_URL : CHATGPT_URL;
-      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      this.assertReady(await this.waitForInitialState(page));
-      const composer = await firstVisible(page, UI_SELECTORS.composer);
-      if (composer === undefined) throw this.uiChanged();
-      if (request.temporary === true) await this.assertTemporaryChat(page, request.signal);
-      const imageSelectors = generatedImageSelectors(request.attachments?.length ?? 0);
-      const baselineImages = await countEach(page, imageSelectors);
-      const baselineCompletionActions = await countAll(page, UI_SELECTORS.completionAction);
-      await this.attachFiles(page, request.attachments);
-      await composer.fill(imagePrompt(request));
-      const send = await firstVisible(page, UI_SELECTORS.sendButton);
-      if (send !== undefined) await send.click();
-      else await composer.press('Enter');
-      submitted = true;
-      const data = await this.waitForGeneratedImage(
-        page,
-        imageSelectors,
-        baselineImages,
-        baselineCompletionActions,
-        request.signal,
-      );
-      return { data, mimeType: 'image/png' };
+      const hooks = {
+        onObservation: (observation: DomObservation, url: string) =>
+          this.captureDiagnostics(observation, url, 'chat'),
+      };
+      const result = await runImageTurn(page, request, lifecycle, this.config, hooks);
+      metrics?.increment('images.completed');
+      events?.record('image.completed', undefined, request.requestId);
+      return result;
     } catch (error) {
-      if (request.signal.aborted) throw abortError(request.signal);
-      if (error instanceof AppError) throw error;
+      if (request.signal.aborted) {
+        const aborted = turnAbortError(request.signal, lifecycle.postSubmit);
+        metrics?.increment('images.failed');
+        metrics?.recordError(aborted.code);
+        events?.record('image.failed', aborted.code, request.requestId);
+        throw aborted;
+      }
+      if (error instanceof AppError) {
+        metrics?.increment('images.failed');
+        metrics?.recordError(error.code);
+        events?.record('image.failed', error.code, request.requestId);
+        throw error;
+      }
+      metrics?.increment('images.failed');
+      const safe = lifecycle.postSubmit ? postSubmitError(error) : asSafeAppError(error);
+      metrics?.recordError(safe.code);
+      events?.record('image.failed', safe.code, request.requestId);
       this.logger.warn(
         {
           errorType: error instanceof Error ? error.name : 'unknown',
           requestId: request.requestId,
-          submitted,
+          postSubmit: lifecycle.postSubmit,
         },
         'browser image request failed',
       );
-      throw asSafeAppError(error);
+      throw safe;
     } finally {
+      metrics?.observeDuration('generateImage', Date.now() - startedAt);
       await this.closePage(page, 'image_generation', request.requestId);
     }
   }
 
   async createProject(request: CreateProjectRequest): Promise<ProjectSummary> {
-    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
-      const newProject = await firstVisible(page, UI_SELECTORS.newProjectButton);
-      if (newProject === undefined) throw this.uiChanged();
-      await newProject.click();
-      const nameInput = await this.waitForVisible(
-        page,
-        UI_SELECTORS.projectNameInput,
-        request.signal,
-      );
-      await nameInput.fill(request.name);
-      const confirm = await firstVisible(page, UI_SELECTORS.projectCreateConfirm);
-      if (confirm === undefined) throw this.uiChanged();
-      await confirm.click();
-      // Creating navigates into the new project, which is the only place its id appears.
-      const id = await this.waitForProjectId(page, request.signal);
-      return { id, name: request.name };
-    });
+    return this.projects.createProject(request);
   }
 
   async listProjects(request: ListProjectsRequest): Promise<readonly ProjectSummary[]> {
-    return this.withProjectPage(PROJECTS_URL, request.signal, request.requestId, async (page) => {
-      const rows = await this.waitForProjectRows(page, request.signal);
-      if (rows === undefined) return [];
-      const summaries = new Map<string, string>();
-      const total = Math.min(rows.count, MAX_LISTED_PROJECTS);
-      for (let visited = 0; visited < total; visited += 1) {
-        if (request.signal.aborted) throw abortError(request.signal);
-        // Opening a project moves it to the front of ChatGPT's modified-time-sorted grid.
-        // Repeatedly opening the last row in the bounded prefix walks that prefix backwards
-        // without skipping the row shifted into the previous index.
-        const opened = await this.openProjectRow(page, rows.selector, total - 1, request.signal);
-        summaries.set(opened.id, opened.name);
-        await this.returnToProjects(page, request.signal);
-      }
-      return [...summaries].map(([id, name]) => ({ id, name }));
-    });
+    return this.projects.listProjects(request);
   }
 
   async deleteProject(request: DeleteProjectRequest): Promise<void> {
-    const target = projectUrl(request.projectId);
-    await this.withProjectPage(target, request.signal, request.requestId, async (page) => {
-      // Resolve the id to its name inside the project, then delete the row bearing that
-      // name. Row position must not be used: opening a project updates its modified time
-      // and re-sorts the grid, so an index captured beforehand can point at a different
-      // project by the time the delete runs.
-      const name = await this.readProjectName(page, request.signal);
-      await this.returnToProjects(page, request.signal);
-      const options = await this.projectOptionsForName(page, name);
-      if (options.length === 0)
-        throw new AppError(
-          'invalid_request',
-          'No project with that id is listed for this account.',
-        );
-      if (options.length > 1)
-        throw new AppError(
-          'invalid_request',
-          `More than one project is named "${name}". Rename them so deletion is unambiguous.`,
-        );
-      // The per-row options control is only revealed while its row is hovered.
-      const optionsButton = options[0];
-      if (optionsButton === undefined) throw this.uiChanged();
-      await optionsButton.locator('xpath=ancestor::*[@role="row"][1]').hover();
-      await optionsButton.click();
-      const remove = await this.waitForVisible(
-        page,
-        UI_SELECTORS.projectDeleteMenuItem,
-        request.signal,
-      );
-      await remove.click();
-      const confirm = await this.waitForVisible(
-        page,
-        UI_SELECTORS.projectDeleteConfirm,
-        request.signal,
-      );
-      await confirm.click();
-      await this.waitForProjectGone(page, name, request.signal);
-    });
-  }
-
-  /** Finds the options control without interpolating an account-controlled title into CSS. */
-  private async projectOptionsForName(page: Page, name: string): Promise<Locator[]> {
-    for (const selector of UI_SELECTORS.projectOptionsButton) {
-      const candidates = page.locator(selector);
-      const count = await candidates.count();
-      if (count === 0) continue;
-      const matches: Locator[] = [];
-      for (let index = 0; index < count; index += 1) {
-        const candidate = candidates.nth(index);
-        const label = await candidate.getAttribute('aria-label');
-        if (label?.endsWith(name) === true) matches.push(candidate);
-      }
-      return matches;
-    }
-    return [];
-  }
-
-  private async readProjectName(page: Page, signal: AbortSignal): Promise<string> {
-    const title = await this.waitForVisible(page, UI_SELECTORS.projectTitle, signal);
-    const name = (await title.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
-    if (name.length === 0)
-      throw new AppError('ui_changed', 'The ChatGPT project title could not be read.');
-    return name;
-  }
-
-  /** A destructive step is only reported as done once the row is actually gone. */
-  private async waitForProjectGone(page: Page, name: string, signal: AbortSignal): Promise<void> {
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
-      if (signal.aborted) throw abortError(signal);
-      if ((await this.projectOptionsForName(page, name)).length === 0) return;
-      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
-    }
-    throw new AppError('ui_changed', 'ChatGPT still lists the project after the delete action.');
+    return this.projects.deleteProject(request);
   }
 
   async uploadProjectFiles(request: UploadProjectFilesRequest): Promise<UploadProjectFilesResult> {
-    // The sources tab is the project's own file store. Uploading through the composer
-    // instead would attach the files to a single message that is discarded with the tab.
-    const target = projectSourcesUrl(request.projectId);
-    return this.withProjectPage(target, request.signal, request.requestId, async (page) => {
-      const fileInput = await this.projectSourcesInput(page, request.signal);
-      await fileInput.setInputFiles(
-        request.attachments.map((attachment) => ({
-          name: attachment.filename,
-          mimeType: attachment.mimeType,
-          buffer: attachment.data,
-        })),
-      );
-      // Confirm the sources list actually took the files rather than sleeping blindly.
-      await this.waitForSourceNames(
-        page,
-        request.attachments.map((attachment) => attachment.filename),
-        request.signal,
-      );
-      return { projectId: request.projectId, uploaded: request.attachments.length };
-    });
+    return this.projects.uploadProjectFiles(request);
   }
 
-  /**
-   * The sources tab exposes two unrestricted file inputs. Only the composer's one sits
-   * inside the composer wrapper, so ancestry — not order — selects the project's input.
-   */
-  private async projectSourcesInput(page: Page, signal: AbortSignal): Promise<Locator> {
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
-      if (signal.aborted) throw abortError(signal);
-      for (const selector of UI_SELECTORS.projectFileInput) {
-        const candidates = page.locator(selector);
-        const count = await candidates.count();
-        for (let index = 0; index < count; index += 1) {
-          const candidate = candidates.nth(index);
-          const insideComposer = await candidate
-            .evaluate(
-              (element, wrapper) => element.closest(wrapper) !== null,
-              UI_SELECTORS.composerWrapper,
-            )
-            .catch(() => true);
-          if (!insideComposer) return candidate;
-        }
-      }
-      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
-    }
-    throw new AppError('ui_changed', 'The ChatGPT project sources file input is unavailable.');
-  }
-
-  private async waitForSourceNames(
-    page: Page,
-    filenames: readonly string[],
-    signal: AbortSignal,
-  ): Promise<void> {
-    const deadline = Date.now() + PROJECT_UPLOAD_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (signal.aborted) throw abortError(signal);
-      const text = await page
-        .locator(UI_SELECTORS.projectSourceEntry[1])
-        .innerText()
-        .catch(() => '');
-      if (filenames.every((filename) => text.includes(filename))) return;
-      await page.waitForTimeout(POLL_MS);
-    }
-    throw new AppError(
-      'ui_changed',
-      'ChatGPT did not list the uploaded files in the project sources.',
-    );
-  }
-
-  /**
-   * Opens the row at `index` and reports the project it belongs to. The projects grid
-   * publishes no identifier, so opening the row is the only way to learn its id.
-   */
-  private async openProjectRow(
-    page: Page,
-    selector: string,
-    index: number,
-    signal: AbortSignal,
-  ): Promise<ProjectSummary> {
-    const row = this.projectRowAt(page, selector, index);
-    if ((await row.count()) === 0) throw this.uiChanged();
-    const name = (await row.innerText().catch(() => '')).trim().split('\n')[0] ?? '';
-    if (name.length === 0) throw this.uiChanged();
-    await row.click();
-    const id = await this.waitForProjectId(page, signal);
-    return { id, name };
-  }
-
-  private async returnToProjects(page: Page, signal: AbortSignal): Promise<void> {
-    await page.goto(PROJECTS_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    await this.waitForProjectState(page, signal);
-    await this.waitForProjectRows(page, signal);
-  }
-
-  /**
-   * Resolves the row selector once and reports how many rows it matches. Counting with one
-   * selector and indexing with another would address different elements, which previously
-   * made a single project appear twice.
-   */
-  private async projectRowSelector(
-    page: Page,
-  ): Promise<{ selector: string; count: number } | undefined> {
-    for (const selector of UI_SELECTORS.projectRow) {
-      const count = await page.locator(selector).count();
-      if (count > 0) return { selector, count };
-    }
-    return undefined;
-  }
-
-  /** Waits for the dynamically rendered project grid to stop changing without a fixed sleep. */
-  private async waitForProjectRows(
-    page: Page,
-    signal: AbortSignal,
-  ): Promise<{ selector: string; count: number } | undefined> {
-    let previousKey: string | undefined;
-    let stableObservations = 0;
-    let current: { selector: string; count: number } | undefined;
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
-      if (signal.aborted) throw abortError(signal);
-      current = await this.projectRowSelector(page);
-      const key = current === undefined ? 'empty' : `${current.selector}\0${current.count}`;
-      stableObservations = key === previousKey ? stableObservations + 1 : 1;
-      previousKey = key;
-      if (stableObservations >= PROJECT_ROW_STABLE_OBSERVATIONS) return current;
-      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
-    }
-    throw this.uiChanged();
-  }
-
-  private projectRowAt(page: Page, selector: string, index: number): Locator {
-    return page.locator(selector).nth(index);
-  }
-
-  private async waitForProjectId(page: Page, signal: AbortSignal): Promise<string> {
-    for (let attempt = 0; attempt < PROJECT_ID_ATTEMPTS; attempt += 1) {
-      if (signal.aborted) throw abortError(signal);
-      const id = projectIdFromHref(page.url());
-      if (id !== undefined) return id;
-      await page.waitForTimeout(POLL_MS);
-    }
-    throw this.uiChanged();
-  }
-
-  /** Opens a tab on a project surface, asserts it is usable, and always closes it. */
-  private async withProjectPage<T>(
-    url: string,
-    signal: AbortSignal,
-    requestId: string,
-    action: (page: Page) => Promise<T>,
-  ): Promise<T> {
-    let page: Page | undefined;
+  private async captureDebugScreenshot(page: Page, requestId: string): Promise<void> {
     try {
-      if (signal.aborted) throw abortError(signal);
-      page = await this.browser.getPage();
-      if (signal.aborted) throw abortError(signal);
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      const state = await this.waitForProjectState(page, signal);
-      if (state !== 'ready') this.assertReady(state);
-      return await action(page);
-    } catch (error) {
-      if (signal.aborted) throw abortError(signal);
-      if (error instanceof AppError) throw error;
+      await assertSafeDataChildDirectory(this.config.dataDir, this.config.artifactDir);
+      await mkdir(this.config.artifactDir, { recursive: true, mode: 0o700 });
+      await hardenPrivateDirectoryPermissions(this.config.dataDir);
+      await hardenPrivateDirectoryPermissions(this.config.artifactDir);
+      await assertSafeDataChildDirectory(this.config.dataDir, this.config.artifactDir);
+      await page.screenshot({
+        path: path.join(this.config.artifactDir, `ui-changed-${requestId}.png`),
+        fullPage: false,
+      });
+    } catch (screenshotError) {
       this.logger.warn(
-        { errorType: error instanceof Error ? error.name : 'unknown', requestId },
-        'browser project request failed',
+        {
+          errorType: screenshotError instanceof Error ? screenshotError.name : 'unknown',
+          requestId,
+        },
+        'diagnostic screenshot was not written',
       );
-      throw asSafeAppError(error);
-    } finally {
-      await this.closePage(page, 'project', requestId);
     }
   }
 
   private async closePage(
     page: Page | undefined,
-    operation: 'generation' | 'image_generation' | 'project' | 'manual_login' | 'health',
+    operation: string,
     requestId?: string,
   ): Promise<void> {
     if (page === undefined) return;
@@ -651,41 +276,6 @@ export class ChatGptAdapter implements WebChatProvider {
     }
   }
 
-  /**
-   * The projects surface has no composer, so `classifyPage` would report `ui_changed`.
-   * Treat "a project row or the create control is present" as ready instead, while still
-   * surfacing login, challenge, and rate-limit states.
-   */
-  private async waitForProjectState(page: Page, signal: AbortSignal): Promise<SessionState> {
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
-      if (signal.aborted) throw abortError(signal);
-      const state = await this.classifyPage(page);
-      if (state !== 'ui_changed') return this.observeState(state);
-      if (
-        (await firstVisible(page, UI_SELECTORS.newProjectButton)) !== undefined ||
-        (await countAll(page, UI_SELECTORS.projectRow)) > 0
-      ) {
-        return this.observeState('ready');
-      }
-      if (attempt < INITIAL_STATE_ATTEMPTS - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
-    }
-    return this.observeState('ui_changed');
-  }
-
-  private async waitForVisible(
-    page: Page,
-    selectors: readonly string[],
-    signal: AbortSignal,
-  ): Promise<Locator> {
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
-      if (signal.aborted) throw abortError(signal);
-      const locator = await firstVisible(page, selectors);
-      if (locator !== undefined) return locator;
-      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
-    }
-    throw this.uiChanged();
-  }
-
   async waitForManualLogin(onState: (state: SessionState) => void): Promise<void> {
     let page: Page | undefined;
     let previous: SessionState | undefined;
@@ -693,7 +283,7 @@ export class ChatGptAdapter implements WebChatProvider {
       page = await this.browser.getPage();
       await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
       while (!page.isClosed()) {
-        const state = await this.classifyPage(page);
+        const state = (await observe(page)).session;
         if (state !== previous) {
           this.observeState(state);
           onState(state);
@@ -717,7 +307,9 @@ export class ChatGptAdapter implements WebChatProvider {
     try {
       page = await this.browser.getPage();
       await page.goto(CHATGPT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      return this.observeState(await this.waitForInitialState(page));
+      const observation = await waitForInitialObservation(page);
+      this.captureDiagnostics(observation, page.url(), 'chat');
+      return this.observeState(observation.session);
     } catch (error) {
       return this.observeState(
         error instanceof AppError && error.code === 'browser_disconnected'
@@ -733,7 +325,25 @@ export class ChatGptAdapter implements WebChatProvider {
     return this.lastSessionState;
   }
 
+  /** Content-free diagnostics from the last live observation, for doctor and /admin. */
+  diagnostics(): AdapterDiagnostics {
+    return buildDiagnostics(this.lastSessionState, this.lastFingerprint, this.lastCapabilities);
+  }
+
+  private captureDiagnostics(
+    observation: DomObservation,
+    url: string,
+    surface: 'chat' | 'projects' | 'unknown',
+  ): void {
+    this.lastFingerprint = fingerprintObservation(observation, url);
+    this.lastCapabilities = capabilitySnapshot(observation, surface);
+  }
+
   private observeState(state: SessionState): SessionState {
+    if (state !== this.lastSessionState) {
+      this.observability?.metrics?.recordSessionState(state);
+      this.observability?.events?.record('session.state', state);
+    }
     this.lastSessionState = state;
     return state;
   }
@@ -746,410 +356,5 @@ export class ChatGptAdapter implements WebChatProvider {
   async close(): Promise<void> {
     await this.browser.close();
     this.lastSessionState = 'browser_disconnected';
-  }
-
-  /**
-   * Logical `data-turn-id` values currently rendered, in DOM order. Any locator failure —
-   * including a page that predates the attribute — degrades to the count-based baseline
-   * rather than failing the turn.
-   */
-  private async collectTurnIds(page: Page): Promise<string[]> {
-    try {
-      return await page
-        .locator(UI_SELECTORS.turnId[0])
-        .evaluateAll((elements) =>
-          elements
-            .map((element) => element.getAttribute('data-turn-id') ?? '')
-            .filter((id) => id.length > 0),
-        );
-    } catch {
-      return [];
-    }
-  }
-
-  /** Assistant text inside the bound turn element only, never a neighbouring turn's. */
-  private async turnAssistantText(turn: Locator): Promise<string> {
-    const scoped = turn.locator(UI_SELECTORS.assistantMessage.join(','));
-    const count = await scoped.count();
-    if (count > 0) return (await scoped.nth(count - 1).innerText()).trim();
-    const selfMatches = await turn
-      .evaluate(
-        (element, candidates) => candidates.some((candidate) => element.matches(candidate)),
-        [...UI_SELECTORS.assistantMessage],
-      )
-      .catch(() => false);
-    return selfMatches ? (await turn.innerText()).trim() : '';
-  }
-
-  /** Working markers scoped to the bound turn so a sibling status line cannot leak in. */
-  private async turnPending(turn: Locator): Promise<boolean> {
-    for (const marker of UI_SELECTORS.pendingAnswer) {
-      if (
-        (await turn
-          .locator(marker)
-          .count()
-          .catch(() => 0)) > 0
-      )
-        return true;
-      const selfMatches = await turn
-        .evaluate((element, candidate) => element.matches(candidate), marker)
-        .catch(() => false);
-      if (selfMatches) return true;
-    }
-    return false;
-  }
-
-  /**
-   * A request that asked for Temporary Chat must observe actual evidence: the URL query
-   * alone is weak because the SPA can drop it, and a silently persistent chat would keep
-   * history the caller asked not to keep.
-   */
-  private async assertTemporaryChat(page: Page, signal: AbortSignal): Promise<void> {
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      if (signal.aborted) throw abortError(signal);
-      if (page.url().includes('temporary-chat')) return;
-      if ((await firstVisible(page, UI_SELECTORS.temporaryChat)) !== undefined) return;
-      await page.waitForTimeout(INITIAL_STATE_POLL_MS);
-    }
-    throw new AppError(
-      'ui_changed',
-      'ChatGPT did not confirm a Temporary Chat for this turn.',
-      'Unset `temporary`/`TAB2API_TEMPORARY_CHAT` or file a selector bug.',
-    );
-  }
-
-  /**
-   * Drives the composer's effort control for an explicit `reasoning_effort`. The control
-   * and its labels vary by plan and locale; an unlisted label fails `ui_changed` rather
-   * than silently sending at whatever effort the account happened to leave selected.
-   */
-  private async selectEffort(page: Page, effort: NonNullable<GenerateRequest['effort']>) {
-    const control = await firstVisible(page, UI_SELECTORS.effortButton);
-    if (control === undefined) {
-      throw new AppError(
-        'ui_changed',
-        'The ChatGPT effort control is unavailable.',
-        'The account may not expose effort selection; remove `reasoning_effort`.',
-      );
-    }
-    await control.click();
-    const options = page.locator(UI_SELECTORS.effortOption.join(','));
-    for (const pattern of EFFORT_LABELS[effort]) {
-      const option = options.filter({ hasText: pattern }).first();
-      try {
-        await option.waitFor({ state: 'visible', timeout: 1_500 });
-        await option.click();
-        return;
-      } catch {
-        // Try the next candidate label.
-      }
-    }
-    throw new AppError(
-      'ui_changed',
-      `ChatGPT offered no effort option matching "${effort}".`,
-      'Remove `reasoning_effort` or report the offered labels in a selector bug.',
-    );
-  }
-
-  /**
-   * ChatGPT's logical `data-turn-id` survives virtualized-history remounts, so the submitted
-   * turn is bound by identity rather than by a rendered-message count. When the attribute is
-   * absent from the UI entirely the observation degrades to the older count-based baseline;
-   * when ids exist but the new turn stays unbound while the count grows, a bounded number of
-   * polls later the same legacy path takes over rather than waiting out the full timeout.
-   */
-  private async waitForCompletion(
-    page: Page,
-    baseline: number,
-    baselineCompletionActions: number,
-    baselineTurnIds: ReadonlySet<string>,
-    signal: AbortSignal,
-  ): Promise<string> {
-    const machine = new CompletionStateMachine(baseline);
-    let boundTurnId: string | undefined;
-    let turnIdsObserved = false;
-    let unboundPolls = 0;
-    while (true) {
-      if (signal.aborted) throw abortError(signal);
-      const state = await this.classifyPage(page, true);
-      if (
-        state === 'rate_limited' ||
-        state === 'security_challenge' ||
-        state === 'login_required'
-      ) {
-        this.observeState(state);
-        this.assertReady(state);
-      }
-      const turnIds = await this.collectTurnIds(page);
-      if (turnIds.length > 0) turnIdsObserved = true;
-      if (turnIdsObserved && boundTurnId === undefined) {
-        const binding = selectNewTurnId(baselineTurnIds, turnIds);
-        if (binding.kind === 'bound' && isTurnIdSafe(binding.id)) boundTurnId = binding.id;
-      }
-      const legacyCount = await countAll(page, UI_SELECTORS.assistantMessage);
-      let assistantCount = legacyCount;
-      let text = await lastAssistantText(page);
-      let pending = await lastAnswerPending(page);
-      let completionActionAvailable =
-        (await countAll(page, UI_SELECTORS.completionAction)) > baselineCompletionActions;
-      if (turnIdsObserved) {
-        if (boundTurnId !== undefined) {
-          const turn = page.locator(`[data-turn-id="${boundTurnId}"]`);
-          const present = (await turn.count()) === 1;
-          assistantCount = baseline + (present ? 1 : 0);
-          text = present ? await this.turnAssistantText(turn) : '';
-          pending = present ? await this.turnPending(turn) : false;
-          completionActionAvailable =
-            present && (await turn.locator(UI_SELECTORS.completionAction.join(',')).count()) > 0;
-        } else {
-          unboundPolls += 1;
-          if (unboundPolls <= 40 || legacyCount <= baseline) {
-            assistantCount = baseline;
-            text = '';
-            pending = false;
-            completionActionAvailable = false;
-          }
-        }
-      }
-      const generating = (await firstVisible(page, UI_SELECTORS.stopButton)) !== undefined;
-      if (
-        machine.observe({
-          assistantCount,
-          text,
-          generating,
-          completionActionAvailable,
-          pending,
-        }) === 'complete'
-      )
-        return text;
-      await new Promise<void>((resolve, reject) => {
-        const onAbort = () => {
-          clearTimeout(timer);
-          reject(abortError(signal));
-        };
-        const timer = setTimeout(() => {
-          signal.removeEventListener('abort', onAbort);
-          resolve();
-        }, POLL_MS);
-        signal.addEventListener('abort', onAbort, { once: true });
-      });
-    }
-  }
-
-  private async waitForGeneratedImage(
-    page: Page,
-    selectors: readonly string[],
-    baselineImages: readonly number[],
-    baselineCompletionActions: number,
-    signal: AbortSignal,
-  ): Promise<Buffer> {
-    let stableObservations = 0;
-    while (true) {
-      if (signal.aborted) throw abortError(signal);
-      const state = await this.classifyPage(page, true);
-      if (
-        state === 'rate_limited' ||
-        state === 'security_challenge' ||
-        state === 'login_required'
-      ) {
-        this.observeState(state);
-        this.assertReady(state);
-      }
-      let image: Locator | undefined;
-      for (const [index, selector] of selectors.entries()) {
-        const candidates = page.locator(selector);
-        const count = await candidates.count();
-        if (count > (baselineImages[index] ?? 0)) {
-          image = candidates.nth(count - 1);
-          break;
-        }
-      }
-      const complete =
-        image !== undefined &&
-        (await image
-          .evaluate((element) => {
-            const candidate = element as HTMLImageElement;
-            return candidate.complete && candidate.naturalWidth > 0 && candidate.naturalHeight > 0;
-          })
-          .catch(() => false));
-      stableObservations = complete ? stableObservations + 1 : 0;
-      const generating = (await firstVisible(page, UI_SELECTORS.stopButton)) !== undefined;
-      const completionActionAvailable =
-        (await countAll(page, UI_SELECTORS.completionAction)) > baselineCompletionActions;
-      if (
-        image !== undefined &&
-        stableObservations >= 3 &&
-        (!generating || completionActionAvailable)
-      ) {
-        return this.captureIntrinsicImage(page, image);
-      }
-      await page.waitForTimeout(POLL_MS);
-    }
-  }
-
-  private async captureIntrinsicImage(page: Page, image: Locator): Promise<Buffer> {
-    const dimensions = await image.evaluate((element) => {
-      const candidate = element as HTMLImageElement;
-      return { width: candidate.naturalWidth, height: candidate.naturalHeight };
-    });
-    if (
-      dimensions.width < 1 ||
-      dimensions.height < 1 ||
-      dimensions.width > MAX_CAPTURE_DIMENSION ||
-      dimensions.height > MAX_CAPTURE_DIMENSION ||
-      dimensions.width * dimensions.height > MAX_CAPTURE_PIXELS
-    ) {
-      throw new AppError(
-        'ui_changed',
-        'ChatGPT displayed an image with unsupported intrinsic dimensions.',
-      );
-    }
-
-    // Enlarging the element in place is not enough on its own: an ancestor still clips it, so
-    // an element screenshot captures whatever the page renders across that box — the chat
-    // chrome and blank background rather than the picture. Everything except the capture
-    // target is therefore hidden, the target is lifted out of its clipping ancestor, and the
-    // viewport is clipped to exactly its box. The node stays in ChatGPT's tree so React does
-    // not detach the locator mid-capture, and the private image URL is never read or fetched.
-    //
-    // Device metrics are also pinned to a 1:1 ratio, because a page attached over CDP
-    // inherits the host display's real scale factor and a fractional value rounds the clip to
-    // a size that no longer matches the element's natural pixels.
-    const deviceMetrics = await page.context().newCDPSession(page);
-    // Playwright re-applies its own viewport when it screenshots, so the size must go through
-    // setViewportSize; the CDP override is what pins the scale factor to 1:1 afterwards.
-    const applyMetrics = async (width: number, height: number): Promise<void> => {
-      await page.setViewportSize({ width, height });
-      await deviceMetrics.send('Emulation.setDeviceMetricsOverride', {
-        width,
-        height,
-        deviceScaleFactor: 1,
-        mobile: false,
-      });
-    };
-    let overrideWidth = dimensions.width + CAPTURE_MARGIN_PX;
-    let overrideHeight = dimensions.height + CAPTURE_MARGIN_PX;
-    await applyMetrics(overrideWidth, overrideHeight);
-    await image.evaluate((element) => {
-      const candidate = element as HTMLImageElement;
-      candidate.dataset.tab2apiCapture = 'true';
-      const isolationStyle = document.createElement('style');
-      isolationStyle.textContent = `
-        body *:not([data-tab2api-capture="true"]),
-        body *::before,
-        body *::after { visibility: hidden !important; }
-        [data-tab2api-capture="true"] { visibility: visible !important; }
-      `;
-      document.head.append(isolationStyle);
-      const declarations: ReadonlyArray<readonly [string, string]> = [
-        ['position', 'fixed'],
-        ['left', '64px'],
-        ['top', '64px'],
-        ['width', `${candidate.naturalWidth}px`],
-        ['height', `${candidate.naturalHeight}px`],
-        ['max-width', 'none'],
-        ['max-height', 'none'],
-        ['object-fit', 'fill'],
-        ['display', 'block'],
-        ['border-radius', '0'],
-        ['clip-path', 'none'],
-        ['transform', 'none'],
-        ['z-index', '2147483647'],
-      ];
-      for (const [property, value] of declarations)
-        candidate.style.setProperty(property, value, 'important');
-    });
-
-    // `position: fixed` is only viewport-relative when no ancestor establishes a containing
-    // block, and ChatGPT's message list uses a transform. Measure where the element really
-    // landed and grow the viewport to contain it before clipping.
-    let box = await image.boundingBox();
-    if (box === null) throw this.uiChanged();
-    const requiredWidth = Math.ceil(box.x + dimensions.width) + CAPTURE_MARGIN_PX;
-    const requiredHeight = Math.ceil(box.y + dimensions.height) + CAPTURE_MARGIN_PX;
-    if (requiredWidth > overrideWidth || requiredHeight > overrideHeight) {
-      overrideWidth = Math.max(overrideWidth, requiredWidth);
-      overrideHeight = Math.max(overrideHeight, requiredHeight);
-      await applyMetrics(overrideWidth, overrideHeight);
-      box = await image.boundingBox();
-      if (box === null) throw this.uiChanged();
-    }
-
-    const data = await page.screenshot({
-      type: 'png',
-      animations: 'disabled',
-      scale: 'css',
-      clip: { x: box.x, y: box.y, width: dimensions.width, height: dimensions.height },
-    });
-    return validateIntrinsicPng(data, dimensions, this.config.mediaLimitBytes);
-  }
-
-  private async classifyPage(page: Page, duringGeneration = false): Promise<SessionState> {
-    if (page.isClosed()) return 'browser_disconnected';
-    if ((await firstVisible(page, UI_SELECTORS.challenge)) !== undefined)
-      return 'security_challenge';
-    if ((await firstVisible(page, UI_SELECTORS.rateLimit)) !== undefined) return 'rate_limited';
-    if (
-      page.url().includes('/auth/') ||
-      (await firstVisible(page, UI_SELECTORS.login)) !== undefined
-    ) {
-      return 'login_required';
-    }
-    if ((await firstVisible(page, UI_SELECTORS.stopButton)) !== undefined)
-      return 'generation_in_progress';
-    if ((await firstVisible(page, UI_SELECTORS.composer)) !== undefined) return 'ready';
-    return duringGeneration ? 'generation_in_progress' : 'ui_changed';
-  }
-
-  private async waitForInitialState(page: Page): Promise<SessionState> {
-    for (let attempt = 0; attempt < INITIAL_STATE_ATTEMPTS; attempt += 1) {
-      const state = await this.classifyPage(page);
-      if (state !== 'ui_changed') return this.observeState(state);
-      if (attempt < INITIAL_STATE_ATTEMPTS - 1) await page.waitForTimeout(INITIAL_STATE_POLL_MS);
-    }
-    return this.observeState('ui_changed');
-  }
-
-  private assertReady(state: SessionState): void {
-    if (state === 'ready') return;
-    if (state === 'login_required') {
-      throw new AppError(
-        'login_required',
-        'Manual ChatGPT login is required.',
-        'Run `npm run login`.',
-      );
-    }
-    if (state === 'security_challenge') {
-      throw new AppError(
-        'security_challenge',
-        'ChatGPT displayed a security challenge.',
-        'Complete the challenge manually in the headed login browser. tab2api will not bypass it.',
-      );
-    }
-    if (state === 'rate_limited') {
-      throw new AppError(
-        'rate_limited',
-        'ChatGPT displayed a rate-limit message.',
-        'Wait and retry manually later.',
-      );
-    }
-    if (state === 'browser_disconnected') {
-      throw new AppError(
-        'browser_disconnected',
-        'The browser disconnected.',
-        'Run `npm run doctor`.',
-      );
-    }
-    throw this.uiChanged();
-  }
-
-  private uiChanged(): AppError {
-    return new AppError(
-      'ui_changed',
-      'The current ChatGPT UI is not supported by these selectors.',
-      this.config.debug
-        ? `A redacted diagnostic screenshot may be written under ${path.basename(this.config.artifactDir)}.`
-        : 'Run with TAB2API_DEBUG=true to enable local screenshot diagnostics, then file a selector bug.',
-    );
   }
 }

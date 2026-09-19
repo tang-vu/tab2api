@@ -17,6 +17,9 @@ export interface GenerateRequest {
   prompt: string;
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
   attachments?: readonly MediaAttachment[];
   /** Ask inside this ChatGPT project so its files and instructions apply. */
   projectId?: string;
@@ -76,6 +79,9 @@ export interface GenerateImageRequest {
   prompt: string;
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
   /** Visual references uploaded with the prompt so the generated image can follow them. */
   attachments?: readonly MediaAttachment[];
   /** Run the turn in a ChatGPT Temporary Chat that is not kept in account history. */
@@ -97,17 +103,26 @@ export interface CreateProjectRequest {
   name: string;
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
 }
 
 export interface ListProjectsRequest {
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
 }
 
 export interface DeleteProjectRequest {
   projectId: string;
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
 }
 
 export interface UploadProjectFilesRequest {
@@ -115,11 +130,33 @@ export interface UploadProjectFilesRequest {
   attachments: readonly MediaAttachment[];
   signal: AbortSignal;
   requestId: string;
+  /** Epoch ms when the caller's request budget expires; browser operations must not
+   * budget past it. Derived from the request timeout at enqueue time. */
+  deadlineAt?: number;
 }
 
 export interface UploadProjectFilesResult {
   projectId: string;
   uploaded: number;
+}
+
+/**
+ * Content-free provider diagnostics: the last live observation's session state, which
+ * selector contracts matched, and which capabilities were observed. Carries no prompt
+ * text, assistant output, titles, file names, or account data.
+ */
+export interface ProviderDiagnostics {
+  readonly state: SessionState;
+  /**
+   * Per-contract match evidence from the last observation, when one has run. The shape is
+   * provider-specific (see the adapter's diagnostics module); it is always a
+   * JSON-serializable, content-free structure.
+   */
+  readonly fingerprint: unknown;
+  /** Three-valued capability evidence from the last observation. */
+  readonly capabilities: unknown;
+  /** Semantic contract names whose declared cardinality was not satisfied. */
+  readonly unsatisfiedContracts: readonly string[];
 }
 
 export interface WebChatProvider {
@@ -137,6 +174,11 @@ export interface WebChatProvider {
    * `browser_disconnected`. Callers needing a live probe use `health()` instead.
    */
   sessionState(): SessionState;
+  /**
+   * Content-free diagnostics from the last live observation. Providers that cannot inspect
+   * the upstream UI may omit it; callers treat its absence as "no observation yet".
+   */
+  diagnostics?(): ProviderDiagnostics;
   reset(): Promise<void>;
   close(): Promise<void>;
 }

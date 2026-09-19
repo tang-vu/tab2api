@@ -121,6 +121,13 @@ All of these routes require the administrator bearer token; client keys receive 
 
 `draining` differs from `queue_full`: intake was closed deliberately for a lifecycle step, so a supervisor can wait for the counters to reach zero before restarting instead of cutting a submitted turn off mid-generation.
 
+### Observability
+
+Both routes require the administrator bearer token and return only content-free operational data: counters, states, contract names, and timestamps — never prompt text, assistant output, conversation titles, file names, or account data.
+
+- `GET /admin/metrics`: bounded counters (`turns.started`, `turns.completed`, `turns.failed`, `requests.errors`, `browser.resets`, session-state observations), per-error-code counts, duration statistics per counter family, queue `{ pending, active, draining }`, and `uptimeMs`.
+- `GET /admin/diagnostics`: the provider diagnostics snapshot — last observed session state, the selector-contract compatibility fingerprint (per-contract match counts and cardinality recorded at the last observation), the capability snapshot (which UI controls the current page exposes), the list of unsatisfied semantic contracts, and the bounded operational event log (session state changes, turn phase transitions, turn submitted/completed/failed, request errors, drain/resume, browser resets, image and project completions/failures).
+
 ### API-key administration
 
 - `GET /admin/api-keys`: list the administrator identity plus active/revoked client-key metadata; no plaintext secret is returned.
@@ -161,7 +168,9 @@ OpenAI-shaped routes use consistent OpenAI-like envelopes:
 }
 ```
 
-Codes: `authentication_error` (401), `invalid_request` (400), `cancelled` (499), `queue_full`/`rate_limited` (429), `login_required`/`security_challenge`/`ui_changed`/`browser_disconnected`/`audio_unavailable`/`storage_unavailable`/`draining` (503), and `timeout` (504). `draining` means the queue was deliberately closed for a lifecycle operation; retry after `GET /admin/drain` reports `draining: false` or `POST /admin/resume`. `storage_unavailable` means a private key/usage mutation was not durably committed; retry only after fixing the dedicated data directory.
+Codes: `authentication_error` (401), `invalid_request` (400), `cancelled` (499), `queue_full`/`rate_limited` (429), `login_required`/`security_challenge`/`ui_changed`/`browser_disconnected`/`audio_unavailable`/`storage_unavailable`/`draining`/`composer_unavailable`/`attachment_failed`/`unsupported_capability`/`conversation_not_found`/`project_not_found`/`navigation_failed`/`submission_uncertain`/`generation_interrupted` (503), `timeout`/`generation_timeout` (504). `draining` means the queue was deliberately closed for a lifecycle operation; retry after `GET /admin/drain` reports `draining: false` or `POST /admin/resume`. `storage_unavailable` means a private key/usage mutation was not durably committed; retry only after fixing the dedicated data directory.
+
+Post-submit failures are deliberately distinct from pre-submit failures. `generation_timeout` means the prompt was submitted but the answer did not complete before the request deadline — it may still finish upstream. `submission_uncertain` means the send gesture ran but the outcome could not be confirmed. `generation_interrupted` means the submitted turn disappeared before its answer finished. None of these is retried automatically, because a retry could submit the prompt twice; check the conversation in ChatGPT first.
 
 Anthropic routes instead return `{ "type":"error", "error": { "type", "message", "tab2api_code", "remediation"? } }`. Their public `error.type` is `authentication_error`, `invalid_request_error`, `rate_limit_error`, or `api_error`; `tab2api_code` preserves the typed code above. Once a stream has opened, the same envelope is sent in an SSE `error` event because its HTTP status is already 200.
 

@@ -227,6 +227,7 @@ Task chạy nền khi user đăng nhập Windows và dùng watchdog có giới h
 - Ảnh output là PNG lossless được render từ phần tử UI ở đúng kích thước pixel nội tại, không phải preview nhỏ trong chat. Pixel do UI cung cấp được giữ nguyên, nhưng file không giống byte-for-byte với asset nguồn và có thể thiếu metadata. Chỉ hỗ trợ `n=1`, `size=auto`, `quality=auto`, `b64_json`.
 - TTS dùng engine OS và không giả là giọng OpenAI/ChatGPT. STT upload audio qua UI nên không khẳng định model transcription cụ thể.
 - `GET /admin/session` báo trạng thái session quan sát gần nhất mà không mở tab browser; `POST /admin/session/reset` drain các turn đang chạy trước khi reset; `POST/GET /admin/drain` và `POST /admin/resume` điều khiển intake (chỉ administrator).
+- `GET /admin/metrics` và `GET /admin/diagnostics` (chỉ administrator): counter không chứa nội dung, số lỗi theo mã, fingerprint selector-contract, capability snapshot, danh sách contract không thỏa và event log giới hạn.
 - `temporary: true` tùy chọn (hoặc mặc định `TAB2API_TEMPORARY_CHAT=true`) chạy mỗi turn trong Temporary Chat của ChatGPT nên không để lại gì trong lịch sử tài khoản; không kết hợp được với `conversation_id` hay project route, và request fail `ui_changed` nếu UI không còn xác nhận được chế độ.
 - `reasoning_effort` tùy chọn (`minimal`–`xhigh`) chỉ điều khiển effort picker của composer; không bao giờ chọn model khác và fail `ui_changed` khi picker của tài khoản không có option tương ứng.
 - Prompt đã serialize được kiểm tra trước với `TAB2API_MAX_PROMPT_TOKENS` (mặc định 104.000 token `o200k` ước lượng) và bị từ chối trước khi mở tab nếu vượt; ngưỡng này là hành vi đo được của sản phẩm, không phải bảo đảm theo tài khoản.
@@ -250,7 +251,7 @@ npm run login
 npm run doctor
 npm run smoke
 npm run smoke:claude
-npm run status
+npm run status -- --json   # hoặc không cờ cho dạng đọc được
 npm run drain
 npm run resume
 npm run chat -- "prompt"

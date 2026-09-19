@@ -3,7 +3,9 @@ import { ChatGptAdapter } from '../adapters/chatgpt/adapter.js';
 import { buildServer } from '../api/server.js';
 import { createBrowserController } from '../browser/factory.js';
 import { loadConfig } from '../config/index.js';
+import { EventLog } from '../observability/events.js';
 import { loggerOptions } from '../observability/logger.js';
+import { MetricsRegistry } from '../observability/metrics.js';
 import { ApiKeyStore } from '../security/api-keys.js';
 import { UsageStore } from '../store/usage.js';
 import type { SidecarAddress, SidecarOperations } from './lifecycle.js';
@@ -26,12 +28,14 @@ export class PackagedSidecarOperations implements SidecarOperations {
     const destination = pino.destination({ fd: 2, sync: true });
     const logger = pino(loggerOptions(config.logLevel), destination);
     const browser = createBrowserController(config);
-    const provider = new ChatGptAdapter(browser, config, logger);
+    const events = new EventLog();
+    const metrics = new MetricsRegistry();
+    const provider = new ChatGptAdapter(browser, config, logger, { events, metrics });
     const [apiKeys, usage] = await Promise.all([
       ApiKeyStore.load(config.dataDir, config.apiToken),
       UsageStore.load(config.dataDir),
     ]);
-    const app = buildServer({ config, provider, logger, apiKeys, usage });
+    const app = buildServer({ config, provider, logger, apiKeys, usage, events, metrics });
     this.app = app;
     try {
       await app.listen({ host: config.host, port: config.port });

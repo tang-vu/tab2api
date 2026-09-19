@@ -14,6 +14,8 @@ import {
   assertPromptWithinLimit,
 } from '../observability/tokens.js';
 import { FifoQueue } from '../queue/fifo.js';
+import { EventLog } from '../observability/events.js';
+import { MetricsRegistry } from '../observability/metrics.js';
 import { SystemSpeechSynthesizer, type SpeechSynthesizer } from '../audio/system-speech.js';
 import { ApiKeyStore, type ApiPrincipal } from '../security/api-keys.js';
 import { parseBearer, secureTokenEqual } from '../security/token.js';
@@ -95,9 +97,12 @@ function requestAbortController(
   timeoutMs: number,
 ): {
   controller: AbortController;
+  /** Epoch ms when this request's budget expires; forwarded to browser operations. */
+  deadlineAt: number;
   dispose: () => void;
 } {
   const controller = new AbortController();
+  const deadlineAt = Date.now() + timeoutMs;
   const timeout = setTimeout(
     () => controller.abort(new AppError('timeout', 'The request exceeded the configured timeout.')),
     timeoutMs,
@@ -110,6 +115,7 @@ function requestAbortController(
   reply.raw.once('close', onResponseClose);
   return {
     controller,
+    deadlineAt,
     dispose: () => {
       clearTimeout(timeout);
       request.raw.removeListener('aborted', onAborted);
@@ -127,6 +133,8 @@ export interface ServerDependencies {
   speech?: SpeechSynthesizer;
   apiKeys?: ApiKeyStore;
   usage?: UsageStore;
+  events?: EventLog;
+  metrics?: MetricsRegistry;
   /** Internal injection point for deterministic SSE heartbeat tests. */
   anthropicHeartbeatMs?: number;
 }
@@ -237,6 +245,8 @@ export function buildServer(dependencies: ServerDependencies) {
   const speech = dependencies.speech ?? new SystemSpeechSynthesizer(config);
   const apiKeys = dependencies.apiKeys ?? ApiKeyStore.memory(config.apiToken);
   const usage = dependencies.usage ?? UsageStore.memory();
+  const events = dependencies.events ?? new EventLog();
+  const metrics = dependencies.metrics ?? new MetricsRegistry();
   const anthropicHeartbeatMs = dependencies.anthropicHeartbeatMs ?? 15_000;
   if (!Number.isInteger(anthropicHeartbeatMs) || anthropicHeartbeatMs < 1) {
     throw new Error('anthropicHeartbeatMs must be a positive integer');
@@ -391,6 +401,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             attachments,
             temporary,
             ...(body.reasoning_effort !== undefined && { effort: body.reasoning_effort }),
@@ -437,6 +448,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             attachments,
             temporary,
             ...(effort !== undefined && { effort }),
@@ -481,6 +493,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             attachments,
             temporary,
           }),
@@ -586,6 +599,7 @@ export function buildServer(dependencies: ServerDependencies) {
             name: body.name,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
           }),
         lifecycle.controller.signal,
       );
@@ -602,6 +616,7 @@ export function buildServer(dependencies: ServerDependencies) {
           provider.listProjects({
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
           }),
         lifecycle.controller.signal,
       );
@@ -626,6 +641,7 @@ export function buildServer(dependencies: ServerDependencies) {
             projectId,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
           }),
         lifecycle.controller.signal,
       );
@@ -676,6 +692,7 @@ export function buildServer(dependencies: ServerDependencies) {
               attachments,
               signal: lifecycle.controller.signal,
               requestId: request.id,
+              deadlineAt: lifecycle.deadlineAt,
             }),
           lifecycle.controller.signal,
         );
@@ -715,6 +732,7 @@ export function buildServer(dependencies: ServerDependencies) {
             prompt: body.prompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             temporary: body.temporary ?? config.temporaryChat,
             ...(attachments.length > 0 && { attachments }),
           }),
@@ -810,6 +828,7 @@ export function buildServer(dependencies: ServerDependencies) {
             attachments: [attachment],
             signal: lifecycle.controller.signal,
             requestId: request.id,
+            deadlineAt: lifecycle.deadlineAt,
             temporary: config.temporaryChat,
           }),
         lifecycle.controller.signal,
@@ -865,6 +884,7 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.post('/admin/drain', { preHandler: adminOnly }, async () => {
     queue.beginDrain();
+    events.record('queue.draining');
     return { draining: true, pending: queue.size, active: queue.activeCount };
   });
 
@@ -874,16 +894,45 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.post('/admin/resume', { preHandler: adminOnly }, async () => {
     queue.endDrain();
+    events.record('queue.resumed');
     return { draining: false, pending: queue.size, active: queue.activeCount };
   });
 
+  /**
+   * Bounded operational metrics: fixed counters, per-error-code counts, session-state
+   * transition counts, and duration stats — all cardinality-bounded and content-free.
+   */
+  app.get('/admin/metrics', { preHandler: adminOnly }, async () => ({
+    ...metrics.snapshot(),
+    queue: { pending: queue.size, active: queue.activeCount, draining: queue.isDraining },
+  }));
+
+  /**
+   * Content-free diagnostics: last-observed session state, the provider's contract
+   * fingerprint and capability snapshot, and the bounded runtime event log. No prompt
+   * text, assistant output, titles, or account data is ever included.
+   */
+  app.get('/admin/diagnostics', { preHandler: adminOnly }, async () => ({
+    session: provider.sessionState(),
+    provider: provider.diagnostics?.() ?? {
+      state: provider.sessionState(),
+      fingerprint: undefined,
+      capabilities: undefined,
+      unsatisfiedContracts: [],
+    },
+    events: events.list(128),
+  }));
+
   app.post('/admin/session/reset', { preHandler: adminOnly }, async () => {
     queue.beginDrain();
+    events.record('queue.draining');
     try {
       await queue.waitForIdle(config.requestTimeoutMs);
       await provider.reset();
+      events.record('browser.reset');
     } finally {
       queue.endDrain();
+      events.record('queue.resumed');
     }
     return {
       status: 'reset',
@@ -906,6 +955,8 @@ export function buildServer(dependencies: ServerDependencies) {
     ) {
       safe = new AppError('invalid_request', 'Request body exceeds TAB2API_BODY_LIMIT_BYTES.');
     } else safe = asSafeAppError(error);
+    metrics.recordError(safe.code);
+    events.record('request.error', safe.code, request.id);
     request.log.warn({ requestId: request.id, code: safe.code }, 'request failed');
     const path = request.url.split('?')[0];
     const payload =

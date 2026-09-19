@@ -19,6 +19,8 @@ const packageVersion = z
   .parse(JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))).version;
 
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
+/** Upper bound on one newline-delimited JSON-RPC frame; oversized lines get a protocol error. */
+export const MAX_MCP_MESSAGE_CHARS = 1_048_576;
 const SUPPORTED_PROTOCOL_VERSIONS = new Set(['2024-11-05', '2025-03-26', '2025-06-18']);
 
 export interface McpBackend {
@@ -257,6 +259,17 @@ export async function serveMcpStdio(
   for await (const line of lines) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
+    if (trimmed.length > MAX_MCP_MESSAGE_CHARS) {
+      writeLine(
+        output,
+        jsonRpcError(
+          null,
+          -32_600,
+          `Invalid request: message exceeds ${MAX_MCP_MESSAGE_CHARS} characters.`,
+        ),
+      );
+      continue;
+    }
     let message: JsonRpcRequest;
     try {
       message = JSON.parse(trimmed) as JsonRpcRequest;

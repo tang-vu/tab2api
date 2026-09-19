@@ -4,7 +4,49 @@ All notable user-facing changes are documented here. This project follows semant
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-19
+
 ### Added
+
+- Reliability engine: every volatile ChatGPT UI assumption now lives in one selector-contract
+  registry (`src/adapters/chatgpt/selector-contracts.ts`) with explicit cardinality and typed
+  failure classes, and a self-contained DOM observer snapshots the page in a single
+  `page.evaluate` round trip. The same observer runs offline against linkedom fixtures, so the
+  code that classifies a live session is the code the compatibility suite tests.
+- Explicit turn lifecycle (`idle → navigating → observing → preparing → submitting → submitted →
+generating → completing → done|failed`). The send gesture is a one-way boundary: a post-submit
+  timeout reports `generation_timeout`, an unexpected post-submit failure reports
+  `submission_uncertain`, and a disappeared bound turn reports `generation_interrupted`. The
+  runtime never silently resubmits a prompt whose delivery is uncertain.
+- `/admin/metrics` reports bounded counters, per-error-code counts, queue state, and uptime;
+  `/admin/diagnostics` reports the session state, the selector-contract compatibility
+  fingerprint, the capability snapshot, unsatisfied contracts, and the bounded event log. All
+  observability is content-free: no prompt text, assistant output, titles, or account data.
+- `tab2api status --json` and `tab2api doctor --json` emit machine-readable reports; `doctor`
+  keeps its human hint on stderr so stdout stays parseable.
+- Compatibility suite: `npm run test:compat` runs the DOM observer against an expanded fixture
+  corpus plus selector-drift mutations (renamed test ids, hidden composer, removed candidates).
+- Fault-injection and chaos harness (`tests/fault-injection.test.ts`) injects throws at every
+  instrumented browser call site and asserts typed outcomes and page-ownership accounting.
+- Deadline and cancellation propagation through navigation, initial observation, composer
+  interaction, attachment uploads, and completion polling; `BrowserManager`/`CdpBrowserManager`
+  track leased pages and expose `openPageCount` for leak detection.
+- The MCP stdio server rejects single lines over 1 MiB with a protocol error instead of parsing
+  arbitrarily large frames.
+
+### Fixed
+
+- `chat --project` and the MCP `chat` tool route project-scoped requests to
+  `/v1/projects/:projectId/chat/completions` instead of sending an invalid `project_id` field.
+- Session state page-patterns no longer read assistant answer text, so an answer quoting
+  "rate limit" or "not found" cannot misclassify the session or report a missing surface.
+- Bound-turn completion evidence dedupes elements matched by multiple selector candidates.
+- A composer fill failure keeps a pre-submit error class (`browser_disconnected`) rather than
+  `submission_uncertain`; only the send gesture crosses the uncertain boundary.
+- `abortRace` no longer leaves an unhandled rejection when the request signal was already
+  aborted before the raced operation subscribed.
+
+### Added earlier in this cycle
 
 - Optional `temporary` field on the generation routes (and `TAB2API_TEMPORARY_CHAT` as the
   service-wide default) runs turns in a ChatGPT Temporary Chat that is not kept in account
@@ -220,7 +262,8 @@ All notable user-facing changes are documented here. This project follows semant
 - ChatGPT UI changes, rate limits, challenges, experiments, and account policy can interrupt operation.
 - Windows desktop builds are unsigned previews; public binaries require code signing and clean-machine validation.
 
-[Unreleased]: https://github.com/tang-vu/tab2api/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tang-vu/tab2api/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/tang-vu/tab2api/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/tang-vu/tab2api/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/tang-vu/tab2api/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/tang-vu/tab2api/compare/v0.1.0...v0.2.0
