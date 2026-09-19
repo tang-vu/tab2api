@@ -19,3 +19,9 @@ debug-artifacts/
 *.zip
 desktop/target/
 desktop/gen/
+
+# AI assistant artifacts
+.devin/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+NUL
