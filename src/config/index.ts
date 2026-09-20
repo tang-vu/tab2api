@@ -7,7 +7,7 @@ import {
   assertSafeRuntimePaths,
   resolveSafeDataPaths,
 } from '../security/paths.js';
-import { loadOrCreateToken } from '../security/token.js';
+import { loadOrCreateConnectorToken, loadOrCreateToken } from '../security/token.js';
 
 const booleanValue = z
   .enum(['true', 'false'])
@@ -52,6 +52,21 @@ const environmentSchema = z.object({
   TAB2API_LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
+  /**
+   * Standalone secret for the `/mcp/<key>` connector endpoint, generated to
+   * `.tab2api/mcp-connector-token` when unset. It is never the API token: the connector URL
+   * is pasted into ChatGPT's connector settings and must not carry loopback authority.
+   */
+  TAB2API_MCP_CONNECTOR_TOKEN: z
+    .string()
+    .regex(/^[\x21-\x7e]{24,512}$/)
+    .optional(),
+  /** Bounded live MCP broker turns; registrations above the cap fail `queue_full`. */
+  TAB2API_MCP_MAX_TURNS: integer(1, 256).default(32),
+  /** Hard ceiling on a turn's requested TTL; also the default when `ttl_seconds` is omitted. */
+  TAB2API_MCP_MAX_TURN_TTL_MS: integer(60_000, 86_400_000).default(3_600_000),
+  /** Per-call deadline for a connector tool's loopback callback. */
+  TAB2API_MCP_TOOL_TIMEOUT_MS: integer(1_000, 300_000).default(30_000),
 });
 
 export interface AppConfig {
@@ -73,6 +88,10 @@ export interface AppConfig {
   maxPromptTokens: number;
   debug: boolean;
   logLevel: string;
+  mcpConnectorToken: string;
+  mcpMaxTurns: number;
+  mcpMaxTurnTtlMs: number;
+  mcpToolTimeoutMs: number;
 }
 
 export async function loadConfig(
@@ -89,7 +108,10 @@ export async function loadConfig(
   );
   const artifactDir = path.join(dataDir, 'debug-artifacts');
   await assertSafeRuntimePaths(dataDir, profileDir, artifactDir);
-  const apiToken = await loadOrCreateToken(dataDir, parsed.TAB2API_API_TOKEN);
+  const [apiToken, mcpConnectorToken] = await Promise.all([
+    loadOrCreateToken(dataDir, parsed.TAB2API_API_TOKEN),
+    loadOrCreateConnectorToken(dataDir, parsed.TAB2API_MCP_CONNECTOR_TOKEN),
+  ]);
   return {
     host,
     port: parsed.TAB2API_PORT,
@@ -112,5 +134,9 @@ export async function loadConfig(
     maxPromptTokens: parsed.TAB2API_MAX_PROMPT_TOKENS,
     debug: parsed.TAB2API_DEBUG,
     logLevel: parsed.TAB2API_LOG_LEVEL,
+    mcpConnectorToken,
+    mcpMaxTurns: parsed.TAB2API_MCP_MAX_TURNS,
+    mcpMaxTurnTtlMs: parsed.TAB2API_MCP_MAX_TURN_TTL_MS,
+    mcpToolTimeoutMs: parsed.TAB2API_MCP_TOOL_TIMEOUT_MS,
   };
 }

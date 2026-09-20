@@ -46,6 +46,16 @@ export function serializeChatRequest(request: ChatCompletionRequest): string {
   return serializeMessages(request.messages);
 }
 
+/**
+ * Prompt block appended when a request binds an MCP turn token. It tells the model the tools
+ * declared for that turn are reachable through the attached tab2api connector and names the
+ * fixed `describe_turn_tools`/`call_turn_tool` ABI; the broker still validates every call
+ * against the declared registry, so the text only carries the capability, never authority.
+ */
+export function appendConnectorInstructions(prompt: string, turnToken: string): string {
+  return `${prompt}\n\n<tab2api-connector>\nThis conversation can run real tools through the attached tab2api MCP connector. Call describe_turn_tools once with turn_token "${turnToken}" to read the declared tool list, then call_turn_tool with the same turn_token, the exact declared tool name, and arguments matching that tool's JSON schema. These calls perform real local actions: invoke only tools the task needs, never invent results, and never quote the token in an answer.\n</tab2api-connector>`;
+}
+
 export function serializeResponsesRequest(request: ResponsesRequest): string {
   const messages: Message[] = [];
   if (request.instructions !== undefined) {

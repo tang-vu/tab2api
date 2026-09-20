@@ -315,6 +315,40 @@ export async function commandChat(
   print(text);
 }
 
+/**
+ * `connector` exposes the ChatGPT Developer Mode endpoint: `url` prints the paste-able
+ * connector URL (a credential itself), `turns` lists live broker turns, `revoke` ends one.
+ */
+export async function commandConnector(config: AppConfig, args: readonly string[]): Promise<void> {
+  const operation = args[0] ?? 'url';
+  if (operation === 'url') {
+    const host = config.host === '::1' ? '[::1]' : config.host;
+    print('Connector URL (paste into ChatGPT > Settings > Developer Mode):');
+    print(`http://${host}:${config.port}/mcp/${config.mcpConnectorToken}`);
+    print(
+      'This URL is a credential: expose it only through your dedicated tunnel (docs/cloudflare.md).',
+    );
+    return;
+  }
+  const client = new LocalAdminClient(config);
+  if (operation === 'turns') {
+    const { data } = await client.listMcpTurns();
+    for (const turn of data)
+      print(
+        `${turn.id}\t${turn.state}\ttools=${turn.tools}\texpires=${turn.expiresAt}\t${turn.label ?? ''}`,
+      );
+    return;
+  }
+  if (operation === 'revoke') {
+    const id = args[1];
+    if (id === undefined) throw new Error('Turn ID is missing.');
+    await client.revokeMcpTurn(id);
+    print(`Revoked MCP turn ${id}.`);
+    return;
+  }
+  throw new Error('Use `connector url`, `connector turns`, or `connector revoke <id>`.');
+}
+
 export async function commandMcp(
   config: AppConfig,
   input: NodeJS.ReadableStream = process.stdin,
@@ -374,6 +408,9 @@ Generation
 Integrations
   mcp                 Serve the running service as an MCP server over stdio
                       (register with: claude mcp add tab2api -- tab2api mcp)
+  connector url       Print the ChatGPT Developer Mode connector URL
+  connector turns     List live MCP broker turns
+  connector revoke <id>  Revoke one MCP broker turn
 
 Other
   version             Print the installed version
@@ -394,6 +431,7 @@ export const configuredCommands: Record<string, CommandHandler> = {
   usage: (config, args) => commandUsage(config, args),
   'reset-session': (config) => commandResetSession(config),
   mcp: (config) => commandMcp(config),
+  connector: (config, args) => commandConnector(config, args),
 };
 
 /** Commands that manage their own config or need none. */

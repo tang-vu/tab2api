@@ -147,6 +147,21 @@ hoặc JSON tương đương trong Cursor/Claude Desktop:
 
 Các tool: `chat` (prompt kèm `temporary`, `reasoning_effort`, `conversation_id`, `project_id` tùy chọn), `count_tokens` (ước lượng o200k cục bộ, không tốn một turn browser) và `status` (trạng thái session và queue). Subprocess xác thực bằng administrator token loopback trong cấu hình của bạn, nên chỉ đăng ký trên chính máy mình — cùng trust boundary với CLI. Nếu service chưa chạy, tool call trả `isError` nhắc chạy `tab2api start`.
 
+### Connector Developer Mode của ChatGPT
+
+Chiều ngược lại cũng có: endpoint MCP streamable-HTTP tại `/mcp/<connector key>` cho phép Developer Mode của ChatGPT gọi tool local _ngay trong một turn browser_, nên model chạy tool đã khai báo trực tiếp thay vì trả envelope cho client tự thực thi. In URL bằng `npm run connector` rồi dán vào **Settings → Connectors → Developer Mode → custom connector** — đi qua Cloudflare tunnel riêng khi Developer Mode yêu cầu URL public (xem `docs/cloudflare.md`). Connector key là secret sinh riêng tại `.tab2api/mcp-connector-token`, không bao giờ là API key; URL chính là credential nên chỉ chia sẻ qua tunnel.
+
+Mặc định không có tool nào callable. Phải đăng ký một capability theo turn trước — caller khai báo allowlist tool và callback loopback thực thi call:
+
+```bash
+curl -sS -H "Authorization: Bearer <admin token>" -H 'content-type: application/json' \
+  -d '{"label":"demo","tools":[{"name":"fs.read","description":"Read a file","input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}],"callback_url":"http://127.0.0.1:8765/tool"}' \
+  http://127.0.0.1:3210/admin/mcp/turns
+# → {"id":"…","turn_token":"t2m_…","expiresAt":"…","tools":1}
+```
+
+Đưa `turn_token` trả về vào `mcp_turn_token` trên `/v1/chat/completions`, `/v1/responses` hoặc `/v1/messages`. Request bind token dùng một lần, prompt được nối block `<tab2api-connector>` nêu ABI cố định `describe_turn_tools`/`call_turn_tool`, và token bị thu hồi ngay khi turn kết thúc — request sau không replay được. Mỗi `call_turn_tool` được kiểm tra với allowlist và subset JSON-schema đã khai báo trước khi POST `{turn_id, call_id, tool, arguments}` tới callback loopback; callback trả `{"result": "…"}` hoặc `{"error": "…"}`, lỗi hiện cho model dưới dạng `isError` thay vì phá hội thoại. Quản lý turn bằng `GET /admin/mcp/turns` và `DELETE /admin/mcp/turns/:id` (`npm run connector -- turns|revoke <id>`); drain và shutdown hủy call đang chờ và thu hồi turn chưa bind. Callback chỉ chấp nhận `http://127.0.0.1:<port>`/`[::1]` không credential trên port không đặc quyền với response có giới hạn — tool phá hoại nên tự chặn sau `callback_token` tùy chọn và prompt xác nhận riêng.
+
 Tạo ảnh:
 
 ```powershell

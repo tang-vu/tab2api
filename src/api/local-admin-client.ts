@@ -8,6 +8,10 @@ import {
   createdApiKeyResponseSchema,
   drainStatusResponseSchema,
   healthResponseSchema,
+  mcpTurnCreateRequestSchema,
+  mcpTurnCreateResponseSchema,
+  mcpTurnListResponseSchema,
+  mcpTurnRevokeResponseSchema,
   sessionResetResponseSchema,
   sessionStateResponseSchema,
   usageResetResponseSchema,
@@ -15,6 +19,9 @@ import {
   type ApiKeyListResponse,
   type CreatedApiKeyResponse,
   type DrainStatusResponse,
+  type McpTurnCreateRequest,
+  type McpTurnCreateResponse,
+  type McpTurnListResponse,
   type SessionStateResponse,
   type UsageResponse,
 } from './admin-contract.js';
@@ -236,6 +243,43 @@ export class LocalAdminClient {
 
   async sessionState(signal?: AbortSignal): Promise<SessionStateResponse> {
     return this.request('/admin/session', sessionStateResponseSchema, { method: 'GET' }, signal);
+  }
+
+  /** MCP broker turns: metadata only — turn tokens are never listed back. */
+  async listMcpTurns(signal?: AbortSignal): Promise<McpTurnListResponse> {
+    return this.request('/admin/mcp/turns', mcpTurnListResponseSchema, { method: 'GET' }, signal);
+  }
+
+  async registerMcpTurn(
+    input: McpTurnCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<McpTurnCreateResponse> {
+    const parsed = mcpTurnCreateRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new LocalAdminError(
+        'request_failed',
+        'The MCP turn declaration is invalid; check the tool list and callback URL.',
+      );
+    }
+    return this.request(
+      '/admin/mcp/turns',
+      mcpTurnCreateResponseSchema,
+      { method: 'POST', body: JSON.stringify(parsed.data) },
+      signal,
+    );
+  }
+
+  async revokeMcpTurn(id: string, signal?: AbortSignal): Promise<void> {
+    const parsed = apiKeyIdSchema.safeParse(id);
+    if (!parsed.success) {
+      throw new LocalAdminError('request_failed', 'MCP turn identifier is invalid.');
+    }
+    await this.request(
+      `/admin/mcp/turns/${parsed.data}`,
+      mcpTurnRevokeResponseSchema,
+      { method: 'DELETE' },
+      signal,
+    );
   }
 
   private async request<T>(

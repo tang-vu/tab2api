@@ -34,13 +34,15 @@ Optional `reasoning_effort` accepts `minimal`, `low`, `medium`, `high`, or `xhig
 
 For `stream: true`, `Content-Type` is `text/event-stream`, `X-Tab2api-Stream-Mode` is `buffered`, role/content/final chunks are emitted, and the stream ends with `data: [DONE]`.
 
+Optional `mcp_turn_token` binds one issued MCP turn token (`t2m_…`) to the request. The single-use token marks the turn _bound_, the serialized prompt gains connector instructions, and the token is revoked when the turn finishes; replaying it on a later request fails `invalid_request`. See [Broker turns](#mcp-connector-and-broker-turns).
+
 ### `POST /v1/responses`
 
 Required: `model` and `input`. Input is a non-empty string or ordered message array. Message content may contain `input_text` and `input_image` data-URL parts. Optional `instructions` becomes a leading developer message. Accepted optional fields are `stream` and client metadata `user`.
 
 Non-stream responses contain one completed assistant `message`/`output_text`; `usage` is `null`. Optional `conversation_id` behaves as it does for Chat Completions, and the resulting conversation is reported as `metadata.tab2api_conversation_id`. Buffered streaming emits sequenced `response.created`, item/content events, one `response.output_text.delta`, and finally `response.completed`; unlike Chat Completions, the typed Responses event stream does not add `[DONE]`.
 
-`temporary` and `reasoning_effort` behave exactly as they do for Chat Completions. An Anthropic-style `reasoning: { "effort": "..." }` object is also accepted and is equivalent to `reasoning_effort`; when both are present, `reasoning_effort` wins.
+`temporary` and `reasoning_effort` behave exactly as they do for Chat Completions. An Anthropic-style `reasoning: { "effort": "..." }` object is also accepted and is equivalent to `reasoning_effort`; when both are present, `reasoning_effort` wins. `mcp_turn_token` behaves exactly as it does for Chat Completions.
 
 ### `POST /v1/messages`
 
@@ -120,6 +122,18 @@ All of these routes require the administrator bearer token; client keys receive 
 - `POST /admin/session/reset`: drains the queue first, waits until no turn is queued or in flight (bounded by `TAB2API_REQUEST_TIMEOUT_MS`), then closes the current browser context. The next operation relaunches it. Dedicated profile/login data is deliberately preserved, and the endpoint does not delete files. A drain that outlasts the timeout reopens intake and reports `timeout` instead of wedging the service.
 
 `draining` differs from `queue_full`: intake was closed deliberately for a lifecycle step, so a supervisor can wait for the counters to reach zero before restarting instead of cutting a submitted turn off mid-generation.
+
+### MCP connector and broker turns
+
+The `/mcp/:connectorKey` endpoint is a streamable-HTTP Model Context Protocol surface for ChatGPT Developer Mode. It does not consume bearer API keys: the connector key in the URL is a standalone generated secret (`.tab2api/mcp-connector-token`, overridable with `TAB2API_MCP_CONNECTOR_TOKEN`), compared in constant time. POST accepts a single JSON-RPC message or a batch of at most eight; notifications answer 202. `GET`/`DELETE` answer 405 — the server never opens event streams. Only two fixed tools exist: `describe_turn_tools {turn_token}` and `call_turn_tool {turn_token, name, arguments}`; every capability failure is an `isError` tool result so the model sees the reason.
+
+Broker turns are managed under the administrator routes (administrator bearer token required):
+
+- `POST /admin/mcp/turns` with strict `{ tools, callback_url, label?, callback_token?, ttl_seconds? }`: register one turn. `tools` is 1–32 declarations of `{name, description?, input_schema}`; `input_schema` must use the documented JSON-schema subset (unsupported keywords such as `$ref`/`oneOf`/`pattern` are rejected, not ignored). `callback_url` must be exactly `http://127.0.0.1:<port>` or `http://[::1]:<port>` on an unprivileged port with no credentials or fragment. Returns `{ id, turn_token, expiresAt, tools }`; the token is shown once and never listed.
+- `GET /admin/mcp/turns`: metadata only — `id`, `label`, `state` (`issued`/`bound`), tool count, timestamps.
+- `DELETE /admin/mcp/turns/:id`: revoke the turn and abort its pending calls; already-ended ids return `invalid_request`.
+
+While a turn is bound, `call_turn_tool` validates arguments against the declared schema and POSTs `{turn_id, call_id, tool, arguments}` to `callback_url`; the callback answers `{"result": "…"}` or `{"error": "…"}` with a bounded body. Draining (`POST /admin/drain`, session reset, shutdown) blocks registration and revokes unbound turns; bound turns keep running until their request ends or the TTL elapses (`TAB2API_MCP_MAX_TURN_TTL_MS`, default one hour; per-call deadline `TAB2API_MCP_TOOL_TIMEOUT_MS`, default 30 s, capped by the request timeout).
 
 ### API-key administration
 

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, type ErrorCode } from '../errors.js';
+import { mcpTurnTokenSchema } from '../mcp/broker.js';
 import { estimateTokens } from '../observability/tokens.js';
 import type { MediaAttachment } from '../provider.js';
 
@@ -92,6 +93,8 @@ const anthropicRequestShape = {
   tools: z.array(anthropicToolSchema).max(MAX_TOOLS).default([]),
   /** Run this turn in a Temporary Chat that is not kept in account history. */
   temporary: z.boolean().optional(),
+  /** Binds one issued MCP turn token to this request; revoked when the turn ends. */
+  mcp_turn_token: mcpTurnTokenSchema.optional(),
 };
 
 /**

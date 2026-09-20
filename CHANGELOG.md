@@ -33,6 +33,17 @@ All notable user-facing changes are documented here. This project follows semant
 - `tab2api mcp` serves the running service as a tools-only MCP server over stdio (newline-delimited
   JSON-RPC), exposing `chat`, `count_tokens`, and `status` to MCP hosts such as Claude Code,
   Cursor, or Claude Desktop through the same queue, budgets, and drain lifecycle as HTTP callers.
+- ChatGPT Developer Mode connector: the reverse-direction streamable-HTTP MCP endpoint at
+  `/mcp/<connector key>` lets the model invoke declared local tools natively inside a browser
+  turn. A caller registers a turn through `POST /admin/mcp/turns` (tool allowlist plus a
+  loopback-only callback URL), receives a single-use `t2m_` token, and binds it to one request
+  via `mcp_turn_token` on `/v1/chat/completions`, `/v1/responses`, or `/v1/messages`; the token
+  is revoked when the turn ends and every `call_turn_tool` is validated against the declared
+  schema subset before dispatching to the callback. The connector key is a standalone secret
+  generated to `.tab2api/mcp-connector-token` (`TAB2API_MCP_CONNECTOR_TOKEN`), bounded by
+  `TAB2API_MCP_MAX_TURNS`, `TAB2API_MCP_MAX_TURN_TTL_MS`, and `TAB2API_MCP_TOOL_TIMEOUT_MS`;
+  `GET`/`DELETE /admin/mcp/turns[/:id]` manage turns and `tab2api connector url|turns|revoke`
+  exposes the same from the CLI.
 
 ### Fixed
 

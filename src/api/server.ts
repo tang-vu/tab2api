@@ -6,6 +6,8 @@ import type { Logger } from 'pino';
 import { ZodError } from 'zod';
 import type { AppConfig } from '../config/index.js';
 import { AppError, asSafeAppError } from '../errors.js';
+import { McpBroker } from '../mcp/broker.js';
+import { registerConnectorRoutes } from '../mcp/connector.js';
 import type { UiEffort, WebChatProvider } from '../provider.js';
 import type { AudioMimeType, DocumentMimeType, MediaAttachment } from '../provider.js';
 import {
@@ -44,13 +46,19 @@ import {
   speechRequestSchema,
 } from './schemas.js';
 import {
+  appendConnectorInstructions,
   chatAttachments,
   imageGenerationAttachments,
   responsesAttachments,
   serializeChatRequest,
   serializeResponsesRequest,
 } from './serializer.js';
-import { apiKeyCreateRequestSchema, apiKeyParamsSchema } from './admin-contract.js';
+import {
+  apiKeyCreateRequestSchema,
+  apiKeyParamsSchema,
+  mcpTurnCreateRequestSchema,
+  mcpTurnParamsSchema,
+} from './admin-contract.js';
 
 interface ErrorEnvelope {
   error: { message: string; type: string; code: string; param: null; remediation?: string };
@@ -129,6 +137,8 @@ export interface ServerDependencies {
   usage?: UsageStore;
   /** Internal injection point for deterministic SSE heartbeat tests. */
   anthropicHeartbeatMs?: number;
+  /** MCP connector broker; tests inject a preconfigured instance. */
+  broker?: McpBroker;
 }
 
 interface UsageDraft {
@@ -237,6 +247,15 @@ export function buildServer(dependencies: ServerDependencies) {
   const speech = dependencies.speech ?? new SystemSpeechSynthesizer(config);
   const apiKeys = dependencies.apiKeys ?? ApiKeyStore.memory(config.apiToken);
   const usage = dependencies.usage ?? UsageStore.memory();
+  const broker =
+    dependencies.broker ??
+    new McpBroker({
+      maxTurns: config.mcpMaxTurns,
+      maxTurnTtlMs: config.mcpMaxTurnTtlMs,
+      // A connector call can never outlive its own request deadline, so the tighter of the
+      // two bounds applies and a slow callback can never hold a socket past it.
+      toolTimeoutMs: Math.min(config.mcpToolTimeoutMs, config.requestTimeoutMs),
+    });
   const anthropicHeartbeatMs = dependencies.anthropicHeartbeatMs ?? 15_000;
   if (!Number.isInteger(anthropicHeartbeatMs) || anthropicHeartbeatMs < 1) {
     throw new Error('anthropicHeartbeatMs must be a positive integer');
@@ -323,6 +342,13 @@ export function buildServer(dependencies: ServerDependencies) {
   };
 
   app.get('/healthz', async () => ({ status: 'ok', service: 'tab2api' }));
+
+  // ChatGPT Developer Mode connector: streamable-HTTP MCP over a dedicated connector key
+  // carried in the URL path. It does not consume bearer API keys — the connector URL is
+  // pasted into ChatGPT settings and is the credential itself. Registered before the
+  // bearer-authenticated surface so the key check is the only gate.
+  registerConnectorRoutes(app, broker, config.mcpConnectorToken);
+
   app.head('/api/hello', { preHandler: authenticated }, async (_request, reply) =>
     reply.code(204).send(),
   );
@@ -381,14 +407,20 @@ export function buildServer(dependencies: ServerDependencies) {
     const prompt = serializeChatRequest(body);
     const attachments = chatAttachments(body, config.mediaLimitBytes);
     const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
-    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
-    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
+    const mcpTurnToken = body.mcp_turn_token;
+    const finalPrompt =
+      mcpTurnToken === undefined ? prompt : appendConnectorInstructions(prompt, mcpTurnToken);
+    assertPromptWithinLimit(finalPrompt, imageCount, config.maxPromptTokens);
+    observe(request, { inputText: finalPrompt, inputReserves: inputReserves(imageCount) });
+    // Bound last: once bound the capability is live until release, so nothing throwing may run
+    // between bind and the lifecycle-managed section that releases it.
+    if (mcpTurnToken !== undefined) broker.bind(mcpTurnToken);
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       const result = await queue.enqueue(
         () =>
           provider.generate({
-            prompt,
+            prompt: finalPrompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
             attachments,
@@ -412,6 +444,7 @@ export function buildServer(dependencies: ServerDependencies) {
       return response;
     } finally {
       lifecycle.dispose();
+      if (mcpTurnToken !== undefined) broker.release(mcpTurnToken);
     }
   }
 
@@ -426,15 +459,19 @@ export function buildServer(dependencies: ServerDependencies) {
     const prompt = serializeResponsesRequest(body);
     const attachments = responsesAttachments(body, config.mediaLimitBytes);
     const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
-    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
-    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
     const effort: UiEffort | undefined = body.reasoning_effort ?? body.reasoning?.effort;
+    const mcpTurnToken = body.mcp_turn_token;
+    const finalPrompt =
+      mcpTurnToken === undefined ? prompt : appendConnectorInstructions(prompt, mcpTurnToken);
+    assertPromptWithinLimit(finalPrompt, imageCount, config.maxPromptTokens);
+    observe(request, { inputText: finalPrompt, inputReserves: inputReserves(imageCount) });
+    if (mcpTurnToken !== undefined) broker.bind(mcpTurnToken);
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       const result = await queue.enqueue(
         () =>
           provider.generate({
-            prompt,
+            prompt: finalPrompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
             attachments,
@@ -458,6 +495,7 @@ export function buildServer(dependencies: ServerDependencies) {
       return response;
     } finally {
       lifecycle.dispose();
+      if (mcpTurnToken !== undefined) broker.release(mcpTurnToken);
     }
   }
 
@@ -469,16 +507,20 @@ export function buildServer(dependencies: ServerDependencies) {
     const prompt = serializeAnthropicRequest(body);
     const attachments = anthropicAttachments(body, config.mediaLimitBytes);
     const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
-    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
     const allowedToolNames = new Set(body.tools.map(({ name }) => name));
     const temporary = body.temporary ?? config.temporaryChat;
-    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
+    const mcpTurnToken = body.mcp_turn_token;
+    const finalPrompt =
+      mcpTurnToken === undefined ? prompt : appendConnectorInstructions(prompt, mcpTurnToken);
+    assertPromptWithinLimit(finalPrompt, imageCount, config.maxPromptTokens);
+    observe(request, { inputText: finalPrompt, inputReserves: inputReserves(imageCount) });
+    if (mcpTurnToken !== undefined) broker.bind(mcpTurnToken);
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     const generate = () =>
       queue.enqueue(
         () =>
           provider.generate({
-            prompt,
+            prompt: finalPrompt,
             signal: lifecycle.controller.signal,
             requestId: request.id,
             attachments,
@@ -500,6 +542,7 @@ export function buildServer(dependencies: ServerDependencies) {
         return response;
       } finally {
         lifecycle.dispose();
+        if (mcpTurnToken !== undefined) broker.release(mcpTurnToken);
       }
     }
 
@@ -542,6 +585,7 @@ export function buildServer(dependencies: ServerDependencies) {
         clearInterval(heartbeat);
         lifecycle.controller.signal.removeEventListener('abort', onStreamAbort);
         lifecycle.dispose();
+        if (mcpTurnToken !== undefined) broker.release(mcpTurnToken);
       });
 
     return reply
@@ -865,7 +909,53 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.post('/admin/drain', { preHandler: adminOnly }, async () => {
     queue.beginDrain();
+    broker.beginDrain();
     return { draining: true, pending: queue.size, active: queue.activeCount };
+  });
+
+  /**
+   * MCP broker turns: a REST client registers its tool allowlist plus the loopback callback
+   * that executes calls, receives a single-use `turn_token`, and passes it as
+   * `mcp_turn_token` on the generation request that should expose those tools to the model.
+   */
+  app.get('/admin/mcp/turns', { preHandler: adminOnly }, async () => ({ data: broker.list() }));
+
+  app.post('/admin/mcp/turns', { preHandler: adminOnly }, async (request) => {
+    const body = mcpTurnCreateRequestSchema.parse(request.body);
+    const principal = principals.get(request);
+    try {
+      const turn = broker.register({
+        principalId: principal?.id ?? 'admin',
+        ...(body.label !== undefined && { label: body.label }),
+        tools: body.tools.map(({ name, description, input_schema }) => ({
+          name,
+          ...(description !== undefined && { description }),
+          inputSchema: input_schema,
+        })),
+        callbackUrl: body.callback_url,
+        ...(body.callback_token !== undefined && { callbackToken: body.callback_token }),
+        ...(body.ttl_seconds !== undefined && { ttlMs: body.ttl_seconds * 1_000 }),
+      });
+      return {
+        id: turn.id,
+        turn_token: turn.turnToken,
+        expiresAt: new Date(turn.expiresAt).toISOString(),
+        tools: turn.tools,
+      };
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        'invalid_request',
+        error instanceof Error ? error.message : 'Could not register the MCP turn.',
+      );
+    }
+  });
+
+  app.delete('/admin/mcp/turns/:id', { preHandler: adminOnly }, async (request) => {
+    const { id } = mcpTurnParamsSchema.parse(request.params);
+    if (!broker.revoke(id))
+      throw new AppError('invalid_request', 'The MCP turn does not exist or already ended.');
+    return { status: 'revoked', id };
   });
 
   app.get('/admin/session', { preHandler: adminOnly }, () => ({
@@ -874,16 +964,19 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.post('/admin/resume', { preHandler: adminOnly }, async () => {
     queue.endDrain();
+    broker.endDrain();
     return { draining: false, pending: queue.size, active: queue.activeCount };
   });
 
   app.post('/admin/session/reset', { preHandler: adminOnly }, async () => {
     queue.beginDrain();
+    broker.beginDrain();
     try {
       await queue.waitForIdle(config.requestTimeoutMs);
       await provider.reset();
     } finally {
       queue.endDrain();
+      broker.endDrain();
     }
     return {
       status: 'reset',
@@ -917,6 +1010,7 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.addHook('onClose', async () => {
     queue.close();
+    broker.close();
     const cleanup = await Promise.allSettled([
       Promise.resolve().then(() => provider.close()),
       Promise.resolve().then(() => apiKeys.flush()),

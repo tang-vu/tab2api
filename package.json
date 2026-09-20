@@ -53,6 +53,7 @@
     "resume": "tsx src/cli/index.ts resume",
     "chat": "tsx src/cli/index.ts chat",
     "mcp": "tsx src/cli/index.ts mcp",
+    "connector": "tsx src/cli/index.ts connector",
     "keys": "tsx src/cli/index.ts keys",
     "usage": "tsx src/cli/index.ts usage",
     "desktop:prepare:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/prepare-desktop-bundle.ps1",
