@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { FetchImplementation } from '../src/api/local-admin-client.js';
 import { LocalGenerationClient } from '../src/api/local-generation-client.js';
 import { buildServer } from '../src/api/server.js';
 import { createLogger } from '../src/observability/logger.js';
@@ -13,6 +14,17 @@ function jsonResponse(payload: unknown, status = 200, headers: HeadersInit = {})
   return new Response(JSON.stringify(payload), { status, headers: responseHeaders });
 }
 
+const health = { status: 'ok', service: 'tab2api' };
+
+function withHealthProbe(fetchImplementation: FetchImplementation): FetchImplementation {
+  return (input, init) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    return url.endsWith('/healthz')
+      ? Promise.resolve(jsonResponse(health))
+      : fetchImplementation(input, init);
+  };
+}
+
 describe('loopback generation client', () => {
   it('sends chat completions with bearer auth and returns the answer text', async () => {
     const calls: { url: string; init: RequestInit | undefined }[] = [];
@@ -22,6 +34,7 @@ describe('loopback generation client', () => {
           url: input instanceof Request ? input.url : input.toString(),
           init,
         });
+        if (calls.length === 1) return jsonResponse(health);
         return jsonResponse({
           id: 'chatcmpl-x',
           choices: [{ message: { role: 'assistant', content: 'the answer' } }],
@@ -39,12 +52,17 @@ describe('loopback generation client', () => {
       }),
     ).resolves.toBe('the answer');
 
-    expect(calls[0]?.url).toBe('http://127.0.0.1:4321/v1/chat/completions');
-    expect(calls[0]?.init?.method).toBe('POST');
-    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(
+    expect(calls[0]?.url).toBe('http://127.0.0.1:4321/healthz');
+    expect(new Headers(calls[0]?.init?.headers).has('authorization')).toBe(false);
+    expect(calls[0]?.init?.body).toBeUndefined();
+    expect(calls[0]?.init?.signal).toBe(calls[1]?.init?.signal);
+    expect(calls.every(({ init }) => init?.redirect === 'error')).toBe(true);
+    expect(calls[1]?.url).toBe('http://127.0.0.1:4321/v1/chat/completions');
+    expect(calls[1]?.init?.method).toBe('POST');
+    expect(new Headers(calls[1]?.init?.headers).get('authorization')).toBe(
       `Bearer ${testConfig().apiToken}`,
     );
-    const body = calls[0]?.init?.body;
+    const body = calls[1]?.init?.body;
     if (typeof body !== 'string') throw new Error('Expected a JSON request body.');
     expect(JSON.parse(body)).toMatchObject({
       model: 'chatgpt-web',
@@ -62,20 +80,24 @@ describe('loopback generation client', () => {
     const client = new LocalGenerationClient(testConfig({ port: 4321 }), {
       fetchImplementation: async (input) => {
         calls.push({ url: input instanceof Request ? input.url : input.toString() });
-        return jsonResponse({ input_tokens: 321 });
+        return jsonResponse(calls.length === 1 ? health : { input_tokens: 321 });
       },
     });
     await expect(client.countTokens('hello')).resolves.toBe(321);
-    expect(calls[0]?.url).toBe('http://127.0.0.1:4321/v1/messages/count_tokens');
+    expect(calls.map(({ url }) => url)).toEqual([
+      'http://127.0.0.1:4321/healthz',
+      'http://127.0.0.1:4321/v1/messages/count_tokens',
+    ]);
   });
 
   it('passes server error codes through from both envelope shapes', async () => {
     const openAiShape = new LocalGenerationClient(testConfig({ port: 4321 }), {
-      fetchImplementation: async () =>
+      fetchImplementation: withHealthProbe(async () =>
         jsonResponse(
           { error: { code: 'draining', message: 'Intake is closed for a lifecycle step.' } },
           503,
         ),
+      ),
     });
     await expect(openAiShape.chat({ prompt: 'x' })).rejects.toMatchObject({
       code: 'draining',
@@ -83,7 +105,7 @@ describe('loopback generation client', () => {
     });
 
     const anthropicShape = new LocalGenerationClient(testConfig({ port: 4321 }), {
-      fetchImplementation: async () =>
+      fetchImplementation: withHealthProbe(async () =>
         jsonResponse(
           {
             type: 'error',
@@ -95,13 +117,14 @@ describe('loopback generation client', () => {
           },
           400,
         ),
+      ),
     });
     await expect(anthropicShape.countTokens('x')).rejects.toMatchObject({
       code: 'invalid_request',
     });
 
     const unknownShape = new LocalGenerationClient(testConfig({ port: 4321 }), {
-      fetchImplementation: async () => new Response('nope', { status: 500 }),
+      fetchImplementation: withHealthProbe(async () => new Response('nope', { status: 500 })),
     });
     await expect(unknownShape.chat({ prompt: 'x' })).rejects.toMatchObject({
       code: 'request_failed',
@@ -110,7 +133,7 @@ describe('loopback generation client', () => {
 
   it('types malformed success bodies, cancellation, and unreachable services', async () => {
     const malformed = new LocalGenerationClient(testConfig({ port: 4321 }), {
-      fetchImplementation: async () => jsonResponse({ choices: [] }),
+      fetchImplementation: withHealthProbe(async () => jsonResponse({ choices: [] })),
     });
     await expect(malformed.chat({ prompt: 'x' })).rejects.toMatchObject({
       code: 'invalid_response',
