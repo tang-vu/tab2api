@@ -2,7 +2,11 @@ import { Buffer } from 'node:buffer';
 import { z } from 'zod';
 import type { AppConfig } from '../config/index.js';
 import type { UiEffort } from '../provider.js';
-import type { FetchImplementation } from './local-admin-client.js';
+import {
+  LocalAdminError,
+  verifyLocalServiceIdentity,
+  type FetchImplementation,
+} from './local-admin-client.js';
 
 /**
  * Loopback client for the generation-facing API surface (`/v1/*`). The CLI `chat` command and
@@ -21,6 +25,7 @@ export type LocalGenerationErrorCode =
   | 'request_failed'
   | 'response_too_large'
   | 'timeout'
+  | 'unexpected_service'
   | 'unreachable'
   | (string & {});
 
@@ -225,6 +230,7 @@ export class LocalGenerationClient {
         ? timeoutSignal
         : AbortSignal.any([externalSignal, timeoutSignal]);
     try {
+      await verifyLocalServiceIdentity(this.origin, this.fetchImplementation, signal);
       const response = await this.fetchImplementation(`${this.origin}${pathname}`, {
         method: 'POST',
         redirect: 'error',
@@ -249,6 +255,9 @@ export class LocalGenerationClient {
       }
     } catch (error) {
       if (error instanceof LocalGenerationError) throw error;
+      if (error instanceof LocalAdminError) {
+        throw new LocalGenerationError(error.code, error.message);
+      }
       if (externalSignal?.aborted === true) {
         throw new LocalGenerationError('cancelled', 'The local request was cancelled.');
       }
