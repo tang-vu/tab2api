@@ -76,6 +76,10 @@ Remove autostart without deleting DNS or credentials:
 npm run tunnel:remove
 ```
 
+## ChatGPT Developer Mode connector
+
+Developer Mode custom connectors require a public HTTPS URL, so the connector endpoint is the one tab2api surface designed to ride this tunnel: expose `https://tab2api.example.com/mcp/<connector key>` (from `npm run connector`) through the same dedicated hostname and keep Access enforcement on — the tunnel ingress already forwards `/mcp/*` to the loopback origin. The URL path carries its own generated secret, so the tunnel needs no extra header plumbing; still treat the URL as a credential and revoke it by deleting `.tab2api/mcp-connector-token` and restarting. Under bearer-only mode the connector key is the sole gate for the JSON-RPC surface itself — turn-scoped capability tokens still authorize every individual tool call — so prefer Access whenever the connector is exposed.
+
 ## API keys and usage
 
 Create one tab2api client key per remote device:

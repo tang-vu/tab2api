@@ -64,6 +64,10 @@ function smokeConfig(dataDir: string): AppConfig {
     maxPromptTokens: 104_000,
     debug: false,
     logLevel: 'silent',
+    mcpConnectorToken: 'smoke-only-connector-token-long-enough',
+    mcpMaxTurns: 8,
+    mcpMaxTurnTtlMs: 60_000,
+    mcpToolTimeoutMs: 5_000,
   };
 }
 
