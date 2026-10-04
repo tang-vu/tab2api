@@ -250,7 +250,7 @@ export class LocalAdminClient {
         ? timeoutSignal
         : AbortSignal.any([externalSignal, timeoutSignal]);
     try {
-      await this.verifyIdentity(signal);
+      await verifyLocalServiceIdentity(this.origin, this.fetchImplementation, signal);
       const response = await this.fetchImplementation(`${this.origin}${pathname}`, {
         method: request.method,
         redirect: 'error',
@@ -285,30 +285,39 @@ export class LocalAdminClient {
       );
     }
   }
+}
 
-  private async verifyIdentity(signal: AbortSignal): Promise<void> {
-    const response = await this.fetchImplementation(`${this.origin}/healthz`, {
-      method: 'GET',
-      redirect: 'error',
-      cache: 'no-store',
-      signal,
-      headers: { accept: 'application/json' },
-    });
-    if (!response.ok) {
-      await cancelBody(response);
-      throw new LocalAdminError(
-        'unexpected_service',
-        'The configured loopback port is not serving tab2api; the administrator key was not sent.',
-      );
-    }
-    try {
-      await parseJsonResponse(response, healthResponseSchema);
-    } catch (error) {
-      if (error instanceof LocalAdminError && error.code === 'response_too_large') throw error;
-      throw new LocalAdminError(
-        'unexpected_service',
-        'The configured loopback port is not serving tab2api; the administrator key was not sent.',
-      );
-    }
+/** Credential-free identity check shared by loopback clients, using their operation deadline. */
+export async function verifyLocalServiceIdentity(
+  origin: string,
+  fetchImplementation: FetchImplementation,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const response = await fetchImplementation(`${origin}/healthz`, {
+    method: 'GET',
+    redirect: 'error',
+    cache: 'no-store',
+    signal,
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) {
+    await cancelBody(response);
+    signal.throwIfAborted();
+    throw new LocalAdminError(
+      'unexpected_service',
+      'The configured loopback port is not serving tab2api; the administrator key was not sent.',
+    );
+  }
+  try {
+    await parseJsonResponse(response, healthResponseSchema);
+    signal.throwIfAborted();
+  } catch (error) {
+    signal.throwIfAborted();
+    if (error instanceof LocalAdminError && error.code === 'response_too_large') throw error;
+    throw new LocalAdminError(
+      'unexpected_service',
+      'The configured loopback port is not serving tab2api; the administrator key was not sent.',
+    );
   }
 }

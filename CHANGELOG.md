@@ -45,6 +45,10 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Security
 
+- CLI `chat` and MCP `chat`/`count_tokens` now verify the exact unauthenticated loopback health
+  contract before sending the administrator key or prompt. The probe shares the request deadline
+  and rejects redirects and malformed or oversized health responses. This prevents accidental
+  disclosure to an unrelated local service, not impersonation by malicious same-user software.
 - `fast-uri` is pinned forward to 3.1.7/4.1.4, clearing the high-severity host-confusion and SSRF
   advisories it carried as a transitive Fastify dependency (GHSA-5jgf-p345-68v8,
   GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf, GHSA-jqff-g426-hqxp).
