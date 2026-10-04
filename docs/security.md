@@ -34,8 +34,9 @@ If `TAB2API_API_TOKEN` is absent, `.tab2api/api-token` is created exclusively wi
 
 The original token is the local administrator credential. Additional client keys are random, revocable, limited to non-admin routes, and stored only as SHA-256 digests. Use one per device or local client. Protected routes accept either a bearer header or `x-api-key` for Anthropic client compatibility; if both are supplied they must match, preventing ambiguous credential selection. Cloudflare Access credentials and tunnel credential JSON files are separate secrets and must also remain outside Git.
 
-CLI key, usage, and session-reset commands send the administrator credential only after the
-configured loopback origin returns the exact public tab2api health contract. They disable redirects,
+CLI administration, `chat`, and MCP generation/count-token calls send the administrator
+credential and request content only after the configured loopback origin returns the exact public
+tab2api health contract. The credential-free probe and authenticated request share one deadline. They disable redirects,
 accept only bounded typed JSON responses, and distinguish cancellation, timeout, authentication,
 unexpected-service, and transport failures without printing response bodies. The service remains
 the only mutable key/usage-store owner; the CLI requires it to be running instead of editing those
