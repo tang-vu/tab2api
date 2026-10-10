@@ -91,7 +91,7 @@
   "license": "MIT",
   "dependencies": {
     "@fastify/multipart": "^10.1.1",
-    "dotenv": "^17.2.1",
+    "dotenv": "^18.0.6",
     "fastify": "^5.12.1",
     "gpt-tokenizer": "^3.4.0",
     "pino": "^9.9.0",
