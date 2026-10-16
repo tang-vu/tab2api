@@ -20,6 +20,10 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     maxPromptTokens: 104_000,
     debug: false,
     logLevel: 'silent',
+    mcpConnectorToken: 'test-only-connector-token-long-enough',
+    mcpMaxTurns: 8,
+    mcpMaxTurnTtlMs: 60_000,
+    mcpToolTimeoutMs: 1_000,
     ...overrides,
   };
 }

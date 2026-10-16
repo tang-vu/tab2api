@@ -99,8 +99,65 @@ export const sessionStateResponseSchema = z
   })
   .strict();
 
+/**
+ * MCP broker turn contracts. A turn registers a declared tool allowlist plus the loopback
+ * callback that executes calls; the issued `turn_token` is the single-use capability the
+ * model presents through the connector. Input schemas use the documented JSON Schema subset —
+ * unsupported keywords are rejected rather than silently ignored.
+ */
+export const mcpTurnToolSchema = z
+  .object({
+    name: z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/),
+    description: z.string().min(1).max(4_096).optional(),
+    input_schema: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+
+export const mcpTurnCreateRequestSchema = z
+  .object({
+    label: z.string().min(1).max(80).optional(),
+    tools: z.array(mcpTurnToolSchema).min(1).max(32),
+    callback_url: z.string().min(1).max(512),
+    callback_token: z.string().min(1).max(512).optional(),
+    ttl_seconds: z.number().int().min(60).max(86_400).optional(),
+  })
+  .strict();
+
+export const mcpTurnSummarySchema = z
+  .object({
+    id: apiKeyIdSchema,
+    label: z.string().min(1).max(80).optional(),
+    state: z.enum(['issued', 'bound']),
+    tools: z.number().int().min(1).max(32),
+    createdAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const mcpTurnListResponseSchema = z
+  .object({ data: z.array(mcpTurnSummarySchema).max(256) })
+  .strict();
+
+export const mcpTurnCreateResponseSchema = z
+  .object({
+    id: apiKeyIdSchema,
+    turn_token: z.string().regex(/^t2m_[A-Za-z0-9_-]{43}$/),
+    expiresAt: z.iso.datetime(),
+    tools: z.number().int().min(1).max(32),
+  })
+  .strict();
+
+export const mcpTurnRevokeResponseSchema = z
+  .object({ status: z.literal('revoked'), id: apiKeyIdSchema })
+  .strict();
+
+export const mcpTurnParamsSchema = z.object({ id: apiKeyIdSchema }).strict();
+
 export type ApiKeyListResponse = z.infer<typeof apiKeyListResponseSchema>;
 export type CreatedApiKeyResponse = z.infer<typeof createdApiKeyResponseSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
 export type DrainStatusResponse = z.infer<typeof drainStatusResponseSchema>;
 export type SessionStateResponse = z.infer<typeof sessionStateResponseSchema>;
+export type McpTurnCreateRequest = z.infer<typeof mcpTurnCreateRequestSchema>;
+export type McpTurnCreateResponse = z.infer<typeof mcpTurnCreateResponseSchema>;
+export type McpTurnListResponse = z.infer<typeof mcpTurnListResponseSchema>;

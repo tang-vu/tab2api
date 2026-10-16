@@ -182,6 +182,21 @@ or the equivalent JSON in Cursor/Claude Desktop:
 
 Exposed tools: `chat` (prompt plus optional `temporary`, `reasoning_effort`, `conversation_id`, `project_id`), `count_tokens` (local o200k estimate that does not spend a browser turn), and `status` (session and queue state). The subprocess authenticates with the loopback administrator token from your configuration, so register it only on your own machine — the same trust boundary as the CLI. If the service is not running, tool calls return `isError` results that tell you to run `tab2api start`.
 
+### ChatGPT Developer Mode connector
+
+The reverse direction also exists: a streamable-HTTP MCP endpoint at `/mcp/<connector key>` lets ChatGPT's own Developer Mode invoke local tools _inside a browser turn_, so the model runs declared tools natively instead of returning tool envelopes for the client to execute. Print the URL with `npm run connector` and paste it into **Settings → Connectors → Developer Mode → custom connector** — through the dedicated Cloudflare tunnel when Developer Mode requires a public URL (see `docs/cloudflare.md`). The connector key is a standalone generated secret at `.tab2api/mcp-connector-token`, never an API key; the URL is the credential, so share it only through the tunnel.
+
+Nothing is callable by default. A turn-scoped capability must be registered first — the caller declares the tool allowlist and the loopback callback that executes calls:
+
+```bash
+curl -sS -H "Authorization: Bearer <admin token>" -H 'content-type: application/json' \
+  -d '{"label":"demo","tools":[{"name":"fs.read","description":"Read a file","input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}],"callback_url":"http://127.0.0.1:8765/tool"}' \
+  http://127.0.0.1:3210/admin/mcp/turns
+# → {"id":"…","turn_token":"t2m_…","expiresAt":"…","tools":1}
+```
+
+Pass the returned `turn_token` as `mcp_turn_token` on `/v1/chat/completions`, `/v1/responses`, or `/v1/messages`. The request binds the single-use token, the serialized prompt gains a `<tab2api-connector>` block naming the fixed `describe_turn_tools`/`call_turn_tool` ABI, and the token is revoked the moment the turn ends — a later request cannot replay it. Each `call_turn_tool` is validated against the declared allowlist and JSON-schema subset before it POSTs `{turn_id, call_id, tool, arguments}` to the turn's loopback callback, which answers `{"result": "..."}` or `{"error": "..."}`; failures surface to the model as `isError` tool results instead of breaking the conversation. Manage turns with `GET /admin/mcp/turns` and `DELETE /admin/mcp/turns/:id` (`npm run connector -- turns|revoke <id>`); drain and shutdown abort pending calls and revoke unbound turns. Callbacks accept only unauthenticated `http://127.0.0.1:<port>`/`[::1]` URLs on unprivileged ports with bounded responses — destructive tools should gate themselves behind the optional `callback_token` and their own confirmation prompts.
+
 ## First login and normal operation
 
 `npm run login` launches the dedicated profile and waits until the composer is compatible. `npm start` reuses that profile. Each API request opens a fresh ChatGPT page/conversation and closes it afterward. `TAB2API_CONCURRENCY` controls 1–4 parallel browser tabs; the safe default is one, with a bounded FIFO queue. Start with 2 only after a live test because one account may rate-limit and UI tabs consume substantial memory. `npm run doctor` checks Node, Chromium, directory permissions, port, local token, browser connectivity, login, and selectors. `npm run reset-session` closes the bridge browser process through the authenticated admin route without deleting the profile.
