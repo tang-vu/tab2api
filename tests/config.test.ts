@@ -9,6 +9,7 @@ describe('configuration security', () => {
     const config = await loadConfig(
       {
         TAB2API_API_TOKEN: token,
+        TAB2API_MCP_CONNECTOR_TOKEN: token,
         TAB2API_DATA_DIR: '.runtime',
         TAB2API_PROFILE_DIR: '.runtime/profile',
       },
@@ -25,6 +26,7 @@ describe('configuration security', () => {
         loadConfig(
           {
             TAB2API_API_TOKEN: token,
+            TAB2API_MCP_CONNECTOR_TOKEN: token,
             TAB2API_HOST: host,
             TAB2API_DATA_DIR: '.runtime',
             TAB2API_PROFILE_DIR: '.runtime/profile',
@@ -40,6 +42,7 @@ describe('configuration security', () => {
       loadConfig(
         {
           TAB2API_API_TOKEN: token,
+          TAB2API_MCP_CONNECTOR_TOKEN: token,
           TAB2API_DATA_DIR: '.runtime',
           TAB2API_PROFILE_DIR: path.join('..', 'personal-profile'),
         },
@@ -53,6 +56,7 @@ describe('configuration security', () => {
       loadConfig(
         {
           TAB2API_API_TOKEN: token,
+          TAB2API_MCP_CONNECTOR_TOKEN: token,
           TAB2API_BROWSER_BACKEND: 'unsupported',
           TAB2API_DATA_DIR: '.runtime',
           TAB2API_PROFILE_DIR: '.runtime/profile',
@@ -81,6 +85,7 @@ describe('configuration security', () => {
   it('accepts bounded browser concurrency and rejects unsafe values', async () => {
     const base = {
       TAB2API_API_TOKEN: token,
+      TAB2API_MCP_CONNECTOR_TOKEN: token,
       TAB2API_DATA_DIR: '.runtime',
       TAB2API_PROFILE_DIR: '.runtime/profile',
     };
@@ -99,6 +104,7 @@ describe('configuration security', () => {
         loadConfig(
           {
             TAB2API_API_TOKEN: token,
+            TAB2API_MCP_CONNECTOR_TOKEN: token,
             TAB2API_DATA_DIR: '.runtime',
             TAB2API_PROFILE_DIR: '.runtime/profile',
             TAB2API_BROWSER_CDP_ENDPOINT: endpoint,
@@ -122,6 +128,7 @@ describe('configuration security', () => {
       loadConfig(
         {
           TAB2API_API_TOKEN: token,
+          TAB2API_MCP_CONNECTOR_TOKEN: token,
           TAB2API_DATA_DIR: '.runtime',
           TAB2API_PROFILE_DIR: '.runtime/profile',
           TAB2API_BROWSER_CDP_ENDPOINT: endpoint,
@@ -134,6 +141,7 @@ describe('configuration security', () => {
   it('bounds media bytes and permits a longer image timeout', async () => {
     const base = {
       TAB2API_API_TOKEN: token,
+      TAB2API_MCP_CONNECTOR_TOKEN: token,
       TAB2API_DATA_DIR: '.runtime',
       TAB2API_PROFILE_DIR: '.runtime/profile',
       TAB2API_IMAGE_TIMEOUT_MS: '300000',

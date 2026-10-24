@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mcpTurnTokenSchema } from '../mcp/broker.js';
 
 const dataImageUrl = z
   .string()
@@ -58,6 +59,8 @@ export const chatCompletionRequestSchema = z
     /** Run this turn in a Temporary Chat that is not kept in account history. */
     temporary: z.boolean().optional(),
     reasoning_effort: reasoningEffortSchema.optional(),
+    /** Binds one issued MCP turn token to this request; revoked when the turn ends. */
+    mcp_turn_token: mcpTurnTokenSchema.optional(),
   })
   .strict();
 
@@ -81,6 +84,8 @@ export const responsesRequestSchema = z
     reasoning_effort: reasoningEffortSchema.optional(),
     /** Anthropic-style alias accepted for parity with /v1/messages; same effect. */
     reasoning: z.object({ effort: reasoningEffortSchema }).strict().optional(),
+    /** Binds one issued MCP turn token to this request; revoked when the turn ends. */
+    mcp_turn_token: mcpTurnTokenSchema.optional(),
   })
   .strict();
 

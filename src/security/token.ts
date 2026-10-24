@@ -10,7 +10,7 @@ const MAX_TOKEN_FILE_BYTES = 1_024;
 const SAFE_TOKEN = /^[\x21-\x7e]{24,512}$/;
 
 function storageUnavailable(): AppError {
-  return new AppError('storage_unavailable', 'The local API token could not be stored safely.');
+  return new AppError('storage_unavailable', 'A local token could not be stored safely.');
 }
 
 function parseStoredToken(contents: string): string | undefined {
@@ -22,13 +22,19 @@ function parseStoredToken(contents: string): string | undefined {
   return SAFE_TOKEN.test(token) ? token : undefined;
 }
 
-export async function loadOrCreateToken(dataDir: string, configured?: string): Promise<string> {
+async function loadOrCreateTokenFile(
+  dataDir: string,
+  fileName: string,
+  envName: string,
+  configured?: string,
+): Promise<string> {
+  if (!/^[a-z0-9-]+$/.test(fileName)) throw new Error('Invalid private token file name.');
   if (configured !== undefined) {
     if (!SAFE_TOKEN.test(configured))
-      throw new Error('TAB2API_API_TOKEN must contain 24-512 visible ASCII characters.');
+      throw new Error(`${envName} must contain 24-512 visible ASCII characters.`);
     return configured;
   }
-  const tokenFile = path.join(dataDir, 'api-token');
+  const tokenFile = path.join(dataDir, fileName);
   await assertSafePrivateFile(dataDir, tokenFile);
   try {
     await mkdir(dataDir, { recursive: true, mode: 0o700 });
@@ -41,7 +47,7 @@ export async function loadOrCreateToken(dataDir: string, configured?: string): P
   if (existingFile !== undefined) {
     const existing = parseStoredToken(existingFile);
     if (existing !== undefined) return existing;
-    throw new AppError('invalid_request', 'The local API token file is invalid.');
+    throw new AppError('invalid_request', `The local token file ${fileName} is invalid.`);
   }
   const token = randomBytes(TOKEN_BYTES).toString('base64url');
   try {
@@ -60,11 +66,29 @@ export async function loadOrCreateToken(dataDir: string, configured?: string): P
       const winnerFile = await readPrivateTextFile(dataDir, tokenFile, MAX_TOKEN_FILE_BYTES);
       const winner = winnerFile === undefined ? undefined : parseStoredToken(winnerFile);
       if (winner !== undefined) return winner;
-      throw new AppError('invalid_request', 'The local API token file is invalid.');
+      throw new AppError('invalid_request', `The local token file ${fileName} is invalid.`);
     }
     if (error instanceof AppError) throw error;
     throw storageUnavailable();
   }
+}
+
+export function loadOrCreateToken(dataDir: string, configured?: string): Promise<string> {
+  return loadOrCreateTokenFile(dataDir, 'api-token', 'TAB2API_API_TOKEN', configured);
+}
+
+/**
+ * The MCP connector endpoint's standalone secret. It is deliberately a different file from
+ * the API token: the connector URL is pasted into a ChatGPT connector configuration, so the
+ * administrator key must never appear inside it.
+ */
+export function loadOrCreateConnectorToken(dataDir: string, configured?: string): Promise<string> {
+  return loadOrCreateTokenFile(
+    dataDir,
+    'mcp-connector-token',
+    'TAB2API_MCP_CONNECTOR_TOKEN',
+    configured,
+  );
 }
 
 export function secureTokenEqual(actual: string, expected: string): boolean {
