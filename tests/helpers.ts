@@ -2,6 +2,13 @@ import type { AppConfig } from '../src/config/index.js';
 
 export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
+    provider: 'chatgpt-web',
+    enablePaidApi: false,
+    providerApiKey: undefined,
+    providerApiModel: undefined,
+    providerApiMaxOutputTokens: 4096,
+    experimentalProviders: false,
+    providerPermission: undefined,
     host: '127.0.0.1',
     port: 3210,
     apiToken: 'test-only-token-that-is-long-enough',

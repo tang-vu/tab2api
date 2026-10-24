@@ -7,7 +7,7 @@ import type { ChatOptions } from '../api/local-generation-client.js';
  * Minimal Model Context Protocol server over stdio (newline-delimited JSON-RPC 2.0).
  *
  * `tab2api mcp` exposes the running loopback service as MCP tools so MCP hosts (Claude Code,
- * Cursor, Claude Desktop, ...) can call ChatGPT through the same queue, budgets, drain
+ * Cursor, Claude Desktop, ...) can call the configured provider through the same queue, budgets, drain
  * lifecycle, and bearer authentication as every other API caller. The process only speaks
  * JSON-RPC on stdout; nothing else may be written there.
  *
@@ -58,7 +58,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'chat',
     description:
-      'Send a prompt to the authenticated ChatGPT Web session through tab2api and return the answer text. Honors the single-writer queue and prompt token ceiling.',
+      'Send a prompt to the explicitly configured tab2api provider and return the answer text. Honors the single-writer queue and local prompt budget. Explicit API mode may incur provider charges; unsupported options are rejected.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -146,7 +146,7 @@ export class McpServer {
             capabilities: { tools: { listChanged: false } },
             serverInfo: { name: 'tab2api', version: packageVersion },
             instructions:
-              'Use the chat tool to send prompts to ChatGPT through the local tab2api bridge. The service must already be running (tab2api start) and logged in (tab2api login).',
+              'Use the chat tool with the configured provider through the local tab2api bridge. The service must already be running (tab2api start). Browser modes require manual login and applicable provider permission; API modes require explicit paid-API opt-in and a locally configured key.',
           },
         };
       case 'ping':

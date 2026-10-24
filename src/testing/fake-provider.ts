@@ -12,13 +12,13 @@ import type {
   UploadProjectFilesRequest,
   UploadProjectFilesResult,
   WebChatProvider,
+  ProviderId,
 } from '../provider.js';
 
 const FAKE_PROJECT_ID = 'g-p-00000000000000000000000000000001';
 const FAKE_CONVERSATION_ID = '00000000-0000-4000-8000-000000000001';
 
 export class FakeProvider implements WebChatProvider {
-  readonly id = 'chatgpt-web' as const;
   state: SessionState = 'ready';
   prompts: string[] = [];
   attachmentCounts: number[] = [];
@@ -39,6 +39,7 @@ export class FakeProvider implements WebChatProvider {
   constructor(
     private readonly responseText = 'Fake browser response',
     private readonly delayMs = 0,
+    readonly id: ProviderId = 'chatgpt-web',
   ) {}
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
@@ -68,7 +69,9 @@ export class FakeProvider implements WebChatProvider {
       return {
         text: this.responseText,
         providerModel: this.id,
-        conversationId: request.conversationId ?? FAKE_CONVERSATION_ID,
+        ...(this.id === 'chatgpt-web' && {
+          conversationId: request.conversationId ?? FAKE_CONVERSATION_ID,
+        }),
       };
     } finally {
       this.active -= 1;

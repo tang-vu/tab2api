@@ -1,5 +1,5 @@
 import pino from 'pino';
-import { ChatGptAdapter } from '../adapters/chatgpt/adapter.js';
+import { createProvider } from '../providers/factory.js';
 import { buildServer } from '../api/server.js';
 import { createBrowserController } from '../browser/factory.js';
 import { loadConfig } from '../config/index.js';
@@ -21,12 +21,17 @@ export class PackagedSidecarOperations implements SidecarOperations {
       );
     }
     const config = await loadConfig({ ...process.env, TAB2API_BROWSER_BACKEND: 'playwright' });
+    if (config.provider !== 'chatgpt-web') {
+      throw new Error(
+        'Experimental providers are CLI-only; the desktop login shell supports ChatGPT.',
+      );
+    }
     // A synchronous stderr destination cannot leave an async writer handle keeping the
     // packaged child alive after its parent requests a graceful shutdown.
     const destination = pino.destination({ fd: 2, sync: true });
     const logger = pino(loggerOptions(config.logLevel), destination);
     const browser = createBrowserController(config);
-    const provider = new ChatGptAdapter(browser, config, logger);
+    const provider = createProvider(browser, config, logger);
     const [apiKeys, usage] = await Promise.all([
       ApiKeyStore.load(config.dataDir, config.apiToken),
       UsageStore.load(config.dataDir),

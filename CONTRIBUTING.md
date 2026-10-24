@@ -12,7 +12,7 @@ Contributions must keep the bridge single-user and loopback-only. Do not submit 
 
 ## Development
 
-Use Node.js 22+ and `npm ci`. Automated tests must be offline and use fake providers or sanitized DOM fixtures. Put UI assumptions only in `src/adapters/chatgpt/`; add fixtures and state/error tests for selector changes.
+Use Node.js 22+ and `npm ci`. Automated tests must be offline and use fake providers or sanitized DOM fixtures. Put UI assumptions only in `src/adapters/chatgpt/` or `src/adapters/web/`; add fixtures and state/error tests for selector changes.
 
 Before opening a pull request:
 

@@ -1,4 +1,10 @@
+/** Browser transport identity, not an assertion about the UI-selected model. */
+export type WebProviderId = 'chatgpt-web' | 'claude-web' | 'grok-web';
+export type ApiProviderId = 'claude-api' | 'grok-api' | 'meta-api';
+export type ProviderId = WebProviderId | ApiProviderId;
+
 export type SessionState =
+  | 'api_configured'
   | 'ready'
   | 'login_required'
   | 'security_challenge'
@@ -64,7 +70,7 @@ export type AudioMimeType =
 
 export interface GenerateResult {
   text: string;
-  providerModel: 'chatgpt-web';
+  providerModel: ProviderId;
   /**
    * The conversation the answer was produced in, when the UI exposed one. Clients pass it
    * back as `conversation_id` to continue the same thread.
@@ -123,7 +129,7 @@ export interface UploadProjectFilesResult {
 }
 
 export interface WebChatProvider {
-  readonly id: 'chatgpt-web';
+  readonly id: ProviderId;
   generate(request: GenerateRequest): Promise<GenerateResult>;
   generateImage(request: GenerateImageRequest): Promise<GenerateImageResult>;
   createProject(request: CreateProjectRequest): Promise<ProjectSummary>;

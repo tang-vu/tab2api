@@ -57,3 +57,13 @@ The repository ignores `.env`, `.tab2api/`, runtime/profile/artifact directories
 - Never share the data directory or debug artifacts.
 - Complete login/challenges manually only in the headed dedicated browser.
 - If compromise is suspected, close tab2api, sign out/revoke the ChatGPT session through normal account controls, delete the dedicated profile manually, and allow tab2api to generate a new local API token.
+
+## Optional official provider APIs
+
+Explicit API mode has a separate trust boundary: the selected provider receives submitted prompts
+and may bill the configured account. Only fixed official HTTPS origins are used; redirects and
+provider-mismatched keys/models are rejected. Browser profiles never supply API credentials.
+Keys are configured locally, kept out of logs/errors and never committed. Startup and health are
+configuration-only and do not validate credentials over the network. Output-token limits are not
+monetary limits, and local cancellation cannot guarantee stopped remote billing. See
+[provider configuration](providers.md#explicit-official-api-mode).

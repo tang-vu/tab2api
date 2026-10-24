@@ -15,3 +15,6 @@ export {
   type SidecarState,
   type SidecarStopReason,
 } from './sidecar/lifecycle.js';
+
+export { PROVIDER_CATALOG, providerCapabilities } from './providers/catalog.js';
+export type { WebProviderId, ApiProviderId, ProviderId } from './provider.js';

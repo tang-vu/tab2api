@@ -11,7 +11,10 @@ export type ErrorCode =
   | 'security_challenge'
   | 'storage_unavailable'
   | 'timeout'
-  | 'ui_changed';
+  | 'ui_changed'
+  | 'unsupported_capability'
+  | 'provider_unavailable'
+  | 'submission_uncertain';
 
 const statusByCode: Record<ErrorCode, number> = {
   authentication_error: 401,
@@ -27,6 +30,9 @@ const statusByCode: Record<ErrorCode, number> = {
   storage_unavailable: 503,
   timeout: 504,
   ui_changed: 503,
+  unsupported_capability: 400,
+  provider_unavailable: 503,
+  submission_uncertain: 503,
 };
 
 export class AppError extends Error {

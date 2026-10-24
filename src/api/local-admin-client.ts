@@ -212,8 +212,8 @@ export class LocalAdminClient {
     await this.request('/admin/usage', usageResetResponseSchema, { method: 'DELETE' }, signal);
   }
 
-  async resetSession(signal?: AbortSignal): Promise<void> {
-    await this.request(
+  async resetSession(signal?: AbortSignal) {
+    return this.request(
       '/admin/session/reset',
       sessionResetResponseSchema,
       { method: 'POST' },

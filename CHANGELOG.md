@@ -6,6 +6,18 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Added
 
+- Add explicit, opt-in official Claude/Grok/Meta API transports with provider-specific keys,
+  exact models, fixed HTTPS destinations, bounded buffered responses and no retries/fallback.
+  Configuration-only health sends no paid probe. All transport tests are mocked.
+
+- Add explicit browser-provider selection, authenticated capability discovery and truthful
+  JSON/SSE model identities while retaining ChatGPT as the default.
+- Add disabled-by-default, text-only experimental Claude/Grok UI adapters with provider-specific
+  permission gates, bounded lifecycle/cancellation handling and synthetic offline coverage.
+- Reject unsupported provider features before browser work; document Meta AI/Muse Spark's
+  separate official API path without claiming an implemented or live-verified browser adapter.
+- Patch transitive `fast-uri` to 3.1.9/4.2.3, clearing the current URI normalization advisories.
+
 - Optional `temporary` field on the generation routes (and `TAB2API_TEMPORARY_CHAT` as the
   service-wide default) runs turns in a ChatGPT Temporary Chat that is not kept in account
   history. It is rejected explicitly when combined with `conversation_id` or a project route,

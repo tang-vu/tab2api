@@ -7,6 +7,15 @@ import { ZodError } from 'zod';
 import type { AppConfig } from '../config/index.js';
 import { AppError, asSafeAppError } from '../errors.js';
 import type { UiEffort, WebChatProvider } from '../provider.js';
+import {
+  PROVIDER_CATALOG,
+  anthropicModelFor,
+  isApiProvider,
+  assertProviderCapability,
+  assertProviderModel,
+  assertTextCapabilities,
+  providerCapabilities,
+} from '../providers/catalog.js';
 import type { AudioMimeType, DocumentMimeType, MediaAttachment } from '../provider.js';
 import {
   CHATGPT_IMAGE_RESERVE_TOKENS,
@@ -19,9 +28,8 @@ import { ApiKeyStore, type ApiPrincipal } from '../security/api-keys.js';
 import { parseBearer, secureTokenEqual } from '../security/token.js';
 import { MetadataStore } from '../store/metadata.js';
 import { UsageStore } from '../store/usage.js';
-import { API_MODEL, chatSse, mapChatCompletion, mapResponse, responsesSse } from './mappers.js';
+import { chatSse, mapChatCompletion, mapResponse, responsesSse } from './mappers.js';
 import {
-  ANTHROPIC_API_MODEL,
   anthropicAttachments,
   anthropicErrorEnvelope,
   anthropicErrorSse,
@@ -232,6 +240,14 @@ function safeUploadFilename(filename: string | undefined, index: number): string
 
 export function buildServer(dependencies: ServerDependencies) {
   const { config, provider, logger } = dependencies;
+  if (config.provider !== provider.id) {
+    throw new AppError(
+      'invalid_request',
+      'Configured provider does not match the runtime adapter.',
+    );
+  }
+  const capabilities = providerCapabilities(provider.id);
+  const anthropicModel = anthropicModelFor(provider.id);
   const queue = dependencies.queue ?? new FifoQueue(config.concurrency, config.queueCapacity);
   const store = dependencies.store ?? new MetadataStore();
   const speech = dependencies.speech ?? new SystemSpeechSynthesizer(config);
@@ -332,40 +348,53 @@ export function buildServer(dependencies: ServerDependencies) {
     return reply.code(ready ? 200 : 503).send({ status: ready ? 'ready' : 'not_ready', session });
   });
 
+  app.get('/v1/providers', { preHandler: authenticated }, async () => ({
+    object: 'list',
+    selected: provider.id,
+    data: PROVIDER_CATALOG.map((entry) => ({ ...entry, selected: entry.id === provider.id })),
+  }));
+
   app.get('/v1/models', { preHandler: authenticated }, async () => ({
     object: 'list',
     data: [
       {
-        id: API_MODEL,
+        id: provider.id,
         object: 'model',
         created: 0,
-        owned_by: 'user-browser-session',
+        owned_by: isApiProvider(provider.id) ? 'user-provider-api-account' : 'user-browser-session',
       },
       {
-        id: ANTHROPIC_API_MODEL,
-        display_name: 'tab2api ChatGPT Web (Anthropic compatibility)',
+        id: anthropicModel,
+        display_name: `tab2api ${provider.id} (Anthropic compatibility)`,
         object: 'model',
         created: 0,
-        owned_by: 'user-browser-session',
+        owned_by: isApiProvider(provider.id) ? 'user-provider-api-account' : 'user-browser-session',
       },
-      {
-        id: 'chatgpt-web-image',
-        object: 'model',
-        created: 0,
-        owned_by: 'user-browser-session',
-      },
-      {
-        id: 'chatgpt-web-transcribe',
-        object: 'model',
-        created: 0,
-        owned_by: 'user-browser-session',
-      },
-      {
-        id: 'system-tts',
-        object: 'model',
-        created: 0,
-        owned_by: 'local-operating-system',
-      },
+      ...(capabilities.images
+        ? [
+            {
+              id: 'chatgpt-web-image',
+              object: 'model',
+              created: 0,
+              owned_by: isApiProvider(provider.id)
+                ? 'user-provider-api-account'
+                : 'user-browser-session',
+            },
+          ]
+        : []),
+      ...(capabilities.transcription
+        ? [
+            {
+              id: 'chatgpt-web-transcribe',
+              object: 'model',
+              created: 0,
+              owned_by: isApiProvider(provider.id)
+                ? 'user-provider-api-account'
+                : 'user-browser-session',
+            },
+          ]
+        : []),
+      { id: 'system-tts', object: 'model', created: 0, owned_by: 'local-operating-system' },
     ],
   }));
 
@@ -376,13 +405,24 @@ export function buildServer(dependencies: ServerDependencies) {
     projectId?: string,
   ): Promise<unknown> {
     const body = chatCompletionRequestSchema.parse(request.body);
+    assertProviderModel(provider.id, body.model);
     const temporary = body.temporary ?? config.temporaryChat;
     assertTemporaryCompatible(temporary, body.conversation_id, projectId);
     const prompt = serializeChatRequest(body);
     const attachments = chatAttachments(body, config.mediaLimitBytes);
+    assertTextCapabilities(provider.id, {
+      attachments,
+      temporary,
+      ...(projectId !== undefined && { projectId }),
+      ...(body.conversation_id !== undefined && { conversationId: body.conversation_id }),
+      ...(body.reasoning_effort !== undefined && { effort: body.reasoning_effort }),
+    });
     const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
-    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
-    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
+    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens, provider.id);
+    observe(request, {
+      inputText: prompt,
+      inputReserves: provider.id === 'chatgpt-web' ? inputReserves(imageCount) : 0,
+    });
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       const result = await queue.enqueue(
@@ -399,7 +439,12 @@ export function buildServer(dependencies: ServerDependencies) {
           }),
         lifecycle.controller.signal,
       );
-      const response = mapChatCompletion(result.text, Date.now(), result.conversationId);
+      const response = mapChatCompletion(
+        result.text,
+        Date.now(),
+        result.conversationId,
+        result.providerModel,
+      );
       observe(request, { outputText: result.text });
       store.set({ id: response.id, createdAt: response.created, status: 'completed' });
       if (body.stream) {
@@ -421,14 +466,25 @@ export function buildServer(dependencies: ServerDependencies) {
     projectId?: string,
   ): Promise<unknown> {
     const body = responsesRequestSchema.parse(request.body);
+    assertProviderModel(provider.id, body.model);
     const temporary = body.temporary ?? config.temporaryChat;
     assertTemporaryCompatible(temporary, body.conversation_id, projectId);
     const prompt = serializeResponsesRequest(body);
     const attachments = responsesAttachments(body, config.mediaLimitBytes);
-    const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
-    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
-    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
     const effort: UiEffort | undefined = body.reasoning_effort ?? body.reasoning?.effort;
+    assertTextCapabilities(provider.id, {
+      attachments,
+      temporary,
+      ...(projectId !== undefined && { projectId }),
+      ...(body.conversation_id !== undefined && { conversationId: body.conversation_id }),
+      ...(effort !== undefined && { effort }),
+    });
+    const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
+    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens, provider.id);
+    observe(request, {
+      inputText: prompt,
+      inputReserves: provider.id === 'chatgpt-web' ? inputReserves(imageCount) : 0,
+    });
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       const result = await queue.enqueue(
@@ -445,7 +501,12 @@ export function buildServer(dependencies: ServerDependencies) {
           }),
         lifecycle.controller.signal,
       );
-      const response = mapResponse(result.text, Date.now(), result.conversationId);
+      const response = mapResponse(
+        result.text,
+        Date.now(),
+        result.conversationId,
+        result.providerModel,
+      );
       observe(request, { outputText: result.text });
       store.set({ id: response.id, createdAt: response.created_at, status: 'completed' });
       if (body.stream) {
@@ -466,13 +527,18 @@ export function buildServer(dependencies: ServerDependencies) {
     reply: FastifyReply,
   ): Promise<unknown> {
     const body = anthropicMessagesRequestSchema.parse(request.body);
+    assertProviderModel(provider.id, body.model);
     const prompt = serializeAnthropicRequest(body);
     const attachments = anthropicAttachments(body, config.mediaLimitBytes);
     const imageCount = attachments.filter(({ mimeType }) => mimeType.startsWith('image/')).length;
-    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens);
+    assertPromptWithinLimit(prompt, imageCount, config.maxPromptTokens, provider.id);
     const allowedToolNames = new Set(body.tools.map(({ name }) => name));
     const temporary = body.temporary ?? config.temporaryChat;
-    observe(request, { inputText: prompt, inputReserves: inputReserves(imageCount) });
+    assertTextCapabilities(provider.id, { attachments, temporary });
+    observe(request, {
+      inputText: prompt,
+      inputReserves: provider.id === 'chatgpt-web' ? inputReserves(imageCount) : 0,
+    });
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     const generate = () =>
       queue.enqueue(
@@ -490,7 +556,12 @@ export function buildServer(dependencies: ServerDependencies) {
     if (!body.stream) {
       try {
         const result = await generate();
-        const response = mapAnthropicMessage(result.text, allowedToolNames);
+        const response = mapAnthropicMessage(
+          result.text,
+          allowedToolNames,
+          undefined,
+          anthropicModel,
+        );
         observe(request, { outputText: result.text });
         store.set({
           id: response.id,
@@ -513,7 +584,7 @@ export function buildServer(dependencies: ServerDependencies) {
       }
     };
     lifecycle.controller.signal.addEventListener('abort', onStreamAbort, { once: true });
-    stream.write(anthropicMessageStartSse(messageId));
+    stream.write(anthropicMessageStartSse(messageId, anthropicModel));
     const heartbeat = setInterval(() => {
       if (!stream.destroyed && !stream.writableEnded) stream.write(anthropicPingSse());
     }, anthropicHeartbeatMs);
@@ -521,7 +592,12 @@ export function buildServer(dependencies: ServerDependencies) {
 
     void generate()
       .then((result) => {
-        const response = mapAnthropicMessage(result.text, allowedToolNames, messageId);
+        const response = mapAnthropicMessage(
+          result.text,
+          allowedToolNames,
+          messageId,
+          anthropicModel,
+        );
         observe(request, { outputText: result.text });
         store.set({
           id: response.id,
@@ -570,12 +646,14 @@ export function buildServer(dependencies: ServerDependencies) {
 
   app.post('/v1/messages/count_tokens', generationRouteOptions, async (request, reply) => {
     const body = anthropicTokenCountRequestSchema.parse(request.body);
+    assertProviderModel(provider.id, body.model);
     return reply
       .header('x-tab2api-token-count-mode', 'estimated')
       .send({ input_tokens: estimateAnthropicInputTokens(body) });
   });
 
   app.post('/v1/projects', { preHandler: authenticated }, async (request, reply) => {
+    assertProviderCapability(provider.id, 'projects');
     const body = createProjectRequestSchema.parse(request.body);
     observe(request, { inputText: body.name });
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
@@ -595,6 +673,7 @@ export function buildServer(dependencies: ServerDependencies) {
   });
 
   app.get('/v1/projects', { preHandler: authenticated }, async (request, reply) => {
+    assertProviderCapability(provider.id, 'projects');
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       const data = await queue.enqueue(
@@ -612,6 +691,7 @@ export function buildServer(dependencies: ServerDependencies) {
   });
 
   app.delete('/v1/projects/:projectId', { preHandler: authenticated }, async (request, reply) => {
+    assertProviderCapability(provider.id, 'projects');
     const { projectId } = projectParamsSchema.parse(request.params);
     if (request.headers['x-tab2api-confirm-delete'] !== projectId)
       throw new AppError(
@@ -639,6 +719,7 @@ export function buildServer(dependencies: ServerDependencies) {
     '/v1/projects/:projectId/files',
     { preHandler: authenticated },
     async (request, reply) => {
+      assertProviderCapability(provider.id, 'projects');
       const { projectId } = projectParamsSchema.parse(request.params);
       const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
       try {
@@ -700,6 +781,7 @@ export function buildServer(dependencies: ServerDependencies) {
   });
 
   app.post('/v1/images/generations', generationRouteOptions, async (request, reply) => {
+    assertProviderCapability(provider.id, 'images');
     const body = imageGenerationRequestSchema.parse(request.body);
     const attachments = imageGenerationAttachments(body, config.mediaLimitBytes);
     assertPromptWithinLimit(body.prompt, attachments.length + 1, config.maxPromptTokens);
@@ -755,6 +837,7 @@ export function buildServer(dependencies: ServerDependencies) {
   });
 
   app.post('/v1/audio/transcriptions', { preHandler: authenticated }, async (request, reply) => {
+    assertProviderCapability(provider.id, 'transcription');
     const lifecycle = requestAbortController(request, reply, config.requestTimeoutMs);
     try {
       let attachment: MediaAttachment | undefined;
@@ -887,7 +970,9 @@ export function buildServer(dependencies: ServerDependencies) {
     }
     return {
       status: 'reset',
-      detail: 'Browser process closed; dedicated profile data was preserved.',
+      detail: isApiProvider(provider.id)
+        ? 'API transport reset; configured credentials were not changed.'
+        : 'Browser process closed; dedicated profile data was preserved.',
     };
   });
 

@@ -1,5 +1,12 @@
 # tab2api
 
+> Bản thử nghiệm đa nhà cung cấp: ChatGPT vẫn là mặc định. Adapter trình duyệt Claude và Grok
+> mới chỉ hỗ trợ văn bản, mặc định tắt, cần quyền tự động hóa thực tế từ nhà cung cấp và cấu hình
+> tường minh. Kiểm thử hiện dùng dữ liệu mô phỏng ngoại tuyến, chưa xác minh giao diện tài khoản
+> thật. Đã có transport API chính thức cho Claude, Grok và Meta Model API/Muse Spark, cần bật
+> riêng và tự cấu hình khóa; hiện chỉ kiểm thử bằng phản hồi mô phỏng, chưa gọi API tài khoản thật.
+> Xem [hỗ trợ và quyền sử dụng](docs/providers.md). Không tự chuyển sang API trả phí.
+
 [![CI](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml)
 [![Desktop CI](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml)
 [![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)](package.json)
