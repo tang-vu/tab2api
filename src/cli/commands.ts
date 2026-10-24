@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { chromium } from 'playwright';
 import { z } from 'zod';
-import { ChatGptAdapter } from '../adapters/chatgpt/adapter.js';
+import { createProvider } from '../providers/factory.js';
 import { LocalAdminClient, LocalAdminError } from '../api/local-admin-client.js';
 import { LocalGenerationClient } from '../api/local-generation-client.js';
 import { buildServer } from '../api/server.js';
@@ -27,7 +27,7 @@ function print(message: string): void {
 async function dependencies(config: AppConfig) {
   const logger = createLogger(config.logLevel);
   const browser = createBrowserController(config);
-  const provider = new ChatGptAdapter(browser, config, logger);
+  const provider = createProvider(browser, config, logger);
   return { logger, provider };
 }
 
@@ -64,9 +64,7 @@ export async function commandLogin(): Promise<void> {
   const config = await loadConfig();
   const headed = { ...config, headless: false };
   const { provider } = await dependencies(headed);
-  print(
-    'Opening the dedicated tab2api browser profile. Log in to your own ChatGPT account manually.',
-  );
+  print(`Opening the dedicated ${config.provider} profile. Log in to your own account manually.`);
   print(
     'tab2api never asks for or reads your email/password. Complete any security challenge yourself.',
   );
@@ -162,14 +160,14 @@ export async function commandDoctor(): Promise<void> {
 export async function commandSmoke(): Promise<void> {
   const config = await loadConfig();
   const logger = createLogger('silent');
-  const provider = new FakeProvider('smoke-ok');
+  const provider = new FakeProvider('smoke-ok', 0, config.provider);
   const app = buildServer({ config, provider, logger });
   try {
     const response = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
       headers: { authorization: `Bearer ${config.apiToken}` },
-      payload: { model: 'chatgpt-web', messages: [{ role: 'user', content: 'smoke' }] },
+      payload: { model: config.provider, messages: [{ role: 'user', content: 'smoke' }] },
     });
     const smokeResponse = z
       .object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })) })

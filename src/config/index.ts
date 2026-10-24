@@ -8,6 +8,8 @@ import {
   resolveSafeDataPaths,
 } from '../security/paths.js';
 import { loadOrCreateToken } from '../security/token.js';
+import { validateProviderConfiguration } from '../providers/catalog.js';
+import type { WebProviderId } from '../provider.js';
 
 const booleanValue = z
   .enum(['true', 'false'])
@@ -17,6 +19,9 @@ const integer = (minimum: number, maximum: number) =>
   z.coerce.number().int().min(minimum).max(maximum);
 
 const environmentSchema = z.object({
+  TAB2API_PROVIDER: z.enum(['chatgpt-web', 'claude-web', 'grok-web']).default('chatgpt-web'),
+  TAB2API_EXPERIMENTAL_PROVIDERS: booleanValue,
+  TAB2API_PROVIDER_PERMISSION: z.enum(['claude-web', 'grok-web']).optional(),
   TAB2API_HOST: z.string().default('127.0.0.1'),
   TAB2API_PORT: integer(1, 65535).default(3210),
   TAB2API_API_TOKEN: z
@@ -55,6 +60,9 @@ const environmentSchema = z.object({
 });
 
 export interface AppConfig {
+  provider: WebProviderId;
+  experimentalProviders: boolean;
+  providerPermission: 'claude-web' | 'grok-web' | undefined;
   host: '127.0.0.1' | '::1';
   port: number;
   apiToken: string;
@@ -81,6 +89,11 @@ export async function loadConfig(
 ): Promise<AppConfig> {
   if (environment === process.env) loadDotEnv({ quiet: true });
   const parsed = environmentSchema.parse(environment);
+  validateProviderConfiguration({
+    provider: parsed.TAB2API_PROVIDER,
+    experimentalProviders: parsed.TAB2API_EXPERIMENTAL_PROVIDERS,
+    providerPermission: parsed.TAB2API_PROVIDER_PERMISSION,
+  });
   const host = assertLoopbackHost(parsed.TAB2API_HOST);
   const { dataDir, profileDir } = resolveSafeDataPaths(
     cwd,
@@ -91,6 +104,9 @@ export async function loadConfig(
   await assertSafeRuntimePaths(dataDir, profileDir, artifactDir);
   const apiToken = await loadOrCreateToken(dataDir, parsed.TAB2API_API_TOKEN);
   return {
+    provider: parsed.TAB2API_PROVIDER,
+    experimentalProviders: parsed.TAB2API_EXPERIMENTAL_PROVIDERS,
+    providerPermission: parsed.TAB2API_PROVIDER_PERMISSION,
     host,
     port: parsed.TAB2API_PORT,
     apiToken,

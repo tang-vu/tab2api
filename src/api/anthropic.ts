@@ -122,7 +122,7 @@ export interface AnthropicMessageResponse {
   type: 'message';
   role: 'assistant';
   content: AnthropicOutputContent[];
-  model: typeof ANTHROPIC_API_MODEL;
+  model: string;
   stop_reason: 'end_turn' | 'tool_use';
   stop_sequence: null;
   usage: { input_tokens: 0; output_tokens: 0 };
@@ -350,6 +350,7 @@ export function mapAnthropicMessage(
   providerText: string,
   allowedToolNames: ReadonlySet<string>,
   id = createAnthropicMessageId(),
+  model: string = ANTHROPIC_API_MODEL,
 ): AnthropicMessageResponse {
   const parsed = parseAnthropicProviderOutput(providerText, allowedToolNames);
   return {
@@ -357,7 +358,7 @@ export function mapAnthropicMessage(
     type: 'message',
     role: 'assistant',
     content: parsed.content,
-    model: ANTHROPIC_API_MODEL,
+    model,
     stop_reason: parsed.stopReason,
     stop_sequence: null,
     usage: { input_tokens: 0, output_tokens: 0 },
@@ -368,7 +369,7 @@ function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-export function anthropicMessageStartSse(id: string): string {
+export function anthropicMessageStartSse(id: string, model: string = ANTHROPIC_API_MODEL): string {
   return sse('message_start', {
     type: 'message_start',
     message: {
@@ -376,7 +377,7 @@ export function anthropicMessageStartSse(id: string): string {
       type: 'message',
       role: 'assistant',
       content: [],
-      model: ANTHROPIC_API_MODEL,
+      model,
       stop_reason: null,
       stop_sequence: null,
       usage: { input_tokens: 0, output_tokens: 0 },

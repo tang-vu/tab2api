@@ -46,6 +46,9 @@ class ClaudeCodeSmokeProvider extends FakeProvider {
 
 function smokeConfig(dataDir: string): AppConfig {
   return {
+    provider: 'chatgpt-web',
+    experimentalProviders: false,
+    providerPermission: undefined,
     host: '127.0.0.1',
     port: 3210,
     apiToken: SMOKE_TOKEN,

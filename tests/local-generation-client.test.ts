@@ -26,6 +26,34 @@ function withHealthProbe(fetchImplementation: FetchImplementation): FetchImpleme
 }
 
 describe('loopback generation client', () => {
+  it.each(['claude-web', 'grok-web'] as const)(
+    'uses the selected %s for chat and token-count requests',
+    async (provider) => {
+      const models: string[] = [];
+      const client = new LocalGenerationClient(testConfig({ provider }), {
+        fetchImplementation: withHealthProbe(async (_input, init) => {
+          if (typeof init?.body !== 'string') throw new Error('Expected JSON body');
+          const payload: unknown = JSON.parse(init.body);
+          if (
+            typeof payload !== 'object' ||
+            payload === null ||
+            !('model' in payload) ||
+            typeof payload.model !== 'string'
+          ) {
+            throw new Error('Expected model');
+          }
+          models.push(payload.model);
+          return models.length === 1
+            ? jsonResponse({ choices: [{ message: { content: 'answer' } }] })
+            : jsonResponse({ input_tokens: 1 });
+        }),
+      });
+      expect(await client.chat({ prompt: 'hello' })).toBe('answer');
+      expect(await client.countTokens('hello')).toBe(1);
+      expect(models).toEqual([provider, provider]);
+    },
+  );
+
   it('sends chat completions with bearer auth and returns the answer text', async () => {
     const calls: { url: string; init: RequestInit | undefined }[] = [];
     const client = new LocalGenerationClient(testConfig({ port: 4321 }), {

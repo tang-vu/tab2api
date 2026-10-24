@@ -17,7 +17,7 @@ tab2api is a single-user desktop bridge, not a shared API service. It automates 
 - `store/`: bounded response metadata plus content-free usage counters. No transcript persistence.
 - `cli/`: start, login, doctor, reset-session, and offline smoke commands.
 
-`WebChatProvider` is the only abstraction needed for a future UI provider. Routes depend on it and contain no selectors or Playwright imports. A second provider is deliberately not implemented.
+`WebChatProvider` is the only abstraction needed for a future UI provider. Routes depend on it and contain no selectors or Playwright imports. The provider factory selects one browser transport per runtime. Experimental Claude/Grok text adapters live in `adapters/web/`, with a static capability catalog and explicit provider-permission gates; see [providers](providers.md). Meta AI/Muse Spark is catalog-only.
 
 Creating, listing, deleting, and uploading to a ChatGPT project are provider capabilities for the same reason. tab2api keeps no record of them: projects belong to the ChatGPT account, so listing reads live browser state and deletion acts on the identifier the client supplies. The projects grid publishes no identifier, so listing and deleting cost roughly one navigation per project and are bounded rather than proportional to the account.
 

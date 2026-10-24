@@ -80,13 +80,16 @@ export function assertPromptWithinLimit(
   text: string,
   imageCount: number,
   maxPromptTokens: number,
+  provider: 'chatgpt-web' | 'claude-web' | 'grok-web' = 'chatgpt-web',
 ): PromptBudget {
   const budget = promptBudget(text, imageCount);
   if (budget.textTokens + budget.imageTokens > maxPromptTokens) {
     throw new AppError(
       'invalid_request',
       `The serialized request needs ~${(budget.textTokens + budget.imageTokens).toLocaleString('en-US')} tokens, above the ${maxPromptTokens.toLocaleString('en-US')}-token single-message ceiling.`,
-      'Shorten the request, move source material into a ChatGPT project, or raise TAB2API_MAX_PROMPT_TOKENS only if the account demonstrably accepts more.',
+      provider === 'chatgpt-web'
+        ? 'Shorten the request, move source material into a ChatGPT project, or raise TAB2API_MAX_PROMPT_TOKENS only if the account demonstrably accepts more.'
+        : 'Shorten the request. The o200k estimate is only a local budget, not this provider’s native tokenizer or a verified context window.',
     );
   }
   return budget;

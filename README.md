@@ -1,5 +1,10 @@
 # tab2api
 
+> Multi-provider preview: ChatGPT remains the default. Experimental text-only Claude and Grok
+> browser adapters require actual provider permission and explicit configuration; they are
+> offline-tested, not live-selector verified. Meta AI/Muse Spark is discovery-only for now.
+> See [provider support and authorization](docs/providers.md). No automatic paid-API fallback.
+
 [![CI](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/ci.yml)
 [![Desktop CI](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml/badge.svg)](https://github.com/tang-vu/tab2api/actions/workflows/desktop.yml)
 [![Node.js 22.13+](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)](package.json)

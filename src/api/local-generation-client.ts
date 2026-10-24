@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { z } from 'zod';
 import type { AppConfig } from '../config/index.js';
-import type { UiEffort } from '../provider.js';
+import type { UiEffort, WebProviderId } from '../provider.js';
 import {
   LocalAdminError,
   verifyLocalServiceIdentity,
@@ -41,6 +41,7 @@ export class LocalGenerationError extends Error {
 }
 
 interface LocalGenerationClientConfig {
+  provider?: WebProviderId;
   host: Pick<AppConfig, 'host'>['host'];
   port: number;
   apiToken: string;
@@ -161,6 +162,7 @@ async function serverError(response: Response): Promise<LocalGenerationError> {
 
 export class LocalGenerationClient {
   private readonly origin: string;
+  private readonly provider: WebProviderId;
   private readonly bearerToken: string;
   private readonly fetchImplementation: FetchImplementation;
   private readonly timeoutMs: number;
@@ -173,6 +175,7 @@ export class LocalGenerationClient {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
       throw new Error('Local service timeout is invalid.');
     }
+    this.provider = config.provider ?? 'chatgpt-web';
     this.origin = loopbackOrigin(config.host, config.port);
     this.bearerToken = config.apiToken;
     this.fetchImplementation = options.fetchImplementation ?? globalThis.fetch;
@@ -183,7 +186,7 @@ export class LocalGenerationClient {
     const body = await this.post(
       '/v1/chat/completions',
       {
-        model: 'chatgpt-web',
+        model: this.provider,
         stream: false,
         messages: [{ role: 'user', content: options.prompt }],
         ...(options.temporary === undefined ? {} : { temporary: options.temporary }),
@@ -211,7 +214,7 @@ export class LocalGenerationClient {
   async countTokens(prompt: string, signal?: AbortSignal): Promise<number> {
     const body = await this.post(
       '/v1/messages/count_tokens',
-      { model: 'chatgpt-web', messages: [{ role: 'user', content: prompt }] },
+      { model: this.provider, messages: [{ role: 'user', content: prompt }] },
       countTokensResponseSchema,
       signal,
     );
