@@ -4,7 +4,7 @@ import { AppError } from '../src/errors.js';
 import { createLogger } from '../src/observability/logger.js';
 import { FakeProvider } from '../src/testing/fake-provider.js';
 import { anthropicModelFor } from '../src/providers/catalog.js';
-import type { WebProviderId } from '../src/provider.js';
+import type { ProviderId } from '../src/provider.js';
 import { testConfig } from './helpers.js';
 
 const headers = { authorization: 'Bearer test-only-token-that-is-long-enough' };
@@ -14,7 +14,7 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-function server(id: WebProviderId, delay = 0, timeout = 2_000) {
+function server(id: ProviderId, delay = 0, timeout = 2_000) {
   const provider = new FakeProvider('provider answer', delay, id);
   const app = buildServer({
     config: testConfig({ provider: id, requestTimeoutMs: timeout }),
@@ -41,7 +41,7 @@ describe('multi-provider API contract', () => {
     ).toThrow(/does not match/);
   });
 
-  it.each(['claude-web', 'grok-web'] as const)(
+  it.each(['claude-web', 'grok-web', 'claude-api', 'grok-api', 'meta-api'] as const)(
     'discovers only actual %s capabilities without browser activity',
     async (id) => {
       const { app, provider } = server(id);
@@ -78,7 +78,7 @@ describe('multi-provider API contract', () => {
     },
   );
 
-  it.each(['claude-web', 'grok-web'] as const)(
+  it.each(['claude-web', 'grok-web', 'claude-api', 'grok-api', 'meta-api'] as const)(
     'returns truthful %s model IDs over JSON and buffered SSE',
     async (id) => {
       const { app } = server(id);
@@ -115,7 +115,7 @@ describe('multi-provider API contract', () => {
     },
   );
 
-  it.each(['claude-web', 'grok-web'] as const)(
+  it.each(['claude-web', 'grok-web', 'claude-api', 'grok-api', 'meta-api'] as const)(
     'does not silently reroute requests away from %s',
     async (id) => {
       const { app, provider } = server(id);
@@ -153,7 +153,7 @@ describe('multi-provider API contract', () => {
     expect(models.json().data).toHaveLength(5);
   });
 
-  it.each(['claude-web', 'grok-web'] as const)(
+  it.each(['claude-web', 'grok-web', 'claude-api', 'grok-api', 'meta-api'] as const)(
     'rejects all unsupported %s features before queueing/browser work',
     async (id) => {
       const { app, provider } = server(id);

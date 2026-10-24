@@ -73,7 +73,10 @@ export const usageResetResponseSchema = z
 export const sessionResetResponseSchema = z
   .object({
     status: z.literal('reset'),
-    detail: z.literal('Browser process closed; dedicated profile data was preserved.'),
+    detail: z.enum([
+      'Browser process closed; dedicated profile data was preserved.',
+      'API transport reset; configured credentials were not changed.',
+    ]),
   })
   .strict();
 
@@ -88,6 +91,7 @@ export const drainStatusResponseSchema = z
 export const sessionStateResponseSchema = z
   .object({
     state: z.enum([
+      'api_configured',
       'ready',
       'login_required',
       'security_challenge',

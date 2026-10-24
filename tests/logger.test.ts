@@ -21,6 +21,10 @@ describe('structured log redaction', () => {
       },
       authorization: 'Bearer secret-auth',
       apiToken: 'secret-token',
+      apiKey: 'secret-api-key',
+      providerApiKey: 'secret-provider-api-key',
+      config: { providerApiKey: 'secret-nested-api-key' },
+      headers: { 'x-api-key': 'secret-header-api-key' },
       clientSecret: 'secret-cloudflare-access',
       digest: 'secret-key-digest',
       prompt: 'secret-prompt',
@@ -29,6 +33,14 @@ describe('structured log redaction', () => {
     await new Promise((resolve) => destination.end(resolve));
     expect(output).not.toContain('secret-auth');
     expect(output).not.toContain('secret-token');
+    for (const secret of [
+      'secret-api-key',
+      'secret-provider-api-key',
+      'secret-nested-api-key',
+      'secret-header-api-key',
+    ]) {
+      expect(output).not.toContain(secret);
+    }
     expect(output).not.toContain('secret-prompt');
     expect(output).not.toContain('secret-response');
     expect(output).not.toContain('secret-cloudflare-access');

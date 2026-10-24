@@ -6,6 +6,10 @@ All notable user-facing changes are documented here. This project follows semant
 
 ### Added
 
+- Add explicit, opt-in official Claude/Grok/Meta API transports with provider-specific keys,
+  exact models, fixed HTTPS destinations, bounded buffered responses and no retries/fallback.
+  Configuration-only health sends no paid probe. All transport tests are mocked.
+
 - Add explicit browser-provider selection, authenticated capability discovery and truthful
   JSON/SSE model identities while retaining ChatGPT as the default.
 - Add disabled-by-default, text-only experimental Claude/Grok UI adapters with provider-specific

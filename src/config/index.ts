@@ -8,8 +8,8 @@ import {
   resolveSafeDataPaths,
 } from '../security/paths.js';
 import { loadOrCreateToken } from '../security/token.js';
-import { validateProviderConfiguration } from '../providers/catalog.js';
-import type { WebProviderId } from '../provider.js';
+import { isApiProvider, validateProviderConfiguration } from '../providers/catalog.js';
+import type { ProviderId } from '../provider.js';
 
 const booleanValue = z
   .enum(['true', 'false'])
@@ -19,8 +19,16 @@ const integer = (minimum: number, maximum: number) =>
   z.coerce.number().int().min(minimum).max(maximum);
 
 const environmentSchema = z.object({
-  TAB2API_PROVIDER: z.enum(['chatgpt-web', 'claude-web', 'grok-web']).default('chatgpt-web'),
+  TAB2API_PROVIDER: z
+    .enum(['chatgpt-web', 'claude-web', 'grok-web', 'claude-api', 'grok-api', 'meta-api'])
+    .default('chatgpt-web'),
   TAB2API_EXPERIMENTAL_PROVIDERS: booleanValue,
+  TAB2API_ENABLE_PAID_API: booleanValue,
+  TAB2API_CLAUDE_API_KEY: z.string().optional(),
+  TAB2API_GROK_API_KEY: z.string().optional(),
+  TAB2API_META_API_KEY: z.string().optional(),
+  TAB2API_API_MODEL: z.string().optional(),
+  TAB2API_API_MAX_OUTPUT_TOKENS: integer(1, 16_384).default(4_096),
   TAB2API_PROVIDER_PERMISSION: z.enum(['claude-web', 'grok-web']).optional(),
   TAB2API_HOST: z.string().default('127.0.0.1'),
   TAB2API_PORT: integer(1, 65535).default(3210),
@@ -60,8 +68,12 @@ const environmentSchema = z.object({
 });
 
 export interface AppConfig {
-  provider: WebProviderId;
+  provider: ProviderId;
   experimentalProviders: boolean;
+  enablePaidApi: boolean;
+  providerApiKey: string | undefined;
+  providerApiModel: string | undefined;
+  providerApiMaxOutputTokens: number;
   providerPermission: 'claude-web' | 'grok-web' | undefined;
   host: '127.0.0.1' | '::1';
   port: number;
@@ -94,6 +106,31 @@ export async function loadConfig(
     experimentalProviders: parsed.TAB2API_EXPERIMENTAL_PROVIDERS,
     providerPermission: parsed.TAB2API_PROVIDER_PERMISSION,
   });
+  const providerApiKey =
+    parsed.TAB2API_PROVIDER === 'claude-api'
+      ? parsed.TAB2API_CLAUDE_API_KEY
+      : parsed.TAB2API_PROVIDER === 'grok-api'
+        ? parsed.TAB2API_GROK_API_KEY
+        : parsed.TAB2API_PROVIDER === 'meta-api'
+          ? parsed.TAB2API_META_API_KEY
+          : undefined;
+  if (isApiProvider(parsed.TAB2API_PROVIDER)) {
+    if (
+      !parsed.TAB2API_ENABLE_PAID_API ||
+      providerApiKey === undefined ||
+      !/^[\x21-\x7e]{1,4096}$/.test(providerApiKey) ||
+      parsed.TAB2API_API_MODEL === undefined ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,199}$/.test(parsed.TAB2API_API_MODEL)
+    ) {
+      throw new Error(
+        'API mode requires TAB2API_ENABLE_PAID_API=true, the selected provider-specific key and an exact TAB2API_API_MODEL. Generation may incur charges.',
+      );
+    }
+    if (parsed.TAB2API_CONCURRENCY !== 1)
+      throw new Error('API mode currently requires TAB2API_CONCURRENCY=1.');
+    if (parsed.TAB2API_TEMPORARY_CHAT)
+      throw new Error('API mode does not support TAB2API_TEMPORARY_CHAT.');
+  }
   const host = assertLoopbackHost(parsed.TAB2API_HOST);
   const { dataDir, profileDir } = resolveSafeDataPaths(
     cwd,
@@ -104,6 +141,10 @@ export async function loadConfig(
   await assertSafeRuntimePaths(dataDir, profileDir, artifactDir);
   const apiToken = await loadOrCreateToken(dataDir, parsed.TAB2API_API_TOKEN);
   return {
+    enablePaidApi: parsed.TAB2API_ENABLE_PAID_API,
+    providerApiKey,
+    providerApiModel: isApiProvider(parsed.TAB2API_PROVIDER) ? parsed.TAB2API_API_MODEL : undefined,
+    providerApiMaxOutputTokens: parsed.TAB2API_API_MAX_OUTPUT_TOKENS,
     provider: parsed.TAB2API_PROVIDER,
     experimentalProviders: parsed.TAB2API_EXPERIMENTAL_PROVIDERS,
     providerPermission: parsed.TAB2API_PROVIDER_PERMISSION,

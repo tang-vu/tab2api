@@ -17,4 +17,4 @@ export {
 } from './sidecar/lifecycle.js';
 
 export { PROVIDER_CATALOG, providerCapabilities } from './providers/catalog.js';
-export type { WebProviderId } from './provider.js';
+export type { WebProviderId, ApiProviderId, ProviderId } from './provider.js';

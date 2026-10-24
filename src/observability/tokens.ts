@@ -1,4 +1,5 @@
 import { encode } from 'gpt-tokenizer/encoding/o200k_base';
+import type { ProviderId } from '../provider.js';
 import { AppError } from '../errors.js';
 
 /**
@@ -80,7 +81,7 @@ export function assertPromptWithinLimit(
   text: string,
   imageCount: number,
   maxPromptTokens: number,
-  provider: 'chatgpt-web' | 'claude-web' | 'grok-web' = 'chatgpt-web',
+  provider: ProviderId = 'chatgpt-web',
 ): PromptBudget {
   const budget = promptBudget(text, imageCount);
   if (budget.textTokens + budget.imageTokens > maxPromptTokens) {

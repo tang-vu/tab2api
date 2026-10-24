@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { chromium } from 'playwright';
 import { z } from 'zod';
+import { isApiProvider } from '../providers/catalog.js';
 import { createProvider } from '../providers/factory.js';
 import { LocalAdminClient, LocalAdminError } from '../api/local-admin-client.js';
 import { LocalGenerationClient } from '../api/local-generation-client.js';
@@ -62,6 +63,11 @@ export async function commandStart(): Promise<void> {
 
 export async function commandLogin(): Promise<void> {
   const config = await loadConfig();
+  if (isApiProvider(config.provider)) {
+    throw new Error(
+      'API providers do not use browser login. Configure your own provider-specific API key locally; no authentication probe was sent.',
+    );
+  }
   const headed = { ...config, headless: false };
   const { provider } = await dependencies(headed);
   print(`Opening the dedicated ${config.provider} profile. Log in to your own account manually.`);
@@ -69,6 +75,8 @@ export async function commandLogin(): Promise<void> {
     'tab2api never asks for or reads your email/password. Complete any security challenge yourself.',
   );
   try {
+    if (!('waitForManualLogin' in provider))
+      throw new Error('This provider does not use manual browser login.');
     await provider.waitForManualLogin((state) => print(`Session state: ${state}`));
     print('Login verified. The dedicated profile is ready.');
   } finally {
@@ -134,6 +142,7 @@ export async function commandDoctor(): Promise<void> {
   ];
   let failed = false;
   for (const [name, check] of checks) {
+    if (isApiProvider(config.provider) && name === 'Chromium executable') continue;
     try {
       print(`PASS ${name}: ${await check()}`);
     } catch (error) {
@@ -144,8 +153,14 @@ export async function commandDoctor(): Promise<void> {
   const { provider } = await dependencies(config);
   try {
     const state = await provider.health();
-    print(`${state === 'ready' ? 'PASS' : 'FAIL'} Browser/session/selectors: ${state}`);
-    if (state !== 'ready') failed = true;
+    if (state === 'api_configured') {
+      print(
+        'INFO API configuration present; key, model access and billing were not verified. No API probe was sent.',
+      );
+    } else {
+      print(`${state === 'ready' ? 'PASS' : 'FAIL'} Browser/session/selectors: ${state}`);
+      if (state !== 'ready') failed = true;
+    }
   } finally {
     await provider.close();
   }
@@ -182,8 +197,8 @@ export async function commandSmoke(): Promise<void> {
 }
 
 export async function commandResetSession(config: AppConfig): Promise<void> {
-  await new LocalAdminClient(config).resetSession();
-  print('Browser session process reset. Profile and manual login were preserved.');
+  const result = await new LocalAdminClient(config).resetSession();
+  print(result.detail);
 }
 
 export async function commandDrain(config: AppConfig): Promise<void> {

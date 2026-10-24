@@ -1,5 +1,5 @@
 import { AppError } from '../errors.js';
-import type { GenerateRequest, WebProviderId } from '../provider.js';
+import type { ApiProviderId, GenerateRequest, ProviderId } from '../provider.js';
 
 export interface ProviderCapabilities {
   text: boolean;
@@ -66,6 +66,36 @@ export const PROVIDER_CATALOG = [
     capabilities: textOnly,
   },
   {
+    id: 'claude-api',
+    name: 'Claude API',
+    transport: 'official-api',
+    status: 'implemented-offline-tested',
+    liveVerified: false,
+    mayIncurCharges: true,
+    apiDocumentationUrl: 'https://platform.claude.com/docs/en/api/messages/create',
+    capabilities: textOnly,
+  },
+  {
+    id: 'grok-api',
+    name: 'Grok API',
+    transport: 'official-api',
+    status: 'implemented-offline-tested',
+    liveVerified: false,
+    mayIncurCharges: true,
+    apiDocumentationUrl: 'https://docs.x.ai/developers/model-capabilities/legacy/chat-completions',
+    capabilities: textOnly,
+  },
+  {
+    id: 'meta-api',
+    name: 'Meta Model API / Muse Spark',
+    transport: 'official-api',
+    status: 'implemented-offline-tested',
+    liveVerified: false,
+    mayIncurCharges: true,
+    apiDocumentationUrl: 'https://dev.meta.ai/docs/protocols/chat-completions',
+    capabilities: textOnly,
+  },
+  {
     id: 'meta-ai-web',
     name: 'Meta AI / Muse Spark',
     transport: 'browser-ui',
@@ -77,20 +107,24 @@ export const PROVIDER_CATALOG = [
   },
 ] as const;
 
-export function providerCapabilities(id: WebProviderId): Readonly<ProviderCapabilities> {
+export function isApiProvider(id: ProviderId): id is ApiProviderId {
+  return id === 'claude-api' || id === 'grok-api' || id === 'meta-api';
+}
+
+export function providerCapabilities(id: ProviderId): Readonly<ProviderCapabilities> {
   return id === 'chatgpt-web' ? PROVIDER_CATALOG[0].capabilities : textOnly;
 }
 
-export function anthropicModelFor(id: WebProviderId): string {
+export function anthropicModelFor(id: ProviderId): string {
   return `claude-tab2api-${id}`;
 }
 
 export function validateProviderConfiguration(config: {
-  provider: WebProviderId;
+  provider: ProviderId;
   experimentalProviders: boolean;
   providerPermission: 'claude-web' | 'grok-web' | undefined;
 }): void {
-  if (config.provider === 'chatgpt-web') return;
+  if (config.provider === 'chatgpt-web' || isApiProvider(config.provider)) return;
   if (!config.experimentalProviders || config.providerPermission !== config.provider) {
     throw new AppError(
       'provider_unavailable',
@@ -101,7 +135,7 @@ export function validateProviderConfiguration(config: {
 }
 
 /** Never silently send a named provider's prompt to a different provider. */
-export function assertProviderModel(id: WebProviderId, model: string): void {
+export function assertProviderModel(id: ProviderId, model: string): void {
   const knownIds = PROVIDER_CATALOG.flatMap((provider) => [
     provider.id,
     `claude-tab2api-${provider.id}`,
@@ -109,7 +143,12 @@ export function assertProviderModel(id: WebProviderId, model: string): void {
   if (model === id || model === anthropicModelFor(id)) return;
   // Existing ChatGPT clients used arbitrary aliases. Preserve that compatibility, but
   // reserved provider identifiers must always resolve truthfully.
-  if (id === 'chatgpt-web' && !knownIds.includes(model)) return;
+  if (
+    id === 'chatgpt-web' &&
+    !knownIds.includes(model) &&
+    !/^(?:claude|grok|muse|meta)(?:$|[-_/])/i.test(model)
+  )
+    return;
   throw new AppError(
     'invalid_request',
     `Model ${model} is not available in this runtime. Use ${id}; configure a separate runtime for another provider.`,
@@ -117,7 +156,7 @@ export function assertProviderModel(id: WebProviderId, model: string): void {
 }
 
 export function assertProviderCapability(
-  id: WebProviderId,
+  id: ProviderId,
   capability: Exclude<keyof ProviderCapabilities, 'streamMode'>,
 ): void {
   if (!providerCapabilities(id)[capability]) {
@@ -126,7 +165,7 @@ export function assertProviderCapability(
 }
 
 export function assertTextCapabilities(
-  id: WebProviderId,
+  id: ProviderId,
   request: Pick<
     GenerateRequest,
     'attachments' | 'projectId' | 'conversationId' | 'temporary' | 'effort'

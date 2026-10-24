@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { z } from 'zod';
 import type { AppConfig } from '../config/index.js';
-import type { UiEffort, WebProviderId } from '../provider.js';
+import type { UiEffort, ProviderId } from '../provider.js';
 import {
   LocalAdminError,
   verifyLocalServiceIdentity,
@@ -41,7 +41,7 @@ export class LocalGenerationError extends Error {
 }
 
 interface LocalGenerationClientConfig {
-  provider?: WebProviderId;
+  provider?: ProviderId;
   host: Pick<AppConfig, 'host'>['host'];
   port: number;
   apiToken: string;
@@ -162,7 +162,7 @@ async function serverError(response: Response): Promise<LocalGenerationError> {
 
 export class LocalGenerationClient {
   private readonly origin: string;
-  private readonly provider: WebProviderId;
+  private readonly provider: ProviderId;
   private readonly bearerToken: string;
   private readonly fetchImplementation: FetchImplementation;
   private readonly timeoutMs: number;

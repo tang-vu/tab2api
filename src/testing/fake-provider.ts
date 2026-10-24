@@ -12,7 +12,7 @@ import type {
   UploadProjectFilesRequest,
   UploadProjectFilesResult,
   WebChatProvider,
-  WebProviderId,
+  ProviderId,
 } from '../provider.js';
 
 const FAKE_PROJECT_ID = 'g-p-00000000000000000000000000000001';
@@ -39,7 +39,7 @@ export class FakeProvider implements WebChatProvider {
   constructor(
     private readonly responseText = 'Fake browser response',
     private readonly delayMs = 0,
-    readonly id: WebProviderId = 'chatgpt-web',
+    readonly id: ProviderId = 'chatgpt-web',
   ) {}
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {

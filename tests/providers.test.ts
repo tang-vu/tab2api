@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config/index.js';
 import {
   PROVIDER_CATALOG,
@@ -13,6 +16,14 @@ import { chatSse, mapChatCompletion, mapResponse, responsesSse } from '../src/ap
 import { anthropicMessageStartSse, mapAnthropicMessage } from '../src/api/anthropic.js';
 import { assertPromptWithinLimit } from '../src/observability/tokens.js';
 
+let temporaryRoot: string;
+beforeEach(async () => {
+  temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'tab2api-provider-config-'));
+});
+afterEach(async () => {
+  await rm(temporaryRoot, { recursive: true, force: true });
+});
+
 const environment = {
   TAB2API_API_TOKEN: 'test-only-token-that-is-long-enough',
   TAB2API_DATA_DIR: '.runtime',
@@ -21,7 +32,7 @@ const environment = {
 
 describe('provider configuration and discovery', () => {
   it('keeps ChatGPT as the default', async () => {
-    expect(await loadConfig(environment, '/tmp/tab2api-provider-config-test')).toMatchObject({
+    expect(await loadConfig(environment, temporaryRoot)).toMatchObject({
       provider: 'chatgpt-web',
       experimentalProviders: false,
       providerPermission: undefined,
@@ -57,10 +68,7 @@ describe('provider configuration and discovery', () => {
         }),
       ).not.toThrow();
       await expect(
-        loadConfig(
-          { ...environment, TAB2API_PROVIDER: provider },
-          '/tmp/tab2api-provider-config-test',
-        ),
+        loadConfig({ ...environment, TAB2API_PROVIDER: provider }, temporaryRoot),
       ).rejects.toThrow(/disabled/);
       expect(
         await loadConfig(
@@ -70,7 +78,7 @@ describe('provider configuration and discovery', () => {
             TAB2API_EXPERIMENTAL_PROVIDERS: 'true',
             TAB2API_PROVIDER_PERMISSION: provider,
           },
-          '/tmp/tab2api-provider-config-test',
+          temporaryRoot,
         ),
       ).toMatchObject({ provider });
     },
@@ -80,10 +88,7 @@ describe('provider configuration and discovery', () => {
     'does not guess provider %s',
     async (provider) => {
       await expect(
-        loadConfig(
-          { ...environment, TAB2API_PROVIDER: provider },
-          '/tmp/tab2api-provider-config-test',
-        ),
+        loadConfig({ ...environment, TAB2API_PROVIDER: provider }, temporaryRoot),
       ).rejects.toThrow();
     },
   );
@@ -92,7 +97,15 @@ describe('provider configuration and discovery', () => {
 describe('provider-specific capability and identity contracts', () => {
   it('keeps legacy ChatGPT aliases but never reroutes reserved identities', () => {
     expect(() => assertProviderModel('chatgpt-web', 'old-client-alias')).not.toThrow();
-    for (const model of ['claude-web', 'grok-web', 'meta-ai-web', 'claude-tab2api-grok-web']) {
+    for (const model of [
+      'claude-web',
+      'grok-web',
+      'meta-ai-web',
+      'claude-tab2api-grok-web',
+      'muse-spark',
+      'grok-4',
+      'claude-sonnet',
+    ]) {
       expect(() => assertProviderModel('chatgpt-web', model)).toThrow(/not available/);
     }
     expect(() => assertProviderModel('grok-web', 'chatgpt-web')).toThrow(/not available/);

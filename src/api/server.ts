@@ -10,6 +10,7 @@ import type { UiEffort, WebChatProvider } from '../provider.js';
 import {
   PROVIDER_CATALOG,
   anthropicModelFor,
+  isApiProvider,
   assertProviderCapability,
   assertProviderModel,
   assertTextCapabilities,
@@ -356,13 +357,18 @@ export function buildServer(dependencies: ServerDependencies) {
   app.get('/v1/models', { preHandler: authenticated }, async () => ({
     object: 'list',
     data: [
-      { id: provider.id, object: 'model', created: 0, owned_by: 'user-browser-session' },
+      {
+        id: provider.id,
+        object: 'model',
+        created: 0,
+        owned_by: isApiProvider(provider.id) ? 'user-provider-api-account' : 'user-browser-session',
+      },
       {
         id: anthropicModel,
         display_name: `tab2api ${provider.id} (Anthropic compatibility)`,
         object: 'model',
         created: 0,
-        owned_by: 'user-browser-session',
+        owned_by: isApiProvider(provider.id) ? 'user-provider-api-account' : 'user-browser-session',
       },
       ...(capabilities.images
         ? [
@@ -370,7 +376,9 @@ export function buildServer(dependencies: ServerDependencies) {
               id: 'chatgpt-web-image',
               object: 'model',
               created: 0,
-              owned_by: 'user-browser-session',
+              owned_by: isApiProvider(provider.id)
+                ? 'user-provider-api-account'
+                : 'user-browser-session',
             },
           ]
         : []),
@@ -380,7 +388,9 @@ export function buildServer(dependencies: ServerDependencies) {
               id: 'chatgpt-web-transcribe',
               object: 'model',
               created: 0,
-              owned_by: 'user-browser-session',
+              owned_by: isApiProvider(provider.id)
+                ? 'user-provider-api-account'
+                : 'user-browser-session',
             },
           ]
         : []),
@@ -960,7 +970,9 @@ export function buildServer(dependencies: ServerDependencies) {
     }
     return {
       status: 'reset',
-      detail: 'Browser process closed; dedicated profile data was preserved.',
+      detail: isApiProvider(provider.id)
+        ? 'API transport reset; configured credentials were not changed.'
+        : 'Browser process closed; dedicated profile data was preserved.',
     };
   });
 

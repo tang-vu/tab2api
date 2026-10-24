@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { WebProviderId } from '../provider.js';
+import type { ProviderId } from '../provider.js';
 
 export const API_MODEL = 'chatgpt-web' as const;
 
@@ -7,7 +7,7 @@ export interface ChatCompletionResponse {
   id: string;
   object: 'chat.completion';
   created: number;
-  model: WebProviderId;
+  model: ProviderId;
   choices: Array<{
     index: 0;
     message: { role: 'assistant'; content: string; refusal: null };
@@ -27,7 +27,7 @@ export function mapChatCompletion(
   text: string,
   now = Date.now(),
   conversationId?: string,
-  model: WebProviderId = API_MODEL,
+  model: ProviderId = API_MODEL,
 ): ChatCompletionResponse {
   return {
     id: `chatcmpl_${randomUUID().replaceAll('-', '')}`,
@@ -59,7 +59,7 @@ export interface ResponsesResponse {
   error: null;
   incomplete_details: null;
   instructions: null;
-  model: WebProviderId;
+  model: ProviderId;
   output: Array<{
     id: string;
     type: 'message';
@@ -83,7 +83,7 @@ export function mapResponse(
   text: string,
   now = Date.now(),
   conversationId?: string,
-  model: WebProviderId = API_MODEL,
+  model: ProviderId = API_MODEL,
 ): ResponsesResponse {
   const compactId = randomUUID().replaceAll('-', '');
   return {
